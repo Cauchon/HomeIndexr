@@ -28,6 +28,8 @@
       req(`/api/properties/${id}/refresh`, { method: "POST" }),
     refreshAll: () =>
       req("/api/properties/refresh-all", { method: "POST" }),
+    backfill: (id) =>
+      req(`/api/properties/${id}/backfill`, { method: "POST" }),
   };
 
   window.API = API;

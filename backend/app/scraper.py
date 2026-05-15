@@ -10,12 +10,71 @@ Result keys:
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 import homeharvest
+import requests
+from homeharvest.core.scrapers import DEFAULT_HEADERS
 
 LISTING_TYPES = ["for_sale", "sold", "pending", "for_rent"]
+
+REALTOR_GQL_URL = "https://www.realtor.com/frontdoor/graphql"
+
+HISTORICAL_QUERY = (
+    "query GetHomeHistoricalEstimates($property_id: ID!) {"
+    "  home(property_id: $property_id) {"
+    "    estimates {"
+    "      historical_values {"
+    "        source { type name }"
+    "        estimates { estimate date }"
+    "      }"
+    "    }"
+    "  }"
+    "}"
+)
+
+
+def fetch_historical(property_id: str) -> list[dict]:
+    """Fetch full historical AVM series for a property from Realtor.com.
+
+    Returns a flat list of {source, date, estimate} records across all
+    available vendors. Collateral Analytics is filtered out to match
+    `all_estimates`.
+    """
+    if not property_id:
+        return []
+    payload = {
+        "operationName": "GetHomeHistoricalEstimates",
+        "query": HISTORICAL_QUERY,
+        "variables": {"property_id": str(property_id)},
+    }
+    resp = requests.post(
+        REALTOR_GQL_URL,
+        headers=DEFAULT_HEADERS,
+        data=json.dumps(payload, separators=(",", ":")),
+        timeout=20,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    series = (
+        (((data.get("data") or {}).get("home") or {}).get("estimates") or {})
+        .get("historical_values")
+        or []
+    )
+    out: list[dict] = []
+    for s in series:
+        src = _source_name((s or {}).get("source")) or "Unknown"
+        if src.lower() == "collateral analytics":
+            continue
+        for e in s.get("estimates") or []:
+            est = _to_int(e.get("estimate"))
+            date = e.get("date")
+            if est is None or not date:
+                continue
+            out.append({"source": src, "date": date[:10], "estimate": est})
+    return out
 
 
 def _norm_str(s: str | None) -> str:
@@ -42,56 +101,68 @@ def _build_matched_address(raw: dict) -> str | None:
     return line or None
 
 
+def all_estimates(raw: dict) -> list[dict]:
+    """Return every AVM in the raw row, normalized to one shape.
+
+    Reads both `current_estimates` (snake_case) and
+    `estimates.currentValues` (camelCase). The entry flagged
+    `isBestHomeValue` is moved to the front; other entries keep their
+    original order.
+    """
+    if not isinstance(raw, dict):
+        return []
+    items: list[dict] = []
+    legacy = raw.get("current_estimates")
+    if isinstance(legacy, list) and legacy:
+        for e in legacy:
+            items.append({
+                "source": _source_name(e.get("source")),
+                "estimate": _to_int(e.get("estimate")),
+                "low": _to_int(e.get("estimate_low")),
+                "high": _to_int(e.get("estimate_high")),
+                "date": e.get("date"),
+                "is_best": bool(e.get("isBestHomeValue")),
+            })
+    else:
+        nested = (raw.get("estimates") or {}).get("currentValues")
+        if isinstance(nested, list) and nested:
+            for e in nested:
+                items.append({
+                    "source": _source_name(e.get("source")),
+                    "estimate": _to_int(e.get("estimate")),
+                    "low": _to_int(e.get("estimateLow")),
+                    "high": _to_int(e.get("estimateHigh")),
+                    "date": e.get("date"),
+                    "is_best": bool(e.get("isBestHomeValue")),
+                })
+    items = [e for e in items if (e.get("source") or "").lower() != "collateral analytics"]
+    items.sort(key=lambda x: 0 if x["is_best"] else 1)
+    return items
+
+
 def _normalize_estimates(raw: dict) -> dict:
-    """Pick the 'best' AVM from either shape.
+    """Pick the 'best' AVM.
 
     Preference order:
       1. Entry flagged isBestHomeValue
       2. First entry in the list
     """
-    best: dict[str, Any] | None = None
-    src_shape: str | None = None
-
-    legacy = raw.get("current_estimates")
-    if isinstance(legacy, list) and legacy:
-        picked = next((e for e in legacy if e.get("isBestHomeValue")), legacy[0])
-        best = {
-            "estimate": picked.get("estimate"),
-            "low": picked.get("estimate_low"),
-            "high": picked.get("estimate_high"),
-            "date": picked.get("date"),
-            "source": _source_name(picked.get("source")),
-        }
-        src_shape = "current_estimates"
-    else:
-        nested = (raw.get("estimates") or {}).get("currentValues")
-        if isinstance(nested, list) and nested:
-            picked = next((e for e in nested if e.get("isBestHomeValue")), nested[0])
-            best = {
-                "estimate": picked.get("estimate"),
-                "low": picked.get("estimateLow"),
-                "high": picked.get("estimateHigh"),
-                "date": picked.get("date"),
-                "source": _source_name(picked.get("source")),
-            }
-            src_shape = "estimates.currentValues"
-
-    if best is None:
+    items = all_estimates(raw)
+    if not items:
         return {
             "best_current_estimate": None,
             "estimate_source": None,
             "estimate_low": None,
             "estimate_high": None,
             "estimate_date": None,
-            "_shape": None,
         }
+    picked = items[0]
     return {
-        "best_current_estimate": _to_int(best["estimate"]),
-        "estimate_source": best["source"],
-        "estimate_low": _to_int(best["low"]),
-        "estimate_high": _to_int(best["high"]),
-        "estimate_date": best["date"],
-        "_shape": src_shape,
+        "best_current_estimate": picked["estimate"],
+        "estimate_source": picked["source"],
+        "estimate_low": picked["low"],
+        "estimate_high": picked["high"],
+        "estimate_date": picked["date"],
     }
 
 

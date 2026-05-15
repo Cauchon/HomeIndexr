@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import re
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.types import Scope
 
 from . import scraper, store
 from .db import init_db
@@ -48,7 +51,40 @@ def get_property(pid: int):
     if not p:
         raise HTTPException(404, "property not found")
     p["snapshots"] = store.list_snapshots(pid)
+    p["historical"] = store.list_historical(pid)
     return p
+
+
+@app.post("/api/properties/{pid}/backfill")
+def backfill_property(pid: int):
+    prop = store.get_property(pid)
+    if not prop:
+        raise HTTPException(404, "property not found")
+    if not prop.get("property_id"):
+        return {"id": pid, "written": 0, "error": "no property_id on record"}
+    try:
+        records = scraper.fetch_historical(prop["property_id"])
+    except Exception as e:  # noqa: BLE001
+        return {"id": pid, "written": 0, "error": f"{type(e).__name__}: {e}"}
+    written = store.replace_historical(pid, records)
+    return {"id": pid, "written": written, "error": None}
+
+
+@app.post("/api/properties/backfill-all")
+def backfill_all():
+    props = store.list_properties_with_latest()
+    results = []
+    for p in props:
+        if not p.get("property_id"):
+            results.append({"id": p["id"], "written": 0, "error": "no property_id"})
+            continue
+        try:
+            records = scraper.fetch_historical(p["property_id"])
+            written = store.replace_historical(p["id"], records)
+            results.append({"id": p["id"], "written": written, "error": None})
+        except Exception as e:  # noqa: BLE001
+            results.append({"id": p["id"], "written": 0, "error": f"{type(e).__name__}: {e}"})
+    return {"backfilled": sum(1 for r in results if r["error"] is None), "results": results}
 
 
 @app.post("/api/properties")
@@ -129,13 +165,44 @@ def refresh_all():
 
 # ---------- Static frontend ----------
 
+class NoCacheStaticFiles(StaticFiles):
+    """Dev-friendly: tell browsers not to cache so edits show up immediately."""
+
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
 if FRONTEND_DIR.exists():
     app.mount(
         "/static",
-        StaticFiles(directory=str(FRONTEND_DIR)),
+        NoCacheStaticFiles(directory=str(FRONTEND_DIR)),
         name="static",
     )
 
     @app.get("/")
-    def root() -> FileResponse:
-        return FileResponse(FRONTEND_DIR / "index.html")
+    def root() -> HTMLResponse:
+        """Serve index.html with cache-buster query params appended to /static/* URLs.
+
+        Uses each file's mtime so edits invalidate the script URL itself, which
+        bypasses any stale entries already sitting in the browser cache.
+        """
+        html = (FRONTEND_DIR / "index.html").read_text()
+
+        def _bust(match: re.Match[str]) -> str:
+            attr, full_path = match.group(1), match.group(2)
+            rel = full_path[len("/static/"):]
+            try:
+                mtime = int((FRONTEND_DIR / rel).stat().st_mtime)
+            except OSError:
+                mtime = 0
+            return f'{attr}="{full_path}?v={mtime}"'
+
+        html = re.sub(r'(src|href)="(/static/[^"?]+)"', _bust, html)
+        return HTMLResponse(
+            html,
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )

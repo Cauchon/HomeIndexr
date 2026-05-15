@@ -75,6 +75,17 @@ CREATE TABLE IF NOT EXISTS snapshots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_snapshots_property ON snapshots(property_id, fetched_at DESC);
+
+CREATE TABLE IF NOT EXISTS historical_estimates (
+    property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    date TEXT NOT NULL,
+    estimate INTEGER NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY (property_id, source, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hist_property ON historical_estimates(property_id, date);
 """
 
 

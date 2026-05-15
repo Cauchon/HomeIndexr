@@ -10,6 +10,7 @@ import re
 import time
 from typing import Any
 
+from . import scraper
 from .db import get_conn
 
 SNAPSHOT_COLS = (
@@ -45,6 +46,7 @@ def _row_to_snapshot(row: Any) -> dict:
             s["raw_json"] = json.loads(s["raw_json"])
         except (TypeError, ValueError):
             pass
+    s["all_estimates"] = scraper.all_estimates(s["raw_json"]) if isinstance(s.get("raw_json"), dict) else []
     return s
 
 
@@ -158,6 +160,37 @@ def update_property_meta(property_id: int, fetched: dict) -> None:
                 property_id,
             ),
         )
+
+
+def replace_historical(property_id: int, records: list[dict]) -> int:
+    """Upsert historical estimates for a property. Returns rows written."""
+    now = _now()
+    rows = [
+        (property_id, r["source"], r["date"], int(r["estimate"]), now)
+        for r in records
+        if r.get("source") and r.get("date") and r.get("estimate") is not None
+    ]
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO historical_estimates "
+            "(property_id, source, date, estimate, fetched_at) VALUES (?,?,?,?,?)",
+            rows,
+        )
+    return len(rows)
+
+
+def list_historical(property_id: int) -> list[dict]:
+    with get_conn() as conn:
+        return [
+            {"source": r["source"], "date": r["date"], "estimate": r["estimate"]}
+            for r in conn.execute(
+                "SELECT source, date, estimate FROM historical_estimates "
+                "WHERE property_id = ? ORDER BY date ASC, source ASC",
+                (property_id,),
+            )
+        ]
 
 
 def insert_snapshot(property_id: int, fetched: dict) -> dict:

@@ -382,6 +382,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [property, setProperty] = useState_p(null);
   const [loading, setLoading] = useState_p(true);
   const [refreshing, setRefreshing] = useState_p(false);
+  const [backfilling, setBackfilling] = useState_p(false);
   const [tab, setTab] = useState_p("history");
   const toast = useToast();
 
@@ -406,6 +407,24 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       toast.push({ kind: "err", text: e.message });
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function doBackfill() {
+    setBackfilling(true);
+    try {
+      const res = await API.backfill(propertyId);
+      if (res.error) {
+        toast.push({ kind: "err", text: res.error });
+      } else {
+        const fresh = await API.getProperty(propertyId);
+        setProperty(fresh);
+        toast.push({ kind: "ok", text: `Backfilled ${res.written} historical points` });
+      }
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message });
+    } finally {
+      setBackfilling(false);
     }
   }
 
@@ -450,7 +469,11 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" onClick={doRefresh} disabled={refreshing}>
+          <button className="btn" onClick={doBackfill} disabled={backfilling || refreshing} title="Fetch full historical AVM series from realtor.com">
+            <Icon name="refresh" />
+            {backfilling ? "Backfilling…" : "Backfill history"}
+          </button>
+          <button className="btn" onClick={doRefresh} disabled={refreshing || backfilling}>
             <Icon name="refresh" />
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
@@ -505,13 +528,20 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <div className="card-header">
               <div className="card-title">Value over time</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                {property.snapshots.length
-                  ? <>{fmt.shortDate(property.snapshots[0].fetched_at)} – {fmt.shortDate(last.fetched_at)}</>
-                  : "—"}
+                {(() => {
+                  const ts = [];
+                  for (const s of property.snapshots || []) if (s.fetched_at) ts.push(s.fetched_at);
+                  for (const h of property.historical || []) {
+                    const t = parseEstimateDate(h.date);
+                    if (t != null && h.estimate != null) ts.push(t);
+                  }
+                  if (!ts.length) return "—";
+                  return <>{fmt.date(Math.min(...ts))} – {fmt.date(Math.max(...ts))}</>;
+                })()}
               </div>
             </div>
             <div className="card-body">
-              <PriceChart snapshots={property.snapshots} mode="band" height={280} />
+              <PriceChart snapshots={property.snapshots} historical={property.historical || []} mode="band" height={280} />
             </div>
           </div>
 
@@ -524,7 +554,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             </div>
           </div>
 
-          {tab === "history" && <SnapshotHistory snapshots={property.snapshots} />}
+          {tab === "history" && <SnapshotHistory snapshots={property.snapshots} historical={property.historical || []} />}
           {tab === "json" && (
             <div className="card">
               <div className="card-header">
@@ -574,17 +604,83 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           <div className="card">
             <div className="card-header"><div className="card-title">Estimate breakdown</div></div>
             <div className="card-body">
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>Source</div>
-              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>{last.estimate_source || "—"}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>Range</div>
-              <EstimateRangeBar low={last.estimate_low} mid={last.best_current_estimate} high={last.estimate_high} />
-              <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}>
-                Estimate date <span style={{ color: "var(--text)" }}>{last.estimate_date || "—"}</span>
-              </div>
+              <AllEstimates estimates={last.all_estimates} fallback={last} />
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const ESTIMATE_SOURCES = ["Quantarium", "Cotality"];
+
+function matchSource(estimates, label) {
+  if (!Array.isArray(estimates)) return null;
+  const want = label.toLowerCase();
+  return estimates.find((e) => (e.source || "").toLowerCase().includes(want)) || null;
+}
+
+function AllEstimates({ estimates, fallback }) {
+  const [picked, setPicked] = useState_p(ESTIMATE_SOURCES[0]);
+  const list = Array.isArray(estimates) ? estimates : [];
+  const e =
+    matchSource(list, picked) ||
+    (fallback && fallback.best_current_estimate != null
+      ? {
+          source: fallback.estimate_source,
+          estimate: fallback.best_current_estimate,
+          low: fallback.estimate_low,
+          high: fallback.estimate_high,
+          date: fallback.estimate_date,
+        }
+      : null);
+
+  return (
+    <div>
+      <div role="tablist" style={{
+        display: "inline-flex", gap: 0, padding: 2,
+        background: "var(--bg-sunken)", border: "1px solid var(--border)",
+        borderRadius: 6, marginBottom: 12,
+      }}>
+        {ESTIMATE_SOURCES.map((s) => {
+          const active = s === picked;
+          const available = matchSource(list, s) != null;
+          return (
+            <button
+              key={s}
+              role="tab"
+              aria-selected={active}
+              disabled={!available && list.length > 0}
+              onClick={() => setPicked(s)}
+              style={{
+                fontSize: 11, fontWeight: 600, letterSpacing: ".02em",
+                padding: "4px 10px", borderRadius: 4, border: "none", cursor: available ? "pointer" : "not-allowed",
+                background: active ? "var(--bg)" : "transparent",
+                color: active ? "var(--text)" : "var(--text-muted)",
+                boxShadow: active ? "0 1px 2px rgba(0,0,0,.06)" : "none",
+                opacity: available || list.length === 0 ? 1 : 0.4,
+              }}
+            >
+              {s}
+            </button>
+          );
+        })}
+      </div>
+
+      {!e ? (
+        <div className="empty" style={{ padding: 0 }}>No {picked} estimate.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>Source</div>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>{e.source || picked}</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>Range</div>
+          <EstimateRangeBar low={e.low} mid={e.estimate} high={e.high} />
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}>
+            Estimate date <span style={{ color: "var(--text)" }}>{e.date || "—"}</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -620,15 +716,35 @@ function EstimateRangeBar({ low, mid, high }) {
   );
 }
 
-function SnapshotHistory({ snapshots }) {
-  const rows = [...snapshots].reverse();
+function parseEstimateDate(s) {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+}
+
+function SnapshotHistory({ snapshots, historical = [] }) {
+  const snapKeys = new Set();
+  const snapRows = snapshots.map((s) => {
+    const ts = parseEstimateDate(s.estimate_date) ?? s.fetched_at;
+    if (s.estimate_date && s.estimate_source) {
+      snapKeys.add(`${s.estimate_date}|${s.estimate_source}`);
+    }
+    return { kind: "snapshot", ts, snap: s };
+  });
+  const histRows = historical
+    .filter((h) => h.date && h.estimate != null && !snapKeys.has(`${h.date}|${h.source}`))
+    .map((h) => ({ kind: "historical", ts: parseEstimateDate(h.date), hist: h }));
+  const rows = [...snapRows, ...histRows]
+    .filter((r) => r.ts != null)
+    .sort((a, b) => b.ts - a.ts);
   if (!rows.length) return <div className="empty">No snapshots yet.</div>;
   return (
     <div className="table-wrap">
       <table className="data">
         <thead>
           <tr>
-            <th>Fetched</th>
+            <th>Estimate date</th>
             <th>Status</th>
             <th>Estimate</th>
             <th>Source</th>
@@ -640,24 +756,40 @@ function SnapshotHistory({ snapshots }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((s, i) => {
-            const prev = rows[i + 1];
-            const change =
-              prev && s.best_current_estimate != null && prev.best_current_estimate != null
-                ? s.best_current_estimate - prev.best_current_estimate
-                : null;
+          {rows.map((r, i) => {
+            const curEst =
+              r.kind === "snapshot" ? r.snap.best_current_estimate : r.hist.estimate;
+            const curSrc =
+              r.kind === "snapshot" ? r.snap.estimate_source : r.hist.source;
+            const prev = rows.slice(i + 1).find((p) => {
+              const pSrc = p.kind === "snapshot" ? p.snap.estimate_source : p.hist.source;
+              return pSrc === curSrc;
+            });
+            const prevEst = prev
+              ? (prev.kind === "snapshot" ? prev.snap.best_current_estimate : prev.hist.estimate)
+              : null;
+            const change = curEst != null && prevEst != null ? curEst - prevEst : null;
+
+            const key = r.kind === "snapshot" ? `s${r.snap.id}` : `h${r.hist.date}-${r.hist.source}`;
+            const s = r.kind === "snapshot" ? r.snap : null;
+            const h = r.kind === "historical" ? r.hist : null;
+
             return (
-              <tr key={s.id} style={{ cursor: "default" }}>
+              <tr key={key} style={{ cursor: "default" }}>
                 <td>
                   <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                    <span>{fmt.datetime(s.fetched_at)}</span>
-                    <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.relative(s.fetched_at)}</span>
+                    <span>{fmt.date(r.ts)}</span>
+                    <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.relative(r.ts)}</span>
                   </div>
                 </td>
-                <td><StatusBadge status={s.status} /></td>
+                <td>
+                  {s
+                    ? <StatusBadge status={s.status} />
+                    : <span className="muted" style={{ fontSize: 11 }}>Historical</span>}
+                </td>
                 <td className="num">
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
-                    <span style={{ fontWeight: 500 }}>{fmt.usd(s.best_current_estimate)}</span>
+                    <span style={{ fontWeight: 500 }}>{fmt.usd(curEst)}</span>
                     {change != null && (
                       <span style={{
                         fontSize: 10,
@@ -669,16 +801,18 @@ function SnapshotHistory({ snapshots }) {
                     )}
                   </div>
                 </td>
-                <td className="muted" style={{ fontSize: 11 }}>{s.estimate_source || "—"}</td>
-                <td className="num muted">{fmt.usd(s.estimate_low, { compact: true })}</td>
-                <td className="num muted">{fmt.usd(s.estimate_high, { compact: true })}</td>
-                <td className="num">{s.list_price ? fmt.usd(s.list_price) : <span className="faint">—</span>}</td>
-                <td className="num">{s.sold_price ? <span style={{ color: "var(--pos)", fontWeight: 500 }}>{fmt.usd(s.sold_price)}</span> : <span className="faint">—</span>}</td>
+                <td className="muted" style={{ fontSize: 11 }}>{curSrc || "—"}</td>
+                <td className="num muted">{s ? fmt.usd(s.estimate_low, { compact: true }) : <span className="faint">—</span>}</td>
+                <td className="num muted">{s ? fmt.usd(s.estimate_high, { compact: true }) : <span className="faint">—</span>}</td>
+                <td className="num">{s && s.list_price ? fmt.usd(s.list_price) : <span className="faint">—</span>}</td>
+                <td className="num">{s && s.sold_price ? <span style={{ color: "var(--pos)", fontWeight: 500 }}>{fmt.usd(s.sold_price)}</span> : <span className="faint">—</span>}</td>
                 <td className="muted" style={{ fontSize: 11 }}>
-                  {s.error
-                    || (s.status === "candidate_mismatch" && s.matched_address
-                        ? `→ ${splitAddress(s.matched_address).line1}`
-                        : "")}
+                  {s
+                    ? (s.error
+                        || (s.status === "candidate_mismatch" && s.matched_address
+                            ? `→ ${splitAddress(s.matched_address).line1}`
+                            : ""))
+                    : ""}
                 </td>
               </tr>
             );

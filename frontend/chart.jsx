@@ -3,7 +3,20 @@
 
 const { useState: useState_chart, useMemo: useMemo_chart, useRef: useRef_chart, useEffect: useEffect_chart } = React;
 
-function PriceChart({ snapshots, mode = "band", height = 280 }) {
+const VENDOR_STYLES = {
+  "Cotality™": { color: "var(--accent)", dash: null },
+  "Quantarium": { color: "var(--pos)", dash: "5 3" },
+};
+
+function _toMs(dateStr) {
+  if (!dateStr) return null;
+  // Parse YYYY-MM-DD as UTC noon to avoid TZ slippage
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  if (!m) return null;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], 12, 0, 0);
+}
+
+function PriceChart({ snapshots, historical = [], mode = "band", height = 280 }) {
   const containerRef = useRef_chart(null);
   const [w, setW] = useState_chart(720);
   const [hover, setHover] = useState_chart(null);
@@ -23,6 +36,22 @@ function PriceChart({ snapshots, mode = "band", height = 280 }) {
       .sort((a, b) => a.fetched_at - b.fetched_at);
   }, [snapshots]);
 
+  const histSeries = useMemo_chart(() => {
+    const bySrc = new Map();
+    for (const r of historical || []) {
+      const t = _toMs(r.date);
+      if (t == null || r.estimate == null) continue;
+      if (!bySrc.has(r.source)) bySrc.set(r.source, []);
+      bySrc.get(r.source).push({ t, v: r.estimate });
+    }
+    return Array.from(bySrc.entries())
+      .map(([source, pts]) => ({
+        source,
+        points: pts.sort((a, b) => a.t - b.t),
+      }))
+      .filter((s) => s.points.length >= 2);
+  }, [historical]);
+
   const padding = { l: 56, r: 16, t: 14, b: 28 };
   const innerW = Math.max(60, w - padding.l - padding.r);
   const innerH = height - padding.t - padding.b;
@@ -38,13 +67,19 @@ function PriceChart({ snapshots, mode = "band", height = 280 }) {
     if (s.list_price != null) allYs.push(s.list_price);
     if (s.sold_price != null) allYs.push(s.sold_price);
   });
+  histSeries.forEach((s) => {
+    s.points.forEach((p) => {
+      xs.push(p.t);
+      allYs.push(p.v);
+    });
+  });
 
-  if (!data.length || !allYs.length) {
+  if (!xs.length || !allYs.length) {
     return <div ref={containerRef} className="empty" style={{ height }}>No timeline data yet.</div>;
   }
 
-  const xMin = xs[0];
-  const xMax = xs[xs.length - 1];
+  const xMin = Math.min(...xs);
+  const xMax = Math.max(...xs);
   const xRange = xMax - xMin || 1;
   let yMin = Math.min(...allYs);
   let yMax = Math.max(...allYs);
@@ -103,19 +138,29 @@ function PriceChart({ snapshots, mode = "band", height = 280 }) {
   const soldPts = data.filter((s) => s.sold_price != null);
   const soldEvent = soldPts.length ? soldPts[0] : null;
 
-  // Hover handler
+  // Hover handler: snap to nearest plotted point across snapshots + historical series
   const onMouseMove = (e) => {
     const rect = containerRef.current.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     if (mx < padding.l || mx > w - padding.r) { setHover(null); return; }
-    // Find nearest snapshot
-    let nearest = data[0], nd = Infinity;
-    for (const s of data) {
-      const d = Math.abs(xScale(s.fetched_at) - mx);
-      if (d < nd) { nd = d; nearest = s; }
+    const candidates = [];
+    for (const s of data) candidates.push(s.fetched_at);
+    for (const series of histSeries) for (const p of series.points) candidates.push(p.t);
+    if (!candidates.length) { setHover(null); return; }
+    let nearestT = candidates[0], nd = Infinity;
+    for (const t of candidates) {
+      const d = Math.abs(xScale(t) - mx);
+      if (d < nd) { nd = d; nearestT = t; }
     }
-    setHover(nearest);
+    setHover({ t: nearestT });
   };
+
+  const hoverSnap = hover ? data.find((s) => s.fetched_at === hover.t) : null;
+  const hoverHist = hover
+    ? histSeries
+        .map((s) => ({ source: s.source, point: s.points.find((p) => p.t === hover.t) }))
+        .filter((x) => x.point)
+    : [];
 
   return (
     <div ref={containerRef} className="chart-wrap" style={{ width: "100%" }}>
@@ -146,6 +191,25 @@ function PriceChart({ snapshots, mode = "band", height = 280 }) {
           <path d={listPath} fill="none" stroke="var(--text-muted)" strokeWidth="1.25" strokeDasharray="4 3" />
         )}
 
+        {/* Historical vendor lines */}
+        {histSeries.map((s) => {
+          const style = VENDOR_STYLES[s.source] || { color: "var(--text-muted)", dash: null };
+          const d = s.points.map((p, i) =>
+            (i ? "L" : "M") + xScale(p.t).toFixed(1) + " " + yScale(p.v).toFixed(1)
+          ).join(" ");
+          return (
+            <path
+              key={s.source}
+              d={d}
+              fill="none"
+              stroke={style.color}
+              strokeWidth="1.5"
+              strokeDasharray={style.dash || undefined}
+              opacity={0.85}
+            />
+          );
+        })}
+
         {/* Estimate line */}
         {estPath && (
           <path d={estPath} fill="none" stroke="var(--accent)" strokeWidth="2" />
@@ -170,18 +234,24 @@ function PriceChart({ snapshots, mode = "band", height = 280 }) {
         {/* Hover crosshair + tooltip */}
         {hover && (
           <g>
-            <line x1={xScale(hover.fetched_at)} x2={xScale(hover.fetched_at)} y1={padding.t} y2={height - padding.b} stroke="var(--border-strong)" strokeWidth="1" />
-            {hover.best_current_estimate != null && (
-              <circle cx={xScale(hover.fetched_at)} cy={yScale(hover.best_current_estimate)} r="4" fill="var(--accent)" stroke="var(--bg-elev)" strokeWidth="2" />
+            <line x1={xScale(hover.t)} x2={xScale(hover.t)} y1={padding.t} y2={height - padding.b} stroke="var(--border-strong)" strokeWidth="1" />
+            {hoverSnap && hoverSnap.best_current_estimate != null && (
+              <circle cx={xScale(hover.t)} cy={yScale(hoverSnap.best_current_estimate)} r="4" fill="var(--accent)" stroke="var(--bg-elev)" strokeWidth="2" />
             )}
+            {hoverHist.map(({ source, point }) => {
+              const style = VENDOR_STYLES[source] || { color: "var(--text-muted)" };
+              return (
+                <circle key={source} cx={xScale(point.t)} cy={yScale(point.v)} r="4" fill={style.color} stroke="var(--bg-elev)" strokeWidth="2" />
+              );
+            })}
           </g>
         )}
       </svg>
 
-      {hover && (
+      {hover && (hoverSnap || hoverHist.length > 0) && (
         <div style={{
           position: "absolute",
-          left: Math.min(w - 200, Math.max(8, xScale(hover.fetched_at) + 12)),
+          left: Math.min(w - 200, Math.max(8, xScale(hover.t) + 12)),
           top: 10,
           background: "var(--bg-elev)",
           border: "1px solid var(--border)",
@@ -193,37 +263,62 @@ function PriceChart({ snapshots, mode = "band", height = 280 }) {
           minWidth: "180px",
           zIndex: 2,
         }}>
-          <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>{fmt.date(hover.fetched_at)}</div>
-          {hover.best_current_estimate != null && (
+          <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>{fmt.date(hover.t)}</div>
+          {hoverSnap && hoverSnap.best_current_estimate != null && (
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span>Estimate</span>
-              <span className="mono" style={{ fontWeight: 600 }}>{fmt.usd(hover.best_current_estimate)}</span>
+              <span className="mono" style={{ fontWeight: 600 }}>{fmt.usd(hoverSnap.best_current_estimate)}</span>
             </div>
           )}
-          {hover.estimate_low != null && (
+          {hoverSnap && hoverSnap.estimate_low != null && (
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--text-muted)" }}>
               <span>Range</span>
-              <span className="mono">{fmt.usd(hover.estimate_low, {compact:true})} – {fmt.usd(hover.estimate_high, {compact:true})}</span>
+              <span className="mono">{fmt.usd(hoverSnap.estimate_low, {compact:true})} – {fmt.usd(hoverSnap.estimate_high, {compact:true})}</span>
             </div>
           )}
-          {hover.list_price != null && (
+          {hoverSnap && hoverSnap.list_price != null && (
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span>List</span>
-              <span className="mono" style={{ fontWeight: 500 }}>{fmt.usd(hover.list_price)}</span>
+              <span className="mono" style={{ fontWeight: 500 }}>{fmt.usd(hoverSnap.list_price)}</span>
             </div>
           )}
-          {hover.sold_price != null && (
+          {hoverSnap && hoverSnap.sold_price != null && (
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--pos)" }}>
               <span>Sold</span>
-              <span className="mono" style={{ fontWeight: 600 }}>{fmt.usd(hover.sold_price)}</span>
+              <span className="mono" style={{ fontWeight: 600 }}>{fmt.usd(hoverSnap.sold_price)}</span>
             </div>
           )}
+          {hoverHist.map(({ source, point }) => {
+            const style = VENDOR_STYLES[source] || { color: "var(--text-muted)" };
+            return (
+              <div key={source} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ color: style.color }}>{source}</span>
+                <span className="mono" style={{ fontWeight: 500 }}>{fmt.usd(point.v)}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
       <div className="chart-legend" style={{ marginTop: 8 }}>
         <span className="item"><span className="swatch" /> Estimate</span>
         {mode === "band" && <span className="item"><span className="swatch band" /> Low / high range</span>}
+        {histSeries.map((s) => {
+          const style = VENDOR_STYLES[s.source] || { color: "var(--text-muted)", dash: null };
+          return (
+            <span key={s.source} className="item">
+              <span
+                className="swatch"
+                style={{
+                  background: "transparent",
+                  borderTop: `2px ${style.dash ? "dashed" : "solid"} ${style.color}`,
+                  width: 14, height: 0, marginRight: 4,
+                }}
+              />
+              {s.source} history
+            </span>
+          );
+        })}
         <span className="item"><span className="swatch dashed" /> List price</span>
         <span className="item"><span className="swatch dot" /> Sold</span>
       </div>
