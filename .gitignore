@@ -1,0 +1,11 @@
+.venv/
+.venv312/
+__pycache__/
+*.pyc
+runs/
+.DS_Store
+.pycache/
+data/addresses.csv
+data/elder-road.csv
+data/app.db
+data/app.db-*
