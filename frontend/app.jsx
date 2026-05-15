@@ -8,6 +8,7 @@ function App() {
   const [loading, setLoading] = useS(true);
   const [refreshingAll, setRefreshingAll] = useS(false);
   const [theme, setTheme] = useS(() => localStorage.getItem("ht_theme") || "light");
+  const [sidebarOpen, setSidebarOpen] = useS(false);
 
   useE(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -36,6 +37,7 @@ function App() {
       if (page === "add") setRoute({ page: "add", arg: null });
       else if (page === "property" && arg) setRoute({ page: "detail", arg: Number(arg) });
       else setRoute({ page: "dashboard", arg: null });
+      setSidebarOpen(false);
     }
     apply();
     window.addEventListener("hashchange", apply);
@@ -49,6 +51,7 @@ function App() {
     else if (page === "detail") h = `#property/${arg}`;
     if (h !== window.location.hash) window.location.hash = h;
     else setRoute({ page, arg });
+    setSidebarOpen(false);
   }
 
   async function handleRefreshAll() {
@@ -100,7 +103,8 @@ function App() {
 
   return (
     <ToastProvider>
-      <div className="app">
+      <div className={`app ${sidebarOpen ? "sidebar-open" : ""}`}>
+        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
         <aside className="sidebar">
           <div className="sidebar-brand">
             <div className="mark">HT</div>
@@ -137,6 +141,10 @@ function App() {
 
         <main className="main">
           <div className="topbar">
+            <button className="icon-btn sidebar-toggle" title="Open menu"
+                    onClick={() => setSidebarOpen(true)}>
+              <Icon name="menu" size={16} />
+            </button>
             <div className="crumbs">
               {crumbs.map((c, i) => (
                 <React.Fragment key={i}>
