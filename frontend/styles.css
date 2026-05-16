@@ -440,6 +440,51 @@ table.data tbody tr.archived-row td {
   margin-left: 4px;
 }
 
+/* ---------- Scope segmented control (Active/Archived/All) ---------- */
+.scope-bar {
+  display: inline-flex;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.scope-btn:hover { color: var(--text); }
+.scope-btn.active {
+  background: var(--bg-elev);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.scope-btn .count {
+  font-size: 10px;
+  background: var(--bg-active);
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.scope-btn.active .count {
+  background: var(--accent-soft);
+  color: color-mix(in oklab, var(--accent) 75%, var(--text));
+}
+
 /* ---------- Status badge ---------- */
 .badge {
   display: inline-flex;

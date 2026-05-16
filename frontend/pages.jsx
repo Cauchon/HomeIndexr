@@ -29,14 +29,14 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         display_address: displayAddress(p),
         estimate: p.best_current_estimate,
         list: p.list_price,
-        sold: p.sold_price,
+        sold: p.sold_price ?? p.last_sold_price,
         estVsList:
           p.best_current_estimate != null && p.list_price != null
             ? p.best_current_estimate - p.list_price
             : null,
         estVsSold:
-          p.best_current_estimate != null && p.sold_price != null
-            ? p.best_current_estimate - p.sold_price
+          p.best_current_estimate != null && (p.sold_price ?? p.last_sold_price) != null
+            ? p.best_current_estimate - (p.sold_price ?? p.last_sold_price)
             : null,
       };
     });
@@ -95,6 +95,26 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         </div>
       </div>
 
+      <div className="scope-bar" role="tablist" aria-label="Tracking scope">
+        {[
+          { v: "active",   label: "Active",   count: activeCount },
+          { v: "archived", label: "Archived", count: archivedCount },
+          { v: "all",      label: "All",      count: properties.length },
+        ].map((o) => (
+          <button
+            key={o.v}
+            type="button"
+            role="tab"
+            aria-selected={tracking === o.v}
+            className={`scope-btn ${tracking === o.v ? "active" : ""}`}
+            onClick={() => setTracking(o.v)}
+          >
+            {o.label}
+            <span className="count">{o.count}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="filterbar">
         <div className="field grow">
           <Icon name="search" />
@@ -113,13 +133,6 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
           </select>
         </div>
         <div className="divider" />
-        <div className="field has-select">
-          <select value={tracking} onChange={(e) => setTracking(e.target.value)}>
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-            <option value="all">Active + archived</option>
-          </select>
-        </div>
         <div className="field has-select">
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">All match status</option>
@@ -149,9 +162,9 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               <SortHeader label="Listing"      k="listing_state" sort={sort} setSort={setSort} />
               <SortHeader label="Est. value"   k="estimate"      sort={sort} setSort={setSort} align="right" />
               <SortHeader label="List price"   k="list"          sort={sort} setSort={setSort} align="right" />
-              <SortHeader label="Sale price"   k="sold"          sort={sort} setSort={setSort} align="right" />
+              <SortHeader label="Last sale"    k="sold"          sort={sort} setSort={setSort} align="right" />
               <SortHeader label="Est − List"   k="estVsList"     sort={sort} setSort={setSort} align="right" />
-              <SortHeader label="Est − Sale"   k="estVsSold"     sort={sort} setSort={setSort} align="right" />
+              <SortHeader label="Est − Last"   k="estVsSold"     sort={sort} setSort={setSort} align="right" />
               <SortHeader label="Added"        k="created_at"    sort={sort} setSort={setSort} defaultDir="desc" />
               <SortHeader label="Last refresh" k="updated_at"    sort={sort} setSort={setSort} defaultDir="desc" />
               <SortHeader label="Status"       k="status"        sort={sort} setSort={setSort} />
