@@ -86,6 +86,17 @@ CREATE TABLE IF NOT EXISTS historical_estimates (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hist_property ON historical_estimates(property_id, date);
+
+CREATE TABLE IF NOT EXISTS property_events (
+    property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    event_name TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY (property_id, date, event_name, price)
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_property ON property_events(property_id, date);
 """
 
 

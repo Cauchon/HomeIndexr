@@ -14,15 +14,15 @@ React app (UMD + Babel-standalone) that the backend also serves.
 ```
 backend/app/
   main.py        FastAPI routes + serves the frontend at /
-  scraper.py     HomeHarvest wrapper; normalizes AVM data
-  store.py       SQLite reads/writes (append-only snapshots)
+  scraper.py     HomeHarvest/Realtor wrappers; normalizes AVM + history data
+  store.py       SQLite reads/writes (append-only snapshots + history/events)
   db.py          schema + connection helper (data/app.db)
   models.py      pydantic types (currently unused by routes)
 frontend/
   index.html     loads /static/* via UMD React + Babel
   styles.css     all visual tokens; from the design bundle
   components.jsx shared UI (icons, badges, formatters, JsonViewer)
-  chart.jsx      PriceChart (estimate line + range band)
+  chart.jsx      PriceChart (AVM lines + Realtor event markers)
   pages.jsx      Dashboard, AddProperty, PropertyDetail
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
@@ -56,7 +56,16 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
    `raw["estimates"]["currentValues"]` (nested camelCase). Preference order:
    entry flagged `isBestHomeValue` → first entry. Keep this normalizer in one
    place; don't fork it.
-6. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
+6. **Historical AVMs and Realtor market events are separate from snapshots.**
+   Backfill writes `historical_estimates` for monthly AVM history and
+   `property_events` for sparse market events such as `Listed`, `Sold`,
+   `Price Changed`, `Relisted`, and `Listing removed`. Do not store those as
+   fake snapshots just to make the frontend simpler.
+7. **The Property timeline is event-shaped, not snapshot-column-shaped.**
+   List/sale/price-change events should render as their own rows. Estimate
+   rows should keep low/high range visually attached to the estimate value
+   instead of spreading it across disconnected columns.
+8. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
    If you add a file, register it in `index.html` with `type="text/babel"` and
    expose any new component on `window` so other files can use it.
 
@@ -75,6 +84,8 @@ snapshots (id, property_id, fetched_at, status, matched_address,
            list_price, sold_price, last_sold_price,
            beds, baths, sqft, lot_sqft, year_built,
            latitude, longitude, raw_json, error)
+historical_estimates(property_id, source, date, estimate)
+property_events(property_id, date, event_name, price)
 ```
 
 `status` is one of: `matched`, `candidate_mismatch`, `no_candidates`, `error`.
@@ -88,10 +99,12 @@ switch to seconds without updating the frontend formatters.
 | Method | Path                              | Body / Notes                                    |
 |-------:|-----------------------------------|-------------------------------------------------|
 | GET    | `/api/properties`                 | List + latest snapshot for each                 |
-| GET    | `/api/properties/{id}`            | Full property + full snapshot history           |
+| GET    | `/api/properties/{id}`            | Full property + snapshots + historical + events |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
 | POST   | `/api/properties/{id}/refresh`    | Appends a new snapshot                          |
+| POST   | `/api/properties/{id}/backfill`   | Upserts historical AVMs + Realtor events        |
 | POST   | `/api/properties/refresh-all`     | Appends a snapshot for every property           |
+| POST   | `/api/properties/backfill-all`    | Backfills history/events for every property     |
 
 `POST /api/properties` returns one of:
 
@@ -112,6 +125,8 @@ switch to seconds without updating the frontend formatters.
   [components.jsx](frontend/components.jsx) — don't recompute formatting inline.
 - CSS lives entirely in [styles.css](frontend/styles.css), driven by `--*`
   tokens. Light/dark themes are toggled via `data-theme` on `<html>`.
+- The detail chart should keep AVM sources as continuous monthly lines and
+  Realtor listing/sale/price-change history as discrete dated markers.
 
 ## What's deliberately not built (and why)
 

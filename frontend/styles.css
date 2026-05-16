@@ -803,6 +803,281 @@ table.data .address-cell .sub {
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
+/* ---------- Event timeline ---------- */
+.event-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.event-pill.ok       { color: var(--pos);  background: var(--pos-soft);  border-color: color-mix(in oklab, var(--pos) 28%, transparent); }
+.event-pill.warn     { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in oklab, var(--warn) 28%, transparent); }
+.event-pill.err      { color: var(--neg);  background: var(--neg-soft);  border-color: color-mix(in oklab, var(--neg) 28%, transparent); }
+.event-pill.info     { color: var(--info); background: var(--info-soft); border-color: color-mix(in oklab, var(--info) 28%, transparent); }
+.event-pill.neutral  { color: var(--text-muted); }
+
+.activity-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.activity-filters .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.activity-filters .chip:hover { background: var(--bg-hover); color: var(--text); }
+.activity-filters .chip.active {
+  background: var(--text);
+  color: var(--bg-elev);
+  border-color: var(--text);
+}
+.activity-filters .chip .count {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.activity-filters .chip.active .count { color: color-mix(in oklab, var(--bg-elev) 70%, transparent); }
+.activity-filters .spacer { flex: 1; }
+.activity-count {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+table.data.timeline tbody td {
+  padding: 10px 12px;
+  height: auto;
+  vertical-align: top;
+}
+table.data.timeline .date-cell {
+  white-space: nowrap;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+table.data.timeline .date-cell .rel {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+table.data.timeline .value-cell .main {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+table.data.timeline .value-cell .sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+table.data.timeline .change-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+table.data.timeline .delta-num { font-size: 12px; font-weight: 500; }
+table.data.timeline .delta-num.pos { color: var(--pos); }
+table.data.timeline .delta-num.neg { color: var(--neg); }
+table.data.timeline .delta-num span { color: var(--text-muted); font-weight: 400; }
+table.data.timeline .delta-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+table.data.timeline tbody tr.historical-bg td {
+  background: color-mix(in oklab, var(--bg-sunken) 50%, transparent);
+}
+table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover); }
+
+.range-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.range-inline .bar {
+  position: relative;
+  width: 56px;
+  height: 4px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.range-inline .bar .band {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.range-inline .bar .tick {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: var(--accent);
+}
+
+/* ---------- Ownership strip ---------- */
+.lifetime-strip {
+  position: relative;
+  padding: 16px 16px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.lifetime-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.lifetime-head > div:first-child {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.lifetime-head .pos { color: var(--pos); font-weight: 600; }
+.lifetime-head .neg { color: var(--neg); font-weight: 600; }
+.lifetime-strip .axis {
+  position: relative;
+  height: 64px;
+  margin-top: 12px;
+}
+.lifetime-strip .baseline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--border-strong);
+}
+.lifetime-strip .window {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  background: color-mix(in oklab, var(--accent) 9%, transparent);
+  border-left: 1px dashed color-mix(in oklab, var(--accent) 55%, transparent);
+  border-right: 1px dashed color-mix(in oklab, var(--accent) 55%, transparent);
+  pointer-events: none;
+}
+.lifetime-strip .year-tick {
+  position: absolute;
+  top: calc(50% - 3px);
+  width: 1px;
+  height: 7px;
+  background: var(--border-strong);
+}
+.lifetime-strip .year-label {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.lifetime-strip .sale-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--pos);
+  border: 2px solid var(--bg-elev);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--pos) 50%, transparent);
+  cursor: default;
+}
+.lifetime-strip .sale-label {
+  position: absolute;
+  top: calc(50% - 30px);
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  line-height: 1.1;
+}
+.lifetime-strip .sale-label .year {
+  display: block;
+  font-size: 9px;
+  color: var(--text-faint);
+  font-weight: 400;
+  margin-top: 1px;
+}
+.lifetime-strip .today-mark {
+  position: absolute;
+  top: calc(50% - 6px);
+  width: 2px;
+  height: 12px;
+  background: var(--text);
+  transform: translateX(-50%);
+}
+.lifetime-strip .legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.lifetime-strip .legend .item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lifetime-strip .legend .swatch.sale {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pos);
+}
+.lifetime-strip .legend .swatch.window {
+  width: 14px;
+  height: 8px;
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  border-left: 1px dashed color-mix(in oklab, var(--accent) 55%, transparent);
+  border-right: 1px dashed color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.lifetime-strip .today-mini {
+  width: 2px;
+  height: 10px;
+  background: var(--text);
+  display: inline-block;
+}
+
 /* ---------- Sparkline ---------- */
 .spark {
   display: inline-block;

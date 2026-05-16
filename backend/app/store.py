@@ -181,6 +181,34 @@ def replace_historical(property_id: int, records: list[dict]) -> int:
     return len(rows)
 
 
+def replace_events(property_id: int, records: list[dict]) -> int:
+    """Upsert Realtor market events for a property. Returns rows written."""
+    now = _now()
+    rows = []
+    seen = set()
+    for r in records:
+        date = r.get("date")
+        event_name = r.get("event_name")
+        price = r.get("price")
+        if not date or not event_name or price is None:
+            continue
+        row = (property_id, str(date)[:10], str(event_name), int(price), now)
+        key = row[:4]
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(row)
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO property_events "
+            "(property_id, date, event_name, price, fetched_at) VALUES (?,?,?,?,?)",
+            rows,
+        )
+    return len(rows)
+
+
 def list_historical(property_id: int) -> list[dict]:
     with get_conn() as conn:
         return [
@@ -188,6 +216,18 @@ def list_historical(property_id: int) -> list[dict]:
             for r in conn.execute(
                 "SELECT source, date, estimate FROM historical_estimates "
                 "WHERE property_id = ? ORDER BY date ASC, source ASC",
+                (property_id,),
+            )
+        ]
+
+
+def list_events(property_id: int) -> list[dict]:
+    with get_conn() as conn:
+        return [
+            {"date": r["date"], "event_name": r["event_name"], "price": r["price"]}
+            for r in conn.execute(
+                "SELECT date, event_name, price FROM property_events "
+                "WHERE property_id = ? ORDER BY date ASC, event_name ASC, price ASC",
                 (property_id,),
             )
         ]

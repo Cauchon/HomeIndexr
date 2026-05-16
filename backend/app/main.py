@@ -52,6 +52,7 @@ def get_property(pid: int):
         raise HTTPException(404, "property not found")
     p["snapshots"] = store.list_snapshots(pid)
     p["historical"] = store.list_historical(pid)
+    p["events"] = store.list_events(pid)
     return p
 
 
@@ -61,13 +62,14 @@ def backfill_property(pid: int):
     if not prop:
         raise HTTPException(404, "property not found")
     if not prop.get("property_id"):
-        return {"id": pid, "written": 0, "error": "no property_id on record"}
+        return {"id": pid, "written": 0, "events_written": 0, "error": "no property_id on record"}
     try:
-        records = scraper.fetch_historical(prop["property_id"])
+        bundle = scraper.fetch_history_bundle(prop["property_id"])
     except Exception as e:  # noqa: BLE001
-        return {"id": pid, "written": 0, "error": f"{type(e).__name__}: {e}"}
-    written = store.replace_historical(pid, records)
-    return {"id": pid, "written": written, "error": None}
+        return {"id": pid, "written": 0, "events_written": 0, "error": f"{type(e).__name__}: {e}"}
+    written = store.replace_historical(pid, bundle["estimates"])
+    events_written = store.replace_events(pid, bundle["events"])
+    return {"id": pid, "written": written, "events_written": events_written, "error": None}
 
 
 @app.post("/api/properties/backfill-all")
@@ -76,14 +78,15 @@ def backfill_all():
     results = []
     for p in props:
         if not p.get("property_id"):
-            results.append({"id": p["id"], "written": 0, "error": "no property_id"})
+            results.append({"id": p["id"], "written": 0, "events_written": 0, "error": "no property_id"})
             continue
         try:
-            records = scraper.fetch_historical(p["property_id"])
-            written = store.replace_historical(p["id"], records)
-            results.append({"id": p["id"], "written": written, "error": None})
+            bundle = scraper.fetch_history_bundle(p["property_id"])
+            written = store.replace_historical(p["id"], bundle["estimates"])
+            events_written = store.replace_events(p["id"], bundle["events"])
+            results.append({"id": p["id"], "written": written, "events_written": events_written, "error": None})
         except Exception as e:  # noqa: BLE001
-            results.append({"id": p["id"], "written": 0, "error": f"{type(e).__name__}: {e}"})
+            results.append({"id": p["id"], "written": 0, "events_written": 0, "error": f"{type(e).__name__}: {e}"})
     return {"backfilled": sum(1 for r in results if r["error"] is None), "results": results}
 
 
@@ -131,6 +134,8 @@ def add_property(body: AddBody):
         store.insert_snapshot(prop["id"], fetched)
 
     prop["snapshots"] = store.list_snapshots(prop["id"])
+    prop["historical"] = store.list_historical(prop["id"])
+    prop["events"] = store.list_events(prop["id"])
     return {"status": status, "property": prop, "candidate": None, "error": None}
 
 
@@ -146,6 +151,8 @@ def refresh_property(pid: int):
     store.insert_snapshot(pid, fetched)
     out = store.get_property(pid)
     out["snapshots"] = store.list_snapshots(pid)
+    out["historical"] = store.list_historical(pid)
+    out["events"] = store.list_events(pid)
     return out
 
 
