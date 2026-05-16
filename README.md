@@ -3,9 +3,8 @@
 Local-first dashboard for tracking home prices over time. Fetches property data
 from Realtor.com via [HomeHarvest](https://github.com/Bunsly/HomeHarvest)
 server-side and stores the latest fetched state on each tracked property in
-SQLite. The Property view can also backfill Realtor historical AVMs and sparse
-market events so sales, listings, and price changes render as first-class
-timeline rows.
+SQLite. The Property view can also backfill Realtor historical AVMs, sparse
+market events, and tax assessment history.
 
 ## Stack
 
@@ -13,6 +12,21 @@ timeline rows.
 - **Frontend**: React (via UMD + Babel-standalone) served as static files by the
   backend. No build step.
 - **Storage**: `data/app.db` (SQLite, WAL mode). Auto-created on first run.
+
+## Setup
+
+Use Python 3.12 for this project. HomeHarvest 0.8.18 did not import reliably
+under the system Python 3.9 on this machine.
+
+```bash
+python3.12 -m venv .venv312
+.venv312/bin/python -m pip install \
+  fastapi==0.136.1 \
+  homeharvest==0.8.18 \
+  uvicorn==0.47.0 \
+  requests==2.34.1 \
+  pydantic==2.13.4
+```
 
 ## Run locally
 
@@ -29,12 +43,16 @@ Then open <http://127.0.0.1:5173>.
 | Method | Path                                  | Purpose                                |
 |-------:|---------------------------------------|----------------------------------------|
 | GET    | `/api/properties`                     | List properties with current state     |
-| GET    | `/api/properties/{id}`                | Property + history + events            |
+| GET    | `/api/properties/{id}`                | Property + history + events + taxes    |
 | POST   | `/api/properties`                     | Add a property (returns match status)  |
+| PATCH  | `/api/properties/{id}`                | Edit address/display fields and active state |
+| POST   | `/api/properties/{id}/archive`        | Hide from default dashboard and refresh-all |
+| POST   | `/api/properties/{id}/restore`        | Restore an archived property           |
+| DELETE | `/api/properties/{id}`                | Delete property plus history/events/taxes |
 | POST   | `/api/properties/{id}/refresh`        | Refresh current property state         |
-| POST   | `/api/properties/{id}/backfill`       | Upsert historical AVMs + market events |
-| POST   | `/api/properties/refresh-all`         | Refresh current state for every property |
-| POST   | `/api/properties/backfill-all`        | Backfill history/events for all records |
+| POST   | `/api/properties/{id}/backfill`       | Upsert AVMs, market events, taxes      |
+| POST   | `/api/properties/refresh-all`         | Refresh current state for active properties |
+| POST   | `/api/properties/backfill-all`        | Backfill history/events/taxes for all records |
 
 `POST /api/properties` returns one of:
 `matched`, `candidate_mismatch`, `no_candidates`, `error`. A
@@ -49,6 +67,11 @@ save.
   source, and date.
 - `property_events` — Realtor market events such as listed, sold, relisted,
   listing removed, and price changed.
+- `tax_history` — yearly Realtor tax bills and county assessment values.
+
+Archived properties stay in SQLite with their history intact, but the dashboard
+defaults to active rows and refresh-all skips archived rows. Delete is permanent
+and relies on SQLite foreign-key cascades to remove history, events, and taxes.
 
 AVM normalization picks the "best" current estimate from either of the two
 shapes HomeHarvest returns: `raw["current_estimates"]` (flat snake_case) or
@@ -79,15 +102,16 @@ threshold.
 The Property page is event-oriented:
 
 - The chart renders Cotality and Quantarium as continuous AVM lines.
-- Realtor listing/sale/price-change records render as discrete markers.
+- Realtor listing/sale/price-change records render in the timeline and ownership
+  history strip.
 - The ownership-history strip zooms out across recorded sales while the chart
   focuses on the denser AVM period.
 - The Timeline tab uses `Date`, `Event`, `Value`, and `Change` columns. Estimate
   rows keep low/high range inline with the estimate value; market rows show
   list/sale/price-change values independently.
 
-Use **Backfill history** on a Property page to populate `historical_estimates`
-and `property_events` for that property.
+Use **Backfill history** on a Property page to populate `historical_estimates`,
+`property_events`, and `tax_history` for that property.
 
 ## Refresh jobs admin
 
@@ -99,15 +123,38 @@ The gear icon in the top bar opens the Refresh jobs page (`#admin`). It shows:
 - a cadence selector, defaulting to twice per month
 
 The **Refresh all now** button calls `POST /api/properties/refresh-all` and then
-reloads current property state. The cadence selector is UI state only for now;
-it does not start background work inside FastAPI.
+reloads current property state. The cadence selector maps to the launchd install
+command shown in the Schedule panel; it does not start background work inside
+FastAPI.
 
 ## Scheduled refreshes
 
-Not wired up yet — v1 ships manual refresh only (per-property, dashboard
-"Refresh all", and the Refresh jobs page). The intended cadence is twice per
-month; the endpoint `POST /api/properties/refresh-all` is the hook for a cron or
-launchd job later.
+Scheduled refreshes are implemented as a macOS LaunchAgent that calls the
+existing local API endpoint. Keep the HomeTracker server running on the same
+port used when installing the job.
+
+```bash
+./scripts/install_scheduled_refresh.py --cadence biweekly --port 5173
+```
+
+Supported cadences are `daily`, `weekly`, `biweekly`, `monthly`, and `manual`.
+`manual` removes the installed LaunchAgent. `biweekly` runs on the 1st and 15th
+of each month at 03:00 by default. To choose a time:
+
+```bash
+./scripts/install_scheduled_refresh.py --cadence weekly --time 08:30 --port 5173
+```
+
+To remove the LaunchAgent:
+
+```bash
+./scripts/install_scheduled_refresh.py --uninstall
+# equivalent to:
+./scripts/install_scheduled_refresh.py --cadence manual
+```
+
+The LaunchAgent writes stdout/stderr logs to `data/scheduled-refresh.out.log`
+and `data/scheduled-refresh.err.log`.
 
 ## Auth
 

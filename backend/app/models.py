@@ -46,6 +46,7 @@ class Property(BaseModel):
     updated_at: int
     historical: list[dict] = []
     events: list[dict] = []
+    tax_history: list[dict] = []
 
 
 class AddPropertyResponse(BaseModel):

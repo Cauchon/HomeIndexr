@@ -139,6 +139,54 @@ def create_property(input_address: str, fetched: dict) -> dict:
         return _row_to_property(row)
 
 
+def update_property(property_id: int, changes: dict) -> dict | None:
+    """Update user-managed property fields and return the updated row."""
+    allowed = {"input_address", "canonical_address", "city", "state", "zip", "active"}
+    updates = {k: v for k, v in changes.items() if k in allowed}
+    if not updates:
+        return get_property(property_id)
+
+    now = _now()
+    assignments = []
+    values = []
+    for key, value in updates.items():
+        if key in {"input_address", "canonical_address", "city", "state", "zip"}:
+            value = " ".join(str(value).split()) if value is not None else None
+            if value == "":
+                value = None
+            if key == "state" and value:
+                value = value.upper()
+            if key == "input_address" and not value:
+                raise ValueError("input_address is required")
+        if key == "active":
+            value = 1 if bool(value) else 0
+        assignments.append(f"{key} = ?")
+        values.append(value)
+
+    assignments.append("updated_at = ?")
+    values.extend([now, property_id])
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            f"UPDATE properties SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM properties WHERE id = ?", (property_id,)).fetchone()
+        return _row_to_property(row) if row else None
+
+
+def set_property_active(property_id: int, active: bool) -> dict | None:
+    return update_property(property_id, {"active": active})
+
+
+def delete_property(property_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM properties WHERE id = ?", (property_id,))
+        return cur.rowcount > 0
+
+
 def update_property_meta(property_id: int, fetched: dict) -> None:
     """Refresh metadata and current fetched state on the property row."""
     now = _now()
@@ -239,6 +287,56 @@ def replace_events(property_id: int, records: list[dict]) -> int:
     return len(rows)
 
 
+def replace_tax_history(property_id: int, records: list[dict]) -> int:
+    """Upsert Realtor tax history for a property. Returns rows written."""
+    now = _now()
+    rows = []
+    seen = set()
+    for r in records:
+        year = r.get("year")
+        if year is None:
+            continue
+        year = int(year)
+        if year in seen:
+            continue
+        seen.add(year)
+        rows.append((
+            property_id,
+            year,
+            r.get("assessed_year"),
+            r.get("tax"),
+            r.get("assessment_building"),
+            r.get("assessment_land"),
+            r.get("assessment_total"),
+            r.get("market_building"),
+            r.get("market_land"),
+            r.get("market_total"),
+            r.get("appraisal_building"),
+            r.get("appraisal_land"),
+            r.get("appraisal_total"),
+            r.get("value_building"),
+            r.get("value_land"),
+            r.get("value_total"),
+            r.get("tax_code_area"),
+            now,
+        ))
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            """INSERT OR REPLACE INTO tax_history
+               (property_id, year, assessed_year, tax,
+                assessment_building, assessment_land, assessment_total,
+                market_building, market_land, market_total,
+                appraisal_building, appraisal_land, appraisal_total,
+                value_building, value_land, value_total,
+                tax_code_area, fetched_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            rows,
+        )
+    return len(rows)
+
+
 def list_historical(property_id: int) -> list[dict]:
     with get_conn() as conn:
         return [
@@ -258,6 +356,42 @@ def list_events(property_id: int) -> list[dict]:
             for r in conn.execute(
                 "SELECT date, event_name, price FROM property_events "
                 "WHERE property_id = ? ORDER BY date ASC, event_name ASC, price ASC",
+                (property_id,),
+            )
+        ]
+
+
+def list_tax_history(property_id: int) -> list[dict]:
+    with get_conn() as conn:
+        return [
+            {
+                "year": r["year"],
+                "assessed_year": r["assessed_year"],
+                "tax": r["tax"],
+                "assessment_building": r["assessment_building"],
+                "assessment_land": r["assessment_land"],
+                "assessment_total": r["assessment_total"],
+                "market_building": r["market_building"],
+                "market_land": r["market_land"],
+                "market_total": r["market_total"],
+                "appraisal_building": r["appraisal_building"],
+                "appraisal_land": r["appraisal_land"],
+                "appraisal_total": r["appraisal_total"],
+                "value_building": r["value_building"],
+                "value_land": r["value_land"],
+                "value_total": r["value_total"],
+                "tax_code_area": r["tax_code_area"],
+            }
+            for r in conn.execute(
+                """SELECT year, assessed_year, tax,
+                          assessment_building, assessment_land, assessment_total,
+                          market_building, market_land, market_total,
+                          appraisal_building, appraisal_land, appraisal_total,
+                          value_building, value_land, value_total,
+                          tax_code_area
+                   FROM tax_history
+                   WHERE property_id = ?
+                   ORDER BY year ASC""",
                 (property_id,),
             )
         ]

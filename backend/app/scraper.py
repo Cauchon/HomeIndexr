@@ -30,6 +30,13 @@ HISTORICAL_QUERY = (
     "    property_history {"
     "      date event_name price"
     "    }"
+    "    taxHistory: tax_history {"
+    "      tax year assessed_year tax_code_area"
+    "      assessment { building land total }"
+    "      market { building land total }"
+    "      appraisal { building land total }"
+    "      value { building land total }"
+    "    }"
     "    estimates {"
     "      historical_values {"
     "        source { type name }"
@@ -47,11 +54,12 @@ def fetch_history_bundle(property_id: str) -> dict:
     Returns:
       estimates: flat {source, date, estimate} records across available vendors.
       events: flat {date, event_name, price} records from Realtor property_history.
+      taxes: flat tax assessment records from Realtor tax_history.
 
     Collateral Analytics is filtered out of estimates to match `all_estimates`.
     """
     if not property_id:
-        return {"estimates": [], "events": []}
+        return {"estimates": [], "events": [], "taxes": []}
     payload = {
         "operationName": "GetHomeHistoricalEstimates",
         "query": HISTORICAL_QUERY,
@@ -96,12 +104,48 @@ def fetch_history_bundle(property_id: str) -> dict:
             continue
         seen_events.add(key)
         events.append({"date": key[0], "event_name": key[1], "price": key[2]})
-    return {"estimates": estimates, "events": events}
+
+    taxes = _normalize_tax_history(home.get("taxHistory") or home.get("tax_history") or [])
+    return {"estimates": estimates, "events": events, "taxes": taxes}
 
 
 def fetch_historical(property_id: str) -> list[dict]:
     """Fetch full historical AVM series for a property from Realtor.com."""
     return fetch_history_bundle(property_id)["estimates"]
+
+
+def _assessment_parts(row: dict, key: str) -> dict:
+    data = row.get(key)
+    if not isinstance(data, dict):
+        data = {}
+    return {
+        f"{key}_building": _to_int(data.get("building")),
+        f"{key}_land": _to_int(data.get("land")),
+        f"{key}_total": _to_int(data.get("total")),
+    }
+
+
+def _normalize_tax_history(rows: list[dict]) -> list[dict]:
+    """Return Realtor tax_history records in a stable flat shape."""
+    out: list[dict] = []
+    seen: set[int] = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        year = _to_int(row.get("year"))
+        if year is None or year in seen:
+            continue
+        seen.add(year)
+        item = {
+            "year": year,
+            "assessed_year": _to_int(row.get("assessed_year")),
+            "tax": _to_int(row.get("tax")),
+            "tax_code_area": row.get("tax_code_area"),
+        }
+        for key in ("assessment", "market", "appraisal", "value"):
+            item.update(_assessment_parts(row, key))
+        out.append(item)
+    return sorted(out, key=lambda x: x["year"])
 
 
 def _norm_str(s: str | None) -> str:

@@ -15,14 +15,14 @@ no-build React app (UMD + Babel-standalone) that the backend also serves.
 backend/app/
   main.py        FastAPI routes + serves the frontend at /
   scraper.py     HomeHarvest/Realtor wrappers; normalizes AVM + history data
-  store.py       SQLite reads/writes (current property state + history/events)
+  store.py       SQLite reads/writes (current property state + history/events/taxes)
   db.py          schema + connection helper (data/app.db)
   models.py      pydantic types (currently unused by routes)
 frontend/
   index.html     loads /static/* via UMD React + Babel
   styles.css     all visual tokens; from the design bundle
   components.jsx shared UI (icons, badges, formatters, JsonViewer)
-  chart.jsx      PriceChart (AVM lines + Realtor event markers)
+  chart.jsx      PriceChart (AVM lines; event rows/ownership strip live in pages.jsx)
   pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
@@ -37,7 +37,7 @@ data/app.db      SQLite database, auto-created on first run
 PORT=5180 ./run.sh      # alt port
 ```
 
-The first request creates `data/app.db`. To reset, delete `data/app.db*`.
+Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
 
 ## Architectural rules
 
@@ -47,7 +47,8 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
    overwrites the current normalized fields and raw JSON on the existing row.
 3. **Adding the same address must not duplicate the property.** `store.find_property_by_address`
    matches case- and whitespace-insensitive against both `input_address` and
-   `canonical_address`; new fetches for an existing address update that row.
+   `canonical_address`; new fetches for an existing address update and
+   reactivate that row.
 4. **Raw HomeHarvest JSON is preserved on the property row** in `properties.raw_json`
    for debugging. Don't strip it.
 5. **AVM data lives in two shapes.** `scraper._normalize_estimates` handles
@@ -60,11 +61,12 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
    `for_sale`, `pending`, `sold`, and `off_market`. Sold/closed records remain
    `sold` for `SOLD_TO_OFF_MARKET_DAYS` (currently 180 days) after the sale date,
    then become `off_market`.
-7. **Historical AVMs and Realtor market events are separate from current state.**
+7. **Historical AVMs, Realtor market events, and tax history are separate from current state.**
    Backfill writes `historical_estimates` for monthly AVM history and
    `property_events` for sparse market events such as `Listed`, `Sold`,
-   `Price Changed`, `Relisted`, and `Listing removed`. Do not fold those into
-   the current property row just to make the frontend simpler.
+   `Price Changed`, `Relisted`, and `Listing removed`, plus `tax_history` for
+   yearly tax and county assessment records. Do not fold those into the current
+   property row just to make the frontend simpler.
 8. **The Property timeline is event-shaped.**
    List/sale/price-change events should render as their own rows. Estimate
    rows should keep low/high range visually attached to the estimate value
@@ -72,11 +74,16 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
 9. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
    If you add a file, register it in `index.html` with `type="text/babel"` and
    expose any new component on `window` so other files can use it.
-10. **Refresh scheduling UI is not a backend scheduler.** The Refresh jobs page
-   can run `POST /api/properties/refresh-all`, show latest issue status, and
-   persist the selected cadence in localStorage. Do not add cron/looping work
-   inside the FastAPI process; wire external cron/launchd to the API endpoint
-   when real scheduling is needed.
+10. **Scheduled refreshes stay outside FastAPI.** The Refresh jobs page can run
+   `POST /api/properties/refresh-all`, show latest issue status, and persist
+   the selected cadence in localStorage. Real scheduling is handled by
+   `scripts/install_scheduled_refresh.py`, which installs a macOS LaunchAgent
+   that calls the API endpoint. Do not add cron/looping work inside the FastAPI
+   process.
+11. **Archived properties are soft-hidden, not deleted.** `properties.active = 0`
+    removes a row from the default dashboard and refresh-all sweeps while
+    preserving current state, raw JSON, historical AVMs, events, and taxes.
+    `DELETE /api/properties/{id}` is the permanent removal path.
 
 ## Data model
 
@@ -93,8 +100,14 @@ properties(id, input_address, canonical_address, city, state, zip,
            beds, baths, sqft, lot_sqft, year_built,
            latitude, longitude, raw_json, error, last_fetched_at,
            created_at, updated_at)
-historical_estimates(property_id, source, date, estimate)
-property_events(property_id, date, event_name, price)
+historical_estimates(property_id, source, date, estimate, fetched_at)
+property_events(property_id, date, event_name, price, fetched_at)
+tax_history(property_id, year, assessed_year, tax,
+            assessment_building, assessment_land, assessment_total,
+            market_building, market_land, market_total,
+            appraisal_building, appraisal_land, appraisal_total,
+            value_building, value_land, value_total,
+            tax_code_area, fetched_at)
 ```
 
 `status` is one of: `matched`, `candidate_mismatch`, `no_candidates`, `error`.
@@ -103,7 +116,7 @@ property_events(property_id, date, event_name, price)
 `sold` is only for recent sales inside the configured 180-day sold window; older
 sold/closed records are considered `off_market` for dashboard filtering.
 
-Timestamps (`created_at`, `updated_at`, `last_fetched_at`, and history/event
+Timestamps (`created_at`, `updated_at`, `last_fetched_at`, and history/event/tax
 `fetched_at`) are **milliseconds since epoch** — the frontend treats them as JS
 `Date`-compatible numbers. Don't switch to seconds without updating the
 frontend formatters.
@@ -113,12 +126,16 @@ frontend formatters.
 | Method | Path                              | Body / Notes                                    |
 |-------:|-----------------------------------|-------------------------------------------------|
 | GET    | `/api/properties`                 | List properties with current state              |
-| GET    | `/api/properties/{id}`            | Full property + historical + events             |
+| GET    | `/api/properties/{id}`            | Full property + historical + events + taxes     |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
+| PATCH  | `/api/properties/{id}`            | Edit `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |
+| POST   | `/api/properties/{id}/archive`    | Sets `active = 0`                                |
+| POST   | `/api/properties/{id}/restore`    | Sets `active = 1`                                |
+| DELETE | `/api/properties/{id}`            | Permanently deletes property + related rows      |
 | POST   | `/api/properties/{id}/refresh`    | Refreshes current property state                |
-| POST   | `/api/properties/{id}/backfill`   | Upserts historical AVMs + Realtor events        |
-| POST   | `/api/properties/refresh-all`     | Refreshes current state for every property      |
-| POST   | `/api/properties/backfill-all`    | Backfills history/events for every property     |
+| POST   | `/api/properties/{id}/backfill`   | Upserts historical AVMs + Realtor events + taxes |
+| POST   | `/api/properties/refresh-all`     | Refreshes current state for active properties   |
+| POST   | `/api/properties/backfill-all`    | Backfills history/events/taxes for every property |
 
 `POST /api/properties` returns one of:
 

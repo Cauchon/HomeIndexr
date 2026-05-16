@@ -21,7 +21,7 @@ row while historical Realtor AVMs and market events remain separate tables.
   `properties`, then removes the old fetch-history table.
 - `GET /api/properties/{id}` now returns `events` and `historical` with the
   property current state.
-- Backfill routes now upsert both AVM estimates and Realtor market events.
+- Backfill routes now upsert AVM estimates, Realtor market events, and tax history.
 - The Property detail chart keeps Cotality and Quantarium as continuous AVM
   lines from Realtor history plus the current fetch.
 - An ownership-history strip under the chart zooms out across recorded sale
@@ -127,7 +127,7 @@ codebase and docs as the source of truth.
 - This repo is a no-build React app using UMD React and Babel standalone.
 - New frontend files must be registered in `frontend/index.html` with `type="text/babel"` and must expose needed globals on `window`.
 - `data/app.db` is local state and was mutated by live backfill verification.
-- `tax_history` was intentionally kept out of scope for the historical-events implementation.
+- `tax_history` is now in scope for backfill and renders in the Property detail Taxes tab.
 - FastAPI `TestClient` was not usable because optional dependency `httpx` is not installed.
 - The app normally uses port `5173`, but recent runs used alternate ports
   because `5173` was occupied.

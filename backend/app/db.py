@@ -89,6 +89,30 @@ CREATE TABLE IF NOT EXISTS property_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_property ON property_events(property_id, date);
+
+CREATE TABLE IF NOT EXISTS tax_history (
+    property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+    year INTEGER NOT NULL,
+    assessed_year INTEGER,
+    tax INTEGER,
+    assessment_building INTEGER,
+    assessment_land INTEGER,
+    assessment_total INTEGER,
+    market_building INTEGER,
+    market_land INTEGER,
+    market_total INTEGER,
+    appraisal_building INTEGER,
+    appraisal_land INTEGER,
+    appraisal_total INTEGER,
+    value_building INTEGER,
+    value_land INTEGER,
+    value_total INTEGER,
+    tax_code_area TEXT,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY (property_id, year)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tax_history_property ON tax_history(property_id, year);
 """
 
 

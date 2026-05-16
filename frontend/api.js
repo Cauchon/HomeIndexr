@@ -30,6 +30,17 @@
       req("/api/properties/refresh-all", { method: "POST" }),
     backfill: (id) =>
       req(`/api/properties/${id}/backfill`, { method: "POST" }),
+    updateProperty: (id, changes) =>
+      req(`/api/properties/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(changes),
+      }),
+    archiveProperty: (id) =>
+      req(`/api/properties/${id}/archive`, { method: "POST" }),
+    restoreProperty: (id) =>
+      req(`/api/properties/${id}/restore`, { method: "POST" }),
+    deleteProperty: (id) =>
+      req(`/api/properties/${id}`, { method: "DELETE" }),
   };
 
   window.API = API;

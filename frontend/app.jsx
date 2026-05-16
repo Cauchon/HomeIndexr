@@ -71,8 +71,9 @@ function App() {
   }
 
   const counts = useM(() => ({
-    all: properties.length,
-    issues: properties.filter((p) => p.status && p.status !== "matched").length,
+    active: properties.filter((p) => p.active !== false).length,
+    archived: properties.filter((p) => p.active === false).length,
+    issues: properties.filter((p) => p.active !== false && p.status && p.status !== "matched").length,
   }), [properties]);
 
   const crumbs = useM(() => {
@@ -128,7 +129,7 @@ function App() {
           <div className={`nav-item ${route.page === "dashboard" || route.page === "detail" ? "active" : ""}`}
                onClick={() => navigate("dashboard")}>
             <Icon name="list" /> Properties
-            <span className="count">{counts.all}</span>
+            <span className="count">{counts.active}</span>
           </div>
           <div className={`nav-item ${route.page === "add" ? "active" : ""}`}
                onClick={() => navigate("add")}>
@@ -143,6 +144,7 @@ function App() {
           <div className="nav-group-label">Filters</div>
           <div className="nav-item" onClick={() => navigate("dashboard")}>
             <Icon name="eye" /> All properties
+            {counts.archived > 0 && <span className="count">{counts.active + counts.archived}</span>}
           </div>
           {counts.issues > 0 && (
             <div className="nav-item" onClick={() => navigate("dashboard")}>

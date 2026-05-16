@@ -10,6 +10,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
   const [state, setState] = useState_p("all");
   const [status, setStatus] = useState_p("all");
   const [listingState, setListingState] = useState_p("all");
+  const [tracking, setTracking] = useState_p("active");
   const [sort, setSort] = useState_p({ key: "updated_at", dir: "desc" });
 
   const cities = useMemo_p(
@@ -51,6 +52,8 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
     if (state !== "all") arr = arr.filter((r) => r.state === state);
     if (status !== "all") arr = arr.filter((r) => r.status === status);
     if (listingState !== "all") arr = arr.filter((r) => r.listing_state === listingState);
+    if (tracking === "active") arr = arr.filter((r) => r.active !== false);
+    if (tracking === "archived") arr = arr.filter((r) => r.active === false);
 
     arr.sort((a, b) => {
       const k = sort.key;
@@ -62,11 +65,13 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
       return sort.dir === "asc" ? av - bv : bv - av;
     });
     return arr;
-  }, [properties, q, city, state, status, listingState, sort]);
+  }, [properties, q, city, state, status, listingState, tracking, sort]);
 
   const lastSweep = properties.length
     ? Math.max(...properties.map((p) => p.updated_at || 0))
     : null;
+  const activeCount = properties.filter((p) => p.active !== false).length;
+  const archivedCount = properties.length - activeCount;
 
   return (
     <div>
@@ -76,13 +81,13 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
           <div className="page-subtitle">
             {properties.length === 0
               ? "No properties yet — add one to start tracking."
-              : <>Tracking {properties.length} {properties.length === 1 ? "address" : "addresses"} · last sweep {fmt.relative(lastSweep)}</>}
+              : <>{activeCount} active · {archivedCount} archived · last sweep {fmt.relative(lastSweep)}</>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn" onClick={onRefreshAll}
-                  disabled={refreshingAll || properties.length === 0}>
-            <Icon name="refresh" /> {refreshingAll ? "Refreshing…" : "Refresh all"}
+                  disabled={refreshingAll || activeCount === 0}>
+            <Icon name="refresh" /> {refreshingAll ? "Refreshing…" : "Refresh active"}
           </button>
           <button className="btn btn-primary" onClick={() => navigate("add")}>
             <Icon name="plus" /> Add property
@@ -108,6 +113,13 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
           </select>
         </div>
         <div className="divider" />
+        <div className="field has-select">
+          <select value={tracking} onChange={(e) => setTracking(e.target.value)}>
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+            <option value="all">Active + archived</option>
+          </select>
+        </div>
         <div className="field has-select">
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">All match status</option>
@@ -163,9 +175,10 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
             {rows.map((r) => {
               const sp = splitAddress(r.display_address || "");
               return (
-                <tr key={r.id} onClick={() => navigate("detail", r.id)}>
+                <tr key={r.id} className={r.active === false ? "archived-row" : ""} onClick={() => navigate("detail", r.id)}>
                   <td className="address-cell">
                     {sp.line1} <span className="sub">· {sp.line2}</span>
+                    {r.active === false && <span className="badge neutral archived-inline">Archived</span>}
                   </td>
                   <td><ListingBadge state={r.listing_state} /></td>
                   <td className="num">{fmt.usd(r.estimate)}</td>
@@ -386,6 +399,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [refreshing, setRefreshing] = useState_p(false);
   const [backfilling, setBackfilling] = useState_p(false);
   const [tab, setTab] = useState_p("history");
+  const [managementMode, setManagementMode] = useState_p(null); // edit | delete
+  const [editForm, setEditForm] = useState_p(null);
+  const [savingManagement, setSavingManagement] = useState_p(false);
   const toast = useToast();
 
   useEffect_p(() => {
@@ -421,12 +437,81 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       } else {
         const fresh = await API.getProperty(propertyId);
         setProperty(fresh);
-        toast.push({ kind: "ok", text: `Backfilled ${res.written} estimates · ${res.events_written || 0} events` });
+        toast.push({ kind: "ok", text: `Backfilled ${res.written} estimates · ${res.events_written || 0} events · ${res.taxes_written || 0} tax rows` });
       }
     } catch (e) {
       toast.push({ kind: "err", text: e.message });
     } finally {
       setBackfilling(false);
+    }
+  }
+
+  function openEdit() {
+    setEditForm({
+      input_address: property.input_address || "",
+      canonical_address: property.canonical_address || "",
+      city: property.city || "",
+      state: property.state || "",
+      zip: property.zip || "",
+      active: property.active !== false,
+    });
+    setManagementMode("edit");
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    if (!editForm?.input_address?.trim()) {
+      toast.push({ kind: "err", text: "Input address is required" });
+      return;
+    }
+    setSavingManagement(true);
+    try {
+      const updated = await API.updateProperty(propertyId, {
+        input_address: editForm.input_address,
+        canonical_address: editForm.canonical_address,
+        city: editForm.city,
+        state: editForm.state,
+        zip: editForm.zip,
+        active: editForm.active,
+      });
+      setProperty(updated);
+      setManagementMode(null);
+      setEditForm(null);
+      onChanged?.();
+      toast.push({ kind: "ok", text: "Property updated" });
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "Update failed" });
+    } finally {
+      setSavingManagement(false);
+    }
+  }
+
+  async function setArchived(nextArchived) {
+    setSavingManagement(true);
+    try {
+      const updated = nextArchived
+        ? await API.archiveProperty(propertyId)
+        : await API.restoreProperty(propertyId);
+      setProperty(updated);
+      onChanged?.();
+      toast.push({ kind: "ok", text: nextArchived ? "Property archived" : "Property restored" });
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "Request failed" });
+    } finally {
+      setSavingManagement(false);
+    }
+  }
+
+  async function doDelete() {
+    setSavingManagement(true);
+    try {
+      await API.deleteProperty(propertyId);
+      toast.push({ kind: "ok", text: "Property deleted" });
+      await onChanged?.();
+      navigate("dashboard");
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "Delete failed" });
+      setSavingManagement(false);
     }
   }
 
@@ -465,6 +550,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <span style={{ color: "var(--text-faint)" }}>·</span>
             <ListingBadge state={property.listing_state} />
             <StatusBadge status={property.status} />
+            {property.active === false && <span className="badge neutral">Archived</span>}
             {property.property_url && (
               <a href={property.property_url} target="_blank" rel="noopener noreferrer">
                 Realtor.com page <Icon name="arrowUpRight" size={12} />
@@ -472,7 +558,13 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             )}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="detail-actions">
+          <button className="btn" onClick={openEdit} disabled={savingManagement}>
+            <Icon name="edit" /> Edit
+          </button>
+          <button className="btn" onClick={() => setArchived(property.active !== false)} disabled={savingManagement}>
+            <Icon name="archive" /> {property.active === false ? "Restore" : "Archive"}
+          </button>
           <button className="btn" onClick={doBackfill} disabled={backfilling || refreshing} title="Fetch full historical AVM series from realtor.com">
             <Icon name="refresh" />
             {backfilling ? "Backfilling…" : "Backfill history"}
@@ -481,8 +573,95 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <Icon name="refresh" />
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
+          <button className="btn btn-danger" onClick={() => setManagementMode("delete")} disabled={savingManagement}>
+            <Icon name="trash" /> Delete
+          </button>
         </div>
       </div>
+
+      {managementMode === "edit" && editForm && (
+        <div className="card management-card">
+          <div className="card-header">
+            <div className="card-title">Edit property</div>
+            <button className="icon-btn" title="Close" onClick={() => setManagementMode(null)}><Icon name="x" /></button>
+          </div>
+          <form className="card-body management-form" onSubmit={saveEdit}>
+            <label>
+              <span>Input address</span>
+              <input
+                value={editForm.input_address}
+                onChange={(e) => setEditForm({ ...editForm, input_address: e.target.value })}
+              />
+            </label>
+            <label>
+              <span>Canonical address</span>
+              <input
+                value={editForm.canonical_address}
+                onChange={(e) => setEditForm({ ...editForm, canonical_address: e.target.value })}
+              />
+            </label>
+            <div className="management-grid">
+              <label>
+                <span>City</span>
+                <input
+                  value={editForm.city}
+                  onChange={(e) => setEditForm({ ...editForm, city: e.target.value })}
+                />
+              </label>
+              <label>
+                <span>State</span>
+                <input
+                  maxLength="2"
+                  value={editForm.state}
+                  onChange={(e) => setEditForm({ ...editForm, state: e.target.value.toUpperCase() })}
+                />
+              </label>
+              <label>
+                <span>ZIP</span>
+                <input
+                  value={editForm.zip}
+                  onChange={(e) => setEditForm({ ...editForm, zip: e.target.value })}
+                />
+              </label>
+            </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={editForm.active}
+                onChange={(e) => setEditForm({ ...editForm, active: e.target.checked })}
+              />
+              <span>Include in dashboard and refresh-all</span>
+            </label>
+            <div className="management-actions">
+              <button type="button" className="btn" onClick={() => setManagementMode(null)} disabled={savingManagement}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={savingManagement}>
+                <Icon name="check" /> {savingManagement ? "Saving..." : "Save changes"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {managementMode === "delete" && (
+        <div className="card management-card danger-card">
+          <div className="card-header">
+            <div className="card-title">Delete property</div>
+            <button className="icon-btn" title="Close" onClick={() => setManagementMode(null)}><Icon name="x" /></button>
+          </div>
+          <div className="card-body">
+            <div className="danger-title">Delete {sp.line1}?</div>
+            <div className="danger-copy">
+              This removes the property plus its historical estimates and market events from the local database.
+            </div>
+            <div className="management-actions">
+              <button className="btn" onClick={() => setManagementMode(null)} disabled={savingManagement}>Cancel</button>
+              <button className="btn btn-danger" onClick={doDelete} disabled={savingManagement}>
+                <Icon name="trash" /> {savingManagement ? "Deleting..." : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="facts" style={{ marginBottom: 16 }}>
         <div className="fact">
@@ -558,12 +737,16 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <div className={`tab ${tab === "history" ? "active" : ""}`} onClick={() => setTab("history")}>
               Timeline
             </div>
+            <div className={`tab ${tab === "taxes" ? "active" : ""}`} onClick={() => setTab("taxes")}>
+              Taxes
+            </div>
             <div className={`tab ${tab === "json" ? "active" : ""}`} onClick={() => setTab("json")}>
               Raw JSON · latest
             </div>
           </div>
 
           {tab === "history" && <ActivityTimeline current={property} historical={property.historical || []} events={property.events || []} />}
+          {tab === "taxes" && <TaxHistoryPanel rows={property.tax_history || []} />}
           {tab === "json" && (
             <div className="card">
               <div className="card-header">
@@ -690,6 +873,98 @@ function AllEstimates({ estimates, fallback }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function preferredAssessment(row) {
+  return row.assessment_total ?? row.value_total ?? row.appraisal_total ?? row.market_total ?? null;
+}
+
+function TaxHistoryPanel({ rows = [] }) {
+  const sorted = [...rows]
+    .filter((r) => r.year != null)
+    .sort((a, b) => a.year - b.year);
+  const enriched = sorted.map((r, i) => {
+    const prev = sorted[i - 1];
+    const assessed = preferredAssessment(r);
+    const prevTax = prev?.tax ?? null;
+    const prevAssessed = prev ? preferredAssessment(prev) : null;
+    return {
+      ...r,
+      assessed,
+      taxDelta: r.tax != null && prevTax != null ? r.tax - prevTax : null,
+      taxDeltaPct: r.tax != null && prevTax ? (r.tax - prevTax) / prevTax : null,
+      assessedDelta: assessed != null && prevAssessed != null ? assessed - prevAssessed : null,
+      assessedDeltaPct: assessed != null && prevAssessed ? (assessed - prevAssessed) / prevAssessed : null,
+    };
+  }).sort((a, b) => b.year - a.year);
+
+  if (!enriched.length) return <div className="empty">No tax history yet.</div>;
+
+  return (
+    <div className="table-wrap">
+      <table className="data timeline tax-table">
+        <thead>
+          <tr>
+            <th style={{ width: 96 }}>Year</th>
+            <th style={{ textAlign: "right", width: 150 }}>Tax</th>
+            <th style={{ textAlign: "right", width: 180 }}>Assessed</th>
+            <th>Assessment split</th>
+            <th style={{ textAlign: "right", width: 210 }}>Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {enriched.map((r) => <TaxHistoryRow key={r.year} row={r} />)}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TaxHistoryRow({ row }) {
+  return (
+    <tr style={{ cursor: "default" }}>
+      <td className="date-cell">
+        <div>{row.year}</div>
+        <div className="rel">{row.assessed_year && row.assessed_year !== row.year ? `Assessed ${row.assessed_year}` : "Tax year"}</div>
+      </td>
+      <td className="change-cell">
+        <div className="delta-num">{fmt.usd(row.tax)}</div>
+        {row.tax_code_area && <div className="delta-sub">{row.tax_code_area}</div>}
+      </td>
+      <td className="change-cell">
+        <div className="delta-num">{fmt.usd(row.assessed)}</div>
+        <div className="delta-sub">county value</div>
+      </td>
+      <td className="value-cell">
+        <div className="main">{fmt.usd(row.assessment_total)}</div>
+        <div className="sub">
+          <span>Building {fmt.usd(row.assessment_building, { compact: true })}</span>
+          <span style={{ color: "var(--text-faint)" }}>·</span>
+          <span>Land {fmt.usd(row.assessment_land, { compact: true })}</span>
+        </div>
+      </td>
+      <td className="change-cell">
+        <TaxDelta value={row.taxDelta} pct={row.taxDeltaPct} label="tax vs prior year" />
+        {row.assessedDelta != null && (
+          <div className="delta-sub">
+            Assessed {fmt.delta(row.assessedDelta)} ({fmt.pct(row.assessedDeltaPct)})
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function TaxDelta({ value, pct, label }) {
+  if (value == null) return <span className="delta-sub">first tax row</span>;
+  return (
+    <div>
+      <div className={`delta-num ${value > 0 ? "pos" : (value < 0 ? "neg" : "")}`}>
+        {fmt.delta(value)} <span>({fmt.pct(pct)})</span>
+      </div>
+      <div className="delta-sub">{label}</div>
     </div>
   );
 }
@@ -1246,22 +1521,26 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
     localStorage.setItem(CADENCE_STORAGE_KEY, cadence);
   }, [cadence]);
 
-  const issues = useMemo_p(
-    () => properties.filter((p) => p.status && p.status !== "matched"),
+  const activeProperties = useMemo_p(
+    () => properties.filter((p) => p.active !== false),
     [properties]
   );
-  const lastSweep = properties.length
-    ? Math.max(...properties.map((p) => p.last_fetched_at || p.updated_at || 0))
+  const issues = useMemo_p(
+    () => activeProperties.filter((p) => p.status && p.status !== "matched"),
+    [activeProperties]
+  );
+  const lastSweep = activeProperties.length
+    ? Math.max(...activeProperties.map((p) => p.last_fetched_at || p.updated_at || 0))
     : null;
   const latestJob = jobs[0] || null;
 
   async function startRefreshAll() {
     const startedAt = Date.now();
-    setProgress(properties.length ? 8 : 100);
+    setProgress(activeProperties.length ? 8 : 100);
     let timer = null;
-    if (properties.length) {
+    if (activeProperties.length) {
       timer = setInterval(() => {
-        setProgress((p) => Math.min(92, p + Math.max(2, Math.round(84 / properties.length))));
+        setProgress((p) => Math.min(92, p + Math.max(2, Math.round(84 / activeProperties.length))));
       }, 450);
     }
 
@@ -1277,7 +1556,7 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
         status: "completed",
         started_at: startedAt,
         finished_at: finishedAt,
-        total: results.length || properties.length,
+        total: results.length || activeProperties.length,
         ok: results.filter((r) => r.status === "matched").length,
         issues: results.filter((r) => r.status && r.status !== "matched").length,
         error: null,
@@ -1297,9 +1576,9 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
         status: "error",
         started_at: startedAt,
         finished_at: finishedAt,
-        total: properties.length,
+        total: activeProperties.length,
         ok: 0,
-        issues: properties.length,
+        issues: activeProperties.length,
         error: e.message || "Refresh failed",
       };
       const next = [job, ...jobs].slice(0, 8);
@@ -1315,17 +1594,17 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
         <div>
           <h1 className="page-title">Refresh jobs</h1>
           <div className="page-subtitle">
-            Current scrape health across all tracked properties · cadence defaults to twice per month
+            Current scrape health across active properties · cadence defaults to twice per month
           </div>
         </div>
         <div className="admin-actions">
           <button
             className="btn btn-primary"
             onClick={startRefreshAll}
-            disabled={refreshingAll || loading || properties.length === 0}
+            disabled={refreshingAll || loading || activeProperties.length === 0}
           >
             <Icon name="refresh" />
-            {refreshingAll ? "Running…" : "Refresh all now"}
+            {refreshingAll ? "Running…" : "Refresh active now"}
           </button>
         </div>
       </div>
@@ -1338,7 +1617,7 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
         </div>
         <div className="fact">
           <div className="label">Active properties</div>
-          <div className="value">{properties.filter((p) => p.active !== false).length}</div>
+          <div className="value">{activeProperties.length}</div>
           <div className="sub">{properties.length} tracked total</div>
         </div>
         <div className="fact">
@@ -1362,7 +1641,7 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
               <div className="fill" style={{ width: `${progress}%` }} />
             </div>
             <div className="tnum">
-              {Math.max(1, Math.round((progress / 100) * Math.max(properties.length, 1)))} / {properties.length || 1}
+              {Math.max(1, Math.round((progress / 100) * Math.max(activeProperties.length, 1)))} / {activeProperties.length || 1}
             </div>
           </div>
         </div>
