@@ -10,11 +10,19 @@ class AddPropertyRequest(BaseModel):
     confirm_mismatch: bool = False
 
 
-class Snapshot(BaseModel):
+class Property(BaseModel):
     id: int
-    property_id: int
-    fetched_at: int
-    status: str
+    input_address: str
+    canonical_address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    zip: str | None = None
+    property_id: str | None = None
+    listing_id: str | None = None
+    property_url: str | None = None
+    listing_state: str | None = None
+    active: bool = True
+    status: str = "matched"
     matched_address: str | None = None
     best_current_estimate: int | None = None
     estimate_source: str | None = None
@@ -33,24 +41,11 @@ class Snapshot(BaseModel):
     longitude: float | None = None
     raw_json: Any = None
     error: str | None = None
-
-
-class Property(BaseModel):
-    id: int
-    input_address: str
-    canonical_address: str | None = None
-    city: str | None = None
-    state: str | None = None
-    zip: str | None = None
-    property_id: str | None = None
-    listing_id: str | None = None
-    property_url: str | None = None
-    listing_state: str | None = None
-    active: bool = True
-    status: str = "matched"
+    last_fetched_at: int | None = None
     created_at: int
     updated_at: int
-    snapshots: list[Snapshot] = []
+    historical: list[dict] = []
+    events: list[dict] = []
 
 
 class AddPropertyResponse(BaseModel):

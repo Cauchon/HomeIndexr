@@ -245,9 +245,9 @@ function Sparkline({ values, width = 60, height = 16, color }) {
 }
 
 // ---------- Reduce / normalize helpers ----------
-function bestEstimate(rawOrSnap) {
+function bestEstimate(rawOrCurrent) {
   // helper to demonstrate normalization on raw json
-  const raw = rawOrSnap.raw_json || rawOrSnap;
+  const raw = rawOrCurrent.raw_json || rawOrCurrent;
   if (raw.current_estimates && raw.current_estimates.length) {
     const first = raw.current_estimates[0];
     return {

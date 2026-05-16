@@ -31,7 +31,7 @@ function _yearMonthFromMs(t) {
   return `${y}-${m}`;
 }
 
-function PriceChart({ snapshots, historical = [], height = 280 }) {
+function PriceChart({ current, historical = [], height = 280 }) {
   const containerRef = useRef_chart(null);
   const [w, setW] = useState_chart(720);
   const [hover, setHover] = useState_chart(null);
@@ -58,11 +58,11 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
       if (!prev || t > prev.t) m.set(month, { t, v: value });
     };
     for (const h of historical || []) add(h.date, h.source, h.estimate);
-    for (const s of snapshots || []) {
-      if (Array.isArray(s.all_estimates) && s.all_estimates.length) {
-        for (const e of s.all_estimates) add(e.date, e.source, e.estimate);
+    if (current) {
+      if (Array.isArray(current.all_estimates) && current.all_estimates.length) {
+        for (const e of current.all_estimates) add(e.date, e.source, e.estimate);
       } else {
-        add(s.estimate_date, s.estimate_source, s.best_current_estimate);
+        add(current.estimate_date, current.estimate_source, current.best_current_estimate);
       }
     }
     return Array.from(bySrc.entries())
@@ -73,7 +73,7 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
           .sort((a, b) => a.monthX - b.monthX),
       }))
       .filter((s) => s.points.length);
-  }, [snapshots, historical]);
+  }, [current, historical]);
 
   const monthXs = useMemo_chart(() => {
     const set = new Set();

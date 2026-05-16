@@ -2,10 +2,10 @@
 
 Local-first dashboard for tracking home prices over time. Fetches property data
 from Realtor.com via [HomeHarvest](https://github.com/Bunsly/HomeHarvest)
-server-side and stores every fetch as an append-only snapshot in SQLite. The
-Property view can also backfill Realtor historical AVMs and sparse market
-events so sales, listings, and price changes are not buried in mostly empty
-snapshot columns.
+server-side and stores the latest fetched state on each tracked property in
+SQLite. The Property view can also backfill Realtor historical AVMs and sparse
+market events so sales, listings, and price changes render as first-class
+timeline rows.
 
 ## Stack
 
@@ -28,12 +28,12 @@ Then open <http://127.0.0.1:5173>.
 
 | Method | Path                                  | Purpose                                |
 |-------:|---------------------------------------|----------------------------------------|
-| GET    | `/api/properties`                     | List properties + latest snapshot each |
-| GET    | `/api/properties/{id}`                | Property + snapshots + history + events |
+| GET    | `/api/properties`                     | List properties with current state     |
+| GET    | `/api/properties/{id}`                | Property + history + events            |
 | POST   | `/api/properties`                     | Add a property (returns match status)  |
-| POST   | `/api/properties/{id}/refresh`        | Append a new snapshot                  |
+| POST   | `/api/properties/{id}/refresh`        | Refresh current property state         |
 | POST   | `/api/properties/{id}/backfill`       | Upsert historical AVMs + market events |
-| POST   | `/api/properties/refresh-all`         | Append snapshots for every property    |
+| POST   | `/api/properties/refresh-all`         | Refresh current state for every property |
 | POST   | `/api/properties/backfill-all`        | Backfill history/events for all records |
 
 `POST /api/properties` returns one of:
@@ -43,10 +43,8 @@ save.
 
 ## Data model
 
-- `properties` — one row per tracked address.
-- `snapshots` — append-only history; new rows on every fetch/refresh. Holds the
-  normalized AVM, list/sale prices, property facts, and the full raw HomeHarvest
-  JSON for debugging.
+- `properties` — one row per tracked address, including the latest normalized
+  AVM, list/sale prices, property facts, match status, and raw HomeHarvest JSON.
 - `historical_estimates` — monthly historical AVM series keyed by property,
   source, and date.
 - `property_events` — Realtor market events such as listed, sold, relisted,

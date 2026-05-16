@@ -222,7 +222,7 @@ def _baths_combined(desc: dict) -> float | None:
 
 
 def _flatten(raw: dict) -> dict:
-    """Project HomeHarvest raw row into normalized snapshot fields."""
+    """Project HomeHarvest raw row into normalized property fields."""
     loc = (raw.get("location") or {}).get("address") or {}
     coord = loc.get("coordinate") or {}
     desc = raw.get("description") or {}

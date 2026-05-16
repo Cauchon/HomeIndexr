@@ -42,7 +42,7 @@ class AddBody(BaseModel):
 
 @app.get("/api/properties")
 def get_properties():
-    return store.list_properties_with_latest()
+    return store.list_properties()
 
 
 @app.get("/api/properties/{pid}")
@@ -50,7 +50,6 @@ def get_property(pid: int):
     p = store.get_property(pid)
     if not p:
         raise HTTPException(404, "property not found")
-    p["snapshots"] = store.list_snapshots(pid)
     p["historical"] = store.list_historical(pid)
     p["events"] = store.list_events(pid)
     return p
@@ -74,7 +73,7 @@ def backfill_property(pid: int):
 
 @app.post("/api/properties/backfill-all")
 def backfill_all():
-    props = store.list_properties_with_latest()
+    props = store.list_properties()
     results = []
     for p in props:
         if not p.get("property_id"):
@@ -127,13 +126,10 @@ def add_property(body: AddBody):
 
     if existing:
         store.update_property_meta(existing["id"], fetched)
-        store.insert_snapshot(existing["id"], fetched)
         prop = store.get_property(existing["id"])
     else:
         prop = store.create_property(body.address, fetched)
-        store.insert_snapshot(prop["id"], fetched)
 
-    prop["snapshots"] = store.list_snapshots(prop["id"])
     prop["historical"] = store.list_historical(prop["id"])
     prop["events"] = store.list_events(prop["id"])
     return {"status": status, "property": prop, "candidate": None, "error": None}
@@ -146,11 +142,8 @@ def refresh_property(pid: int):
         raise HTTPException(404, "property not found")
     addr = prop["canonical_address"] or prop["input_address"]
     fetched = scraper.fetch(addr)
-    if fetched.get("status") in ("matched", "candidate_mismatch"):
-        store.update_property_meta(pid, fetched)
-    store.insert_snapshot(pid, fetched)
+    store.update_property_meta(pid, fetched)
     out = store.get_property(pid)
-    out["snapshots"] = store.list_snapshots(pid)
     out["historical"] = store.list_historical(pid)
     out["events"] = store.list_events(pid)
     return out
@@ -158,14 +151,12 @@ def refresh_property(pid: int):
 
 @app.post("/api/properties/refresh-all")
 def refresh_all():
-    props = store.list_properties_with_latest()
+    props = store.list_properties()
     results = []
     for p in props:
         addr = p.get("canonical_address") or p["input_address"]
         fetched = scraper.fetch(addr)
-        if fetched.get("status") in ("matched", "candidate_mismatch"):
-            store.update_property_meta(p["id"], fetched)
-        store.insert_snapshot(p["id"], fetched)
+        store.update_property_meta(p["id"], fetched)
         results.append({"id": p["id"], "status": fetched.get("status")})
     return {"refreshed": len(results), "results": results}
 

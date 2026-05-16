@@ -44,16 +44,6 @@ CREATE TABLE IF NOT EXISTS properties (
     listing_state TEXT,
     active INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'matched',
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    UNIQUE(canonical_address)
-);
-
-CREATE TABLE IF NOT EXISTS snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
-    fetched_at INTEGER NOT NULL,
-    status TEXT NOT NULL,
     matched_address TEXT,
     best_current_estimate INTEGER,
     estimate_source TEXT,
@@ -71,10 +61,12 @@ CREATE TABLE IF NOT EXISTS snapshots (
     latitude REAL,
     longitude REAL,
     raw_json TEXT,
-    error TEXT
+    error TEXT,
+    last_fetched_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(canonical_address)
 );
-
-CREATE INDEX IF NOT EXISTS idx_snapshots_property ON snapshots(property_id, fetched_at DESC);
 
 CREATE TABLE IF NOT EXISTS historical_estimates (
     property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
@@ -100,6 +92,111 @@ CREATE INDEX IF NOT EXISTS idx_events_property ON property_events(property_id, d
 """
 
 
+PROPERTY_CURRENT_COLUMNS = {
+    "matched_address": "TEXT",
+    "best_current_estimate": "INTEGER",
+    "estimate_source": "TEXT",
+    "estimate_low": "INTEGER",
+    "estimate_high": "INTEGER",
+    "estimate_date": "TEXT",
+    "list_price": "INTEGER",
+    "sold_price": "INTEGER",
+    "last_sold_price": "INTEGER",
+    "beds": "INTEGER",
+    "baths": "REAL",
+    "sqft": "INTEGER",
+    "lot_sqft": "INTEGER",
+    "year_built": "INTEGER",
+    "latitude": "REAL",
+    "longitude": "REAL",
+    "raw_json": "TEXT",
+    "error": "TEXT",
+    "last_fetched_at": "INTEGER",
+}
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def _property_columns(conn: sqlite3.Connection) -> set[str]:
+    return {r["name"] for r in conn.execute("PRAGMA table_info(properties)")}
+
+
+def _migrate_properties_current_state(conn: sqlite3.Connection) -> None:
+    existing_cols = _property_columns(conn)
+    for name, sql_type in PROPERTY_CURRENT_COLUMNS.items():
+        if name not in existing_cols:
+            conn.execute(f"ALTER TABLE properties ADD COLUMN {name} {sql_type}")
+
+    if not _table_exists(conn, "snapshots"):
+        return
+
+    rows = conn.execute(
+        """SELECT *
+           FROM snapshots s
+           WHERE s.fetched_at = (
+             SELECT MAX(s2.fetched_at)
+             FROM snapshots s2
+             WHERE s2.property_id = s.property_id
+           )"""
+    ).fetchall()
+    for row in rows:
+        conn.execute(
+            """UPDATE properties SET
+                 matched_address = COALESCE(?, matched_address),
+                 best_current_estimate = COALESCE(?, best_current_estimate),
+                 estimate_source = COALESCE(?, estimate_source),
+                 estimate_low = COALESCE(?, estimate_low),
+                 estimate_high = COALESCE(?, estimate_high),
+                 estimate_date = COALESCE(?, estimate_date),
+                 list_price = COALESCE(?, list_price),
+                 sold_price = COALESCE(?, sold_price),
+                 last_sold_price = COALESCE(?, last_sold_price),
+                 beds = COALESCE(?, beds),
+                 baths = COALESCE(?, baths),
+                 sqft = COALESCE(?, sqft),
+                 lot_sqft = COALESCE(?, lot_sqft),
+                 year_built = COALESCE(?, year_built),
+                 latitude = COALESCE(?, latitude),
+                 longitude = COALESCE(?, longitude),
+                 raw_json = COALESCE(?, raw_json),
+                 error = COALESCE(?, error),
+                 last_fetched_at = COALESCE(?, last_fetched_at, updated_at),
+                 status = COALESCE(?, status)
+               WHERE id = ?""",
+            (
+                row["matched_address"],
+                row["best_current_estimate"],
+                row["estimate_source"],
+                row["estimate_low"],
+                row["estimate_high"],
+                row["estimate_date"],
+                row["list_price"],
+                row["sold_price"],
+                row["last_sold_price"],
+                row["beds"],
+                row["baths"],
+                row["sqft"],
+                row["lot_sqft"],
+                row["year_built"],
+                row["latitude"],
+                row["longitude"],
+                row["raw_json"],
+                row["error"],
+                row["fetched_at"],
+                row["status"],
+                row["property_id"],
+            ),
+        )
+    conn.execute("DROP TABLE snapshots")
+
+
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _migrate_properties_current_state(conn)

@@ -23,23 +23,19 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
 
   const rows = useMemo_p(() => {
     let arr = properties.map((p) => {
-      const last = p.snapshots && p.snapshots.length
-        ? p.snapshots[p.snapshots.length - 1]
-        : {};
       return {
         ...p,
         display_address: displayAddress(p),
-        last,
-        estimate: last.best_current_estimate,
-        list: last.list_price,
-        sold: last.sold_price,
+        estimate: p.best_current_estimate,
+        list: p.list_price,
+        sold: p.sold_price,
         estVsList:
-          last.best_current_estimate != null && last.list_price != null
-            ? last.best_current_estimate - last.list_price
+          p.best_current_estimate != null && p.list_price != null
+            ? p.best_current_estimate - p.list_price
             : null,
         estVsSold:
-          last.best_current_estimate != null && last.sold_price != null
-            ? last.best_current_estimate - last.sold_price
+          p.best_current_estimate != null && p.sold_price != null
+            ? p.best_current_estimate - p.sold_price
             : null,
       };
     });
@@ -158,7 +154,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                   <div className="title">{properties.length === 0 ? "No properties yet" : "No matches"}</div>
                   <div>
                     {properties.length === 0
-                      ? <>Click <b>Add property</b> to fetch a snapshot from HomeHarvest.</>
+                      ? <>Click <b>Add property</b> to fetch current data from HomeHarvest.</>
                       : "Adjust the filters or search above."}
                   </div>
                 </div>
@@ -256,7 +252,7 @@ function AddPropertyPage({ navigate, onAdded }) {
       </button>
       <h1 className="page-title">Track a new property</h1>
       <div className="page-subtitle" style={{ marginBottom: 18 }}>
-        Enter a full street address. We'll fetch the latest HomeHarvest snapshot and
+        Enter a full street address. We'll fetch the latest HomeHarvest data and
         require an exact match before activating tracking.
       </div>
 
@@ -408,7 +404,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       const updated = await API.refresh(propertyId);
       setProperty(updated);
       onChanged?.();
-      toast.push({ kind: "ok", text: "Snapshot captured" });
+      toast.push({ kind: "ok", text: "Data refreshed" });
     } catch (e) {
       toast.push({ kind: "err", text: e.message });
     } finally {
@@ -437,20 +433,22 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   if (loading) return <div className="empty">Loading property…</div>;
   if (!property) return <div className="empty"><div className="title">Property not found</div></div>;
 
-  const last = property.snapshots[property.snapshots.length - 1] || {};
+  const current = property || {};
   const sp = splitAddress(displayAddress(property));
 
   const firstEst = (() => {
-    const s = property.snapshots.find((x) => x.best_current_estimate != null);
-    return s ? s.best_current_estimate : null;
+    const rows = [...(property.historical || [])]
+      .filter((x) => x.estimate != null)
+      .sort((a, b) => parseEstimateDate(a.date) - parseEstimateDate(b.date));
+    return rows.length ? rows[0].estimate : null;
   })();
   const sinceStart =
-    last.best_current_estimate != null && firstEst != null
-      ? last.best_current_estimate - firstEst
+    current.best_current_estimate != null && firstEst != null
+      ? current.best_current_estimate - firstEst
       : null;
   const sinceStartPct =
-    firstEst && last.best_current_estimate != null
-      ? (last.best_current_estimate - firstEst) / firstEst
+    firstEst && current.best_current_estimate != null
+      ? (current.best_current_estimate - firstEst) / firstEst
       : null;
 
   return (
@@ -489,42 +487,42 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       <div className="facts" style={{ marginBottom: 16 }}>
         <div className="fact">
           <div className="label">Latest estimate</div>
-          <div className="value">{fmt.usd(last.best_current_estimate)}</div>
+          <div className="value">{fmt.usd(current.best_current_estimate)}</div>
           <div className="sub">
-            {last.estimate_low != null && last.estimate_high != null && (
-              <><RangePill low={last.estimate_low} high={last.estimate_high} /> · </>
+            {current.estimate_low != null && current.estimate_high != null && (
+              <><RangePill low={current.estimate_low} high={current.estimate_high} /> · </>
             )}
-            {last.estimate_source || "—"}
+            {current.estimate_source || "—"}
           </div>
         </div>
         <div className="fact">
           <div className="label">List price</div>
-          <div className="value">{last.list_price ? fmt.usd(last.list_price) : "—"}</div>
+          <div className="value">{current.list_price ? fmt.usd(current.list_price) : "—"}</div>
           <div className="sub">
-            {last.list_price != null && last.best_current_estimate != null
-              ? <span style={{ color: last.best_current_estimate >= last.list_price ? "var(--pos)" : "var(--neg)" }}>
-                  Est. {fmt.delta(last.best_current_estimate - last.list_price)} vs list
+            {current.list_price != null && current.best_current_estimate != null
+              ? <span style={{ color: current.best_current_estimate >= current.list_price ? "var(--pos)" : "var(--neg)" }}>
+                  Est. {fmt.delta(current.best_current_estimate - current.list_price)} vs list
                 </span>
               : "Not currently listed"}
           </div>
         </div>
         <div className="fact">
-          <div className="label">{last.sold_price ? "Sale price" : "Last sale"}</div>
-          <div className="value">{last.sold_price ? fmt.usd(last.sold_price) : fmt.usd(last.last_sold_price)}</div>
+          <div className="label">{current.sold_price ? "Sale price" : "Last sale"}</div>
+          <div className="value">{current.sold_price ? fmt.usd(current.sold_price) : fmt.usd(current.last_sold_price)}</div>
           <div className="sub">
-            {last.sold_price && last.best_current_estimate != null
-              ? <span style={{ color: last.best_current_estimate >= last.sold_price ? "var(--pos)" : "var(--neg)" }}>
-                  Est. {fmt.delta(last.best_current_estimate - last.sold_price)} vs sale
+            {current.sold_price && current.best_current_estimate != null
+              ? <span style={{ color: current.best_current_estimate >= current.sold_price ? "var(--pos)" : "var(--neg)" }}>
+                  Est. {fmt.delta(current.best_current_estimate - current.sold_price)} vs sale
                 </span>
-              : last.last_sold_price ? "Historic" : "—"}
+              : current.last_sold_price ? "Historic" : "—"}
           </div>
         </div>
         <div className="fact">
-          <div className="label">Since first snapshot</div>
+          <div className="label">Since earliest AVM</div>
           <div className="value" style={{ color: sinceStart != null ? (sinceStart >= 0 ? "var(--pos)" : "var(--neg)") : undefined }}>
             {sinceStart != null ? fmt.delta(sinceStart) : "—"}
           </div>
-          <div className="sub">{fmt.pct(sinceStartPct)} · {property.snapshots.length} snapshots</div>
+          <div className="sub">{fmt.pct(sinceStartPct)} · current vs history</div>
         </div>
       </div>
 
@@ -536,7 +534,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                 {(() => {
                   const ts = [];
-                  for (const s of property.snapshots || []) if (s.fetched_at) ts.push(s.fetched_at);
+                  if (property.last_fetched_at) ts.push(property.last_fetched_at);
                   for (const h of property.historical || []) {
                     const t = parseEstimateDate(h.date);
                     if (t != null && h.estimate != null) ts.push(t);
@@ -551,9 +549,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
               </div>
             </div>
             <div className="card-body">
-              <PriceChart snapshots={property.snapshots} historical={property.historical || []} events={property.events || []} height={280} />
+              <PriceChart current={property} historical={property.historical || []} events={property.events || []} height={280} />
             </div>
-            <LifetimeStrip snapshots={property.snapshots} historical={property.historical || []} events={property.events || []} />
+            <LifetimeStrip current={property} historical={property.historical || []} events={property.events || []} />
           </div>
 
           <div className="tabs">
@@ -565,14 +563,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             </div>
           </div>
 
-          {tab === "history" && <ActivityTimeline snapshots={property.snapshots} historical={property.historical || []} events={property.events || []} />}
+          {tab === "history" && <ActivityTimeline current={property} historical={property.historical || []} events={property.events || []} />}
           {tab === "json" && (
             <div className="card">
               <div className="card-header">
-                <div className="card-title">Audit · {last.fetched_at ? fmt.datetime(last.fetched_at) : "—"}</div>
+                <div className="card-title">Audit · {property.last_fetched_at ? fmt.datetime(property.last_fetched_at) : "—"}</div>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button className="btn btn-sm" onClick={() => {
-                    navigator.clipboard?.writeText(JSON.stringify(last.raw_json, null, 2));
+                    navigator.clipboard?.writeText(JSON.stringify(property.raw_json, null, 2));
                     toast.push({ kind: "ok", text: "Copied to clipboard" });
                   }}>
                     <Icon name="copy" /> Copy
@@ -580,9 +578,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
                 </div>
               </div>
               <div className="card-body flush" style={{ padding: 12 }}>
-                {last.raw_json
-                  ? <JsonViewer data={last.raw_json} maxHeight={520} />
-                  : <div className="empty">No raw JSON for this snapshot.</div>}
+                {property.raw_json
+                  ? <JsonViewer data={property.raw_json} maxHeight={520} />
+                  : <div className="empty">No raw JSON for the current fetch.</div>}
               </div>
             </div>
           )}
@@ -593,16 +591,16 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <div className="card-header"><div className="card-title">Property facts</div></div>
             <div className="card-body flush">
               <div className="facts-stack">
-                <div className="fact-row"><span className="k">Beds</span><span className="v">{last.beds ?? "—"}</span></div>
-                <div className="fact-row"><span className="k">Baths</span><span className="v">{last.baths != null ? fmt.baths(last.baths) : "—"}</span></div>
-                <div className="fact-row"><span className="k">Living area</span><span className="v">{last.sqft != null ? `${fmt.num(last.sqft)} sqft` : "—"}</span></div>
-                <div className="fact-row"><span className="k">Lot</span><span className="v">{last.lot_sqft != null ? `${fmt.num(last.lot_sqft)} sqft` : "—"}</span></div>
-                <div className="fact-row"><span className="k">Year built</span><span className="v">{last.year_built ?? "—"}</span></div>
+                <div className="fact-row"><span className="k">Beds</span><span className="v">{current.beds ?? "—"}</span></div>
+                <div className="fact-row"><span className="k">Baths</span><span className="v">{current.baths != null ? fmt.baths(current.baths) : "—"}</span></div>
+                <div className="fact-row"><span className="k">Living area</span><span className="v">{current.sqft != null ? `${fmt.num(current.sqft)} sqft` : "—"}</span></div>
+                <div className="fact-row"><span className="k">Lot</span><span className="v">{current.lot_sqft != null ? `${fmt.num(current.lot_sqft)} sqft` : "—"}</span></div>
+                <div className="fact-row"><span className="k">Year built</span><span className="v">{current.year_built ?? "—"}</span></div>
                 <div className="fact-row">
                   <span className="k">Coordinates</span>
                   <span className="v mono" style={{ fontSize: 11 }}>
-                    {last.latitude != null && last.longitude != null
-                      ? `${last.latitude.toFixed(4)}, ${last.longitude.toFixed(4)}`
+                    {current.latitude != null && current.longitude != null
+                      ? `${current.latitude.toFixed(4)}, ${current.longitude.toFixed(4)}`
                       : "—"}
                   </span>
                 </div>
@@ -615,7 +613,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           <div className="card">
             <div className="card-header"><div className="card-title">Estimate breakdown</div></div>
             <div className="card-body">
-              <AllEstimates estimates={last.all_estimates} fallback={last} />
+              <AllEstimates estimates={current.all_estimates} fallback={current} />
             </div>
           </div>
         </div>
@@ -762,38 +760,38 @@ const TIMELINE_FILTERS = [
 const TIMELINE_PAGE_SIZE = 10;
 const TIMELINE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-function buildActivityEvents(snapshots = [], historical = [], marketEvents = []) {
+function buildActivityEvents(current = null, historical = [], marketEvents = []) {
   const rows = [];
   const estimateRowsByKey = new Map();
   const addEstimateRow = (row) => {
     if (!row.date || row.estimate == null || !row.source) return;
     const key = `${row.date}|${row.source}|${row.estimate}`;
     const existing = estimateRowsByKey.get(key);
-    if (!existing || (existing.low == null && row.low != null) || row.origin === "snapshot") {
+    if (!existing || (existing.low == null && row.low != null) || row.origin === "current") {
       estimateRowsByKey.set(key, row);
     }
   };
 
-  for (const s of snapshots || []) {
-    const baseDate = s.estimate_date || (s.fetched_at ? new Date(s.fetched_at).toISOString().slice(0, 10) : null);
-    const note = s.error || (s.status === "candidate_mismatch" && s.matched_address ? `Matched ${splitAddress(s.matched_address).line1}` : "");
-    if (s.status === "error" || s.status === "candidate_mismatch") {
+  if (current) {
+    const baseDate = current.estimate_date || (current.last_fetched_at ? new Date(current.last_fetched_at).toISOString().slice(0, 10) : null);
+    const note = current.error || (current.status === "candidate_mismatch" && current.matched_address ? `Matched ${splitAddress(current.matched_address).line1}` : "");
+    if (current.status === "error" || current.status === "candidate_mismatch") {
       rows.push({
-        id: `${s.id || s.fetched_at}-issue`,
+        id: `${current.id || current.last_fetched_at}-issue`,
         kind: "issue",
-        ts: s.fetched_at || parseEstimateDate(baseDate),
-        label: s.status === "error" ? "Error" : "Mismatch",
-        note: note || "Snapshot did not return a clean match.",
+        ts: current.last_fetched_at || parseEstimateDate(baseDate),
+        label: current.status === "error" ? "Error" : "Mismatch",
+        note: note || "Current fetch did not return a clean match.",
       });
     }
-    if (Array.isArray(s.all_estimates) && s.all_estimates.length) {
-      for (const e of s.all_estimates) {
+    if (Array.isArray(current.all_estimates) && current.all_estimates.length) {
+      for (const e of current.all_estimates) {
         addEstimateRow({
-          id: `${s.id || s.fetched_at}-${e.source}-${e.date || baseDate}`,
+          id: `${current.id || current.last_fetched_at}-${e.source}-${e.date || baseDate}`,
           kind: "estimate",
-          origin: "snapshot",
+          origin: "current",
           date: e.date || baseDate,
-          ts: parseEstimateDate(e.date || baseDate) ?? s.fetched_at,
+          ts: parseEstimateDate(e.date || baseDate) ?? current.last_fetched_at,
           source: e.source,
           estimate: e.estimate,
           low: e.low,
@@ -803,15 +801,15 @@ function buildActivityEvents(snapshots = [], historical = [], marketEvents = [])
       }
     } else {
       addEstimateRow({
-        id: `${s.id || s.fetched_at}-estimate`,
+        id: `${current.id || current.last_fetched_at}-estimate`,
         kind: "estimate",
-        origin: "snapshot",
+        origin: "current",
         date: baseDate,
-        ts: parseEstimateDate(baseDate) ?? s.fetched_at,
-        source: s.estimate_source,
-        estimate: s.best_current_estimate,
-        low: s.estimate_low,
-        high: s.estimate_high,
+        ts: parseEstimateDate(baseDate) ?? current.last_fetched_at,
+        source: current.estimate_source,
+        estimate: current.best_current_estimate,
+        low: current.estimate_low,
+        high: current.estimate_high,
         note,
       });
     }
@@ -879,11 +877,11 @@ function buildActivityEvents(snapshots = [], historical = [], marketEvents = [])
   });
 }
 
-function ActivityTimeline({ snapshots, historical = [], events = [] }) {
+function ActivityTimeline({ current, historical = [], events = [] }) {
   const [filter, setFilter] = useState_p("all");
   const [page, setPage] = useState_p(1);
   const [pageSize, setPageSize] = useState_p(TIMELINE_PAGE_SIZE);
-  const rows = useMemo_p(() => buildActivityEvents(snapshots, historical, events), [snapshots, historical, events]);
+  const rows = useMemo_p(() => buildActivityEvents(current, historical, events), [current, historical, events]);
   const active = TIMELINE_FILTERS.find((f) => f.key === filter) || TIMELINE_FILTERS[0];
   const filtered = rows.filter(active.match);
   const counts = useMemo_p(() => {
@@ -1025,7 +1023,7 @@ function ActivityRow({ row }) {
     <tr className={row.origin === "historical" ? "historical-bg" : ""} style={{ cursor: "default" }}>
       <td className="date-cell">
         <div>{fmt.date(row.ts)}</div>
-        <div className="rel">{row.origin === "historical" ? "Historical AVM" : fmt.relative(row.ts)}</div>
+        <div className="rel">{row.origin === "historical" ? "Historical AVM" : row.origin === "current" ? "Current data" : fmt.relative(row.ts)}</div>
       </td>
       <td><TimelineBadge row={row} /></td>
       <td className="value-cell"><TimelineValue row={row} /></td>
@@ -1112,12 +1110,12 @@ function InlineRange({ low, mid, high }) {
   );
 }
 
-function LifetimeStrip({ snapshots = [], historical = [], events = [] }) {
+function LifetimeStrip({ current = null, historical = [], events = [] }) {
   const estimateTimes = [];
-  for (const s of snapshots || []) {
-    if (s.fetched_at && s.best_current_estimate != null) estimateTimes.push(s.fetched_at);
-    const t = parseEstimateDate(s.estimate_date);
-    if (t != null && s.best_current_estimate != null) estimateTimes.push(t);
+  if (current) {
+    if (current.last_fetched_at && current.best_current_estimate != null) estimateTimes.push(current.last_fetched_at);
+    const t = parseEstimateDate(current.estimate_date);
+    if (t != null && current.best_current_estimate != null) estimateTimes.push(t);
   }
   for (const h of historical || []) {
     const t = parseEstimateDate(h.date);
@@ -1147,7 +1145,7 @@ function LifetimeStrip({ snapshots = [], historical = [], events = [] }) {
     if (t >= min && t <= max) years.push({ y, t });
   }
   const mostRecentSale = sales[sales.length - 1];
-  const latestEstimate = [...snapshots].reverse().find((s) => s.best_current_estimate != null)?.best_current_estimate
+  const latestEstimate = current?.best_current_estimate
     ?? [...historical].reverse().find((h) => h.estimate != null)?.estimate
     ?? null;
   const sinceSale = mostRecentSale && latestEstimate != null

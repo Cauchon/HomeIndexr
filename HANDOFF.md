@@ -1,9 +1,9 @@
-# Handoff: HomeTracker Historical Events UI
+# Handoff: HomeTracker Current-State Refactor
 
 ## Current state
 
 - Repo: `/Users/cauchon/Projects/house-price-tracker`
-- Branch: `codex/history-events-mockup`
+- Branch: `codex/remove-snapshots`
 - Dev server used for latest verification: `http://127.0.0.1:5181`
 - Chrome was open at `http://127.0.0.1:5181/#property/1`.
 - Ports `5173` and `5180` were already occupied during the latest verification,
@@ -11,19 +11,21 @@
 
 ## What changed in the current worktree
 
-Historical Realtor market events were implemented as first-class data and UI:
+The app was refactored away from append-only fetch history. Each tracked
+property now stores the current HomeHarvest state directly on the `properties`
+row while historical Realtor AVMs and market events remain separate tables.
 
-- Added SQLite table `property_events`.
-- Extended Realtor GraphQL history fetch to include:
-  - `property_history { date event_name price }`
-  - existing `estimates.historical_values`
-- `GET /api/properties/{id}` now returns `events` with `snapshots` and `historical`.
+- Expanded `properties` to hold current estimate, range, list/sale fields,
+  facts, coordinates, raw JSON, error, and `last_fetched_at`.
+- Added startup migration that collapses the newest legacy fetch row into
+  `properties`, then removes the old fetch-history table.
+- `GET /api/properties/{id}` now returns `events` and `historical` with the
+  property current state.
 - Backfill routes now upsert both AVM estimates and Realtor market events.
-- The detail tab formerly labeled `Snapshot history` is now `Timeline`.
 - The Property detail chart keeps Cotality and Quantarium as continuous AVM
-  lines and renders Realtor market events as dated markers.
+  lines from Realtor history plus the current fetch.
 - An ownership-history strip under the chart zooms out across recorded sale
-  events while highlighting the tracked-estimate window.
+  events while highlighting the available estimate window.
 - The Timeline tab is now event-shaped:
   - filters: `All`, `Estimates`, `Market events`, `Issues`
   - columns: `Date`, `Event`, `Value`, `Change`
@@ -32,8 +34,9 @@ Historical Realtor market events were implemented as first-class data and UI:
     and `Listing removed` are separate rows
 - The table no longer repeats `List`/`Sold` columns on every estimate row.
 - The old horizontal latest-list-price chart line was removed.
-- `README.md` and `AGENTS.md` were updated to document historical AVMs, market
-  events, backfill routes, and the event-shaped Property timeline.
+- `README.md` and `AGENTS.md` were updated to document current-state property
+  storage, historical AVMs, market events, backfill routes, and the event-shaped
+  Property timeline.
 
 Modified files:
 

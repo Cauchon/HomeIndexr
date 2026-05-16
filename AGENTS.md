@@ -6,8 +6,8 @@ Operating notes for AI coding agents working on this repo.
 
 A local-first dashboard for tracking home prices over time. The backend scrapes
 Realtor.com via [HomeHarvest](https://github.com/Bunsly/HomeHarvest) and stores
-each fetch as an append-only snapshot in SQLite. The frontend is a no-build
-React app (UMD + Babel-standalone) that the backend also serves.
+the latest fetched state on each property row in SQLite. The frontend is a
+no-build React app (UMD + Babel-standalone) that the backend also serves.
 
 ## Layout
 
@@ -15,7 +15,7 @@ React app (UMD + Babel-standalone) that the backend also serves.
 backend/app/
   main.py        FastAPI routes + serves the frontend at /
   scraper.py     HomeHarvest/Realtor wrappers; normalizes AVM + history data
-  store.py       SQLite reads/writes (append-only snapshots + history/events)
+  store.py       SQLite reads/writes (current property state + history/events)
   db.py          schema + connection helper (data/app.db)
   models.py      pydantic types (currently unused by routes)
 frontend/
@@ -43,25 +43,24 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
 
 1. **HomeHarvest runs server-side only.** The frontend never imports it or hits
    realtor.com directly. All scraping flows through `backend/app/scraper.py`.
-2. **Snapshots are append-only.** Refreshing a property inserts a new row in
-   `snapshots`; it never updates an old one. `update_property_meta` only
-   refreshes light fields on the parent `properties` row.
+2. **Current HomeHarvest data lives on `properties`.** Refreshing a property
+   overwrites the current normalized fields and raw JSON on the existing row.
 3. **Adding the same address must not duplicate the property.** `store.find_property_by_address`
    matches case- and whitespace-insensitive against both `input_address` and
-   `canonical_address`; new fetches for an existing address append a snapshot.
-4. **Raw HomeHarvest JSON is preserved per snapshot** in `snapshots.raw_json`
-   for debugging/audit. Don't strip it.
+   `canonical_address`; new fetches for an existing address update that row.
+4. **Raw HomeHarvest JSON is preserved on the property row** in `properties.raw_json`
+   for debugging. Don't strip it.
 5. **AVM data lives in two shapes.** `scraper._normalize_estimates` handles
    both `raw["current_estimates"]` (flat snake_case) and
    `raw["estimates"]["currentValues"]` (nested camelCase). Preference order:
    entry flagged `isBestHomeValue` → first entry. Keep this normalizer in one
    place; don't fork it.
-6. **Historical AVMs and Realtor market events are separate from snapshots.**
+6. **Historical AVMs and Realtor market events are separate from current state.**
    Backfill writes `historical_estimates` for monthly AVM history and
    `property_events` for sparse market events such as `Listed`, `Sold`,
-   `Price Changed`, `Relisted`, and `Listing removed`. Do not store those as
-   fake snapshots just to make the frontend simpler.
-7. **The Property timeline is event-shaped, not snapshot-column-shaped.**
+   `Price Changed`, `Relisted`, and `Listing removed`. Do not fold those into
+   the current property row just to make the frontend simpler.
+7. **The Property timeline is event-shaped.**
    List/sale/price-change events should render as their own rows. Estimate
    rows should keep low/high range visually attached to the estimate value
    instead of spreading it across disconnected columns.
@@ -71,44 +70,45 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
 
 ## Data model
 
-`properties` is one row per tracked address. `snapshots` is the history; the
-"current" view of a property is just its newest snapshot.
+`properties` is one row per tracked address and includes the latest fetched
+HomeHarvest state.
 
 ```
 properties(id, input_address, canonical_address, city, state, zip,
            property_id, listing_id, property_url, listing_state,
-           active, status, created_at, updated_at)
-snapshots (id, property_id, fetched_at, status, matched_address,
+           active, status, matched_address,
            best_current_estimate, estimate_source,
            estimate_low, estimate_high, estimate_date,
            list_price, sold_price, last_sold_price,
            beds, baths, sqft, lot_sqft, year_built,
-           latitude, longitude, raw_json, error)
+           latitude, longitude, raw_json, error, last_fetched_at,
+           created_at, updated_at)
 historical_estimates(property_id, source, date, estimate)
 property_events(property_id, date, event_name, price)
 ```
 
 `status` is one of: `matched`, `candidate_mismatch`, `no_candidates`, `error`.
 
-Timestamps (`created_at`, `updated_at`, `fetched_at`) are **milliseconds since
-epoch** — the frontend treats them as JS `Date`-compatible numbers. Don't
-switch to seconds without updating the frontend formatters.
+Timestamps (`created_at`, `updated_at`, `last_fetched_at`, and history/event
+`fetched_at`) are **milliseconds since epoch** — the frontend treats them as JS
+`Date`-compatible numbers. Don't switch to seconds without updating the
+frontend formatters.
 
 ## API contract
 
 | Method | Path                              | Body / Notes                                    |
 |-------:|-----------------------------------|-------------------------------------------------|
-| GET    | `/api/properties`                 | List + latest snapshot for each                 |
-| GET    | `/api/properties/{id}`            | Full property + snapshots + historical + events |
+| GET    | `/api/properties`                 | List properties with current state              |
+| GET    | `/api/properties/{id}`            | Full property + historical + events             |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
-| POST   | `/api/properties/{id}/refresh`    | Appends a new snapshot                          |
+| POST   | `/api/properties/{id}/refresh`    | Refreshes current property state                |
 | POST   | `/api/properties/{id}/backfill`   | Upserts historical AVMs + Realtor events        |
-| POST   | `/api/properties/refresh-all`     | Appends a snapshot for every property           |
+| POST   | `/api/properties/refresh-all`     | Refreshes current state for every property      |
 | POST   | `/api/properties/backfill-all`    | Backfills history/events for every property     |
 
 `POST /api/properties` returns one of:
 
-- `matched` — saved; property + snapshots in response.
+- `matched` — saved; property in response.
 - `candidate_mismatch` — **not yet saved.** `candidate` describes what
   HomeHarvest returned. Caller must retry with `confirm_mismatch: true` to
   persist.
@@ -153,4 +153,4 @@ curl -s http://127.0.0.1:5173/api/properties
 ```
 
 Re-posting the same address should keep `count(*) FROM properties` at 1 and
-increment `count(*) FROM snapshots`.
+update that existing row.
