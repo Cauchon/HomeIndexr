@@ -25,6 +25,9 @@ REALTOR_GQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HISTORICAL_QUERY = (
     "query GetHomeHistoricalEstimates($property_id: ID!) {"
     "  home(property_id: $property_id) {"
+    "    property_history {"
+    "      date event_name price"
+    "    }"
     "    estimates {"
     "      historical_values {"
     "        source { type name }"
@@ -36,15 +39,17 @@ HISTORICAL_QUERY = (
 )
 
 
-def fetch_historical(property_id: str) -> list[dict]:
-    """Fetch full historical AVM series for a property from Realtor.com.
+def fetch_history_bundle(property_id: str) -> dict:
+    """Fetch historical AVMs and market events for a property from Realtor.com.
 
-    Returns a flat list of {source, date, estimate} records across all
-    available vendors. Collateral Analytics is filtered out to match
-    `all_estimates`.
+    Returns:
+      estimates: flat {source, date, estimate} records across available vendors.
+      events: flat {date, event_name, price} records from Realtor property_history.
+
+    Collateral Analytics is filtered out of estimates to match `all_estimates`.
     """
     if not property_id:
-        return []
+        return {"estimates": [], "events": []}
     payload = {
         "operationName": "GetHomeHistoricalEstimates",
         "query": HISTORICAL_QUERY,
@@ -58,12 +63,13 @@ def fetch_historical(property_id: str) -> list[dict]:
     )
     resp.raise_for_status()
     data = resp.json()
+    home = (data.get("data") or {}).get("home") or {}
     series = (
-        (((data.get("data") or {}).get("home") or {}).get("estimates") or {})
+        (home.get("estimates") or {})
         .get("historical_values")
         or []
     )
-    out: list[dict] = []
+    estimates: list[dict] = []
     for s in series:
         src = _source_name((s or {}).get("source")) or "Unknown"
         if src.lower() == "collateral analytics":
@@ -73,8 +79,27 @@ def fetch_historical(property_id: str) -> list[dict]:
             date = e.get("date")
             if est is None or not date:
                 continue
-            out.append({"source": src, "date": date[:10], "estimate": est})
-    return out
+            estimates.append({"source": src, "date": date[:10], "estimate": est})
+
+    events: list[dict] = []
+    seen_events: set[tuple[str, str, int]] = set()
+    for e in home.get("property_history") or []:
+        date = e.get("date")
+        name = e.get("event_name")
+        price = _to_int(e.get("price"))
+        if not date or not name or price is None:
+            continue
+        key = (date[:10], str(name), price)
+        if key in seen_events:
+            continue
+        seen_events.add(key)
+        events.append({"date": key[0], "event_name": key[1], "price": key[2]})
+    return {"estimates": estimates, "events": events}
+
+
+def fetch_historical(property_id: str) -> list[dict]:
+    """Fetch full historical AVM series for a property from Realtor.com."""
+    return fetch_history_bundle(property_id)["estimates"]
 
 
 def _norm_str(s: str | None) -> str:

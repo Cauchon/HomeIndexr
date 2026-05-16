@@ -419,7 +419,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       } else {
         const fresh = await API.getProperty(propertyId);
         setProperty(fresh);
-        toast.push({ kind: "ok", text: `Backfilled ${res.written} historical points` });
+        toast.push({ kind: "ok", text: `Backfilled ${res.written} estimates · ${res.events_written || 0} events` });
       }
     } catch (e) {
       toast.push({ kind: "err", text: e.message });
@@ -535,26 +535,31 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
                     const t = parseEstimateDate(h.date);
                     if (t != null && h.estimate != null) ts.push(t);
                   }
+                  for (const e of property.events || []) {
+                    const t = parseEstimateDate(e.date);
+                    if (t != null && e.price != null) ts.push(t);
+                  }
                   if (!ts.length) return "—";
                   return <>{fmt.date(Math.min(...ts))} – {fmt.date(Math.max(...ts))}</>;
                 })()}
               </div>
             </div>
             <div className="card-body">
-              <PriceChart snapshots={property.snapshots} historical={property.historical || []} height={280} />
+              <PriceChart snapshots={property.snapshots} historical={property.historical || []} events={property.events || []} height={280} />
             </div>
+            <LifetimeStrip snapshots={property.snapshots} historical={property.historical || []} events={property.events || []} />
           </div>
 
           <div className="tabs">
             <div className={`tab ${tab === "history" ? "active" : ""}`} onClick={() => setTab("history")}>
-              Snapshot history
+              Timeline
             </div>
             <div className={`tab ${tab === "json" ? "active" : ""}`} onClick={() => setTab("json")}>
               Raw JSON · latest
             </div>
           </div>
 
-          {tab === "history" && <SnapshotHistory snapshots={property.snapshots} historical={property.historical || []} />}
+          {tab === "history" && <ActivityTimeline snapshots={property.snapshots} historical={property.historical || []} events={property.events || []} />}
           {tab === "json" && (
             <div className="card">
               <div className="card-header">
@@ -723,102 +728,369 @@ function parseEstimateDate(s) {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
 }
 
-function SnapshotHistory({ snapshots, historical = [] }) {
-  const snapKeys = new Set();
-  const snapRows = snapshots.map((s) => {
-    const ts = parseEstimateDate(s.estimate_date) ?? s.fetched_at;
-    if (s.estimate_date && s.estimate_source) {
-      snapKeys.add(`${s.estimate_date}|${s.estimate_source}`);
+function marketEventKind(name) {
+  const s = (name || "").toLowerCase();
+  if (s.includes("sold")) return "sold";
+  if (s.includes("price")) return "price";
+  if (s.includes("relisted")) return "relisted";
+  if (s.includes("removed")) return "removed";
+  if (s.includes("rent")) return "rent";
+  if (s.includes("listed")) return "listed";
+  return "event";
+}
+
+function eventBadgeClass(name) {
+  const s = (name || "").toLowerCase();
+  if (s.includes("sold")) return "ok";
+  if (s.includes("price")) return "warn";
+  if (s.includes("listed")) return "info";
+  return "neutral";
+}
+
+const TIMELINE_FILTERS = [
+  { key: "all", label: "All", match: () => true },
+  { key: "estimate", label: "Estimates", match: (e) => e.kind === "estimate" },
+  { key: "market", label: "Market events", match: (e) => e.kind === "market" },
+  { key: "issue", label: "Issues", match: (e) => e.kind === "issue" },
+];
+
+function buildActivityEvents(snapshots = [], historical = [], marketEvents = []) {
+  const rows = [];
+  const estimateRowsByKey = new Map();
+  const addEstimateRow = (row) => {
+    if (!row.date || row.estimate == null || !row.source) return;
+    const key = `${row.date}|${row.source}|${row.estimate}`;
+    const existing = estimateRowsByKey.get(key);
+    if (!existing || (existing.low == null && row.low != null) || row.origin === "snapshot") {
+      estimateRowsByKey.set(key, row);
     }
-    return { kind: "snapshot", ts, snap: s };
+  };
+
+  for (const s of snapshots || []) {
+    const baseDate = s.estimate_date || (s.fetched_at ? new Date(s.fetched_at).toISOString().slice(0, 10) : null);
+    const note = s.error || (s.status === "candidate_mismatch" && s.matched_address ? `Matched ${splitAddress(s.matched_address).line1}` : "");
+    if (s.status === "error" || s.status === "candidate_mismatch") {
+      rows.push({
+        id: `${s.id || s.fetched_at}-issue`,
+        kind: "issue",
+        ts: s.fetched_at || parseEstimateDate(baseDate),
+        label: s.status === "error" ? "Error" : "Mismatch",
+        note: note || "Snapshot did not return a clean match.",
+      });
+    }
+    if (Array.isArray(s.all_estimates) && s.all_estimates.length) {
+      for (const e of s.all_estimates) {
+        addEstimateRow({
+          id: `${s.id || s.fetched_at}-${e.source}-${e.date || baseDate}`,
+          kind: "estimate",
+          origin: "snapshot",
+          date: e.date || baseDate,
+          ts: parseEstimateDate(e.date || baseDate) ?? s.fetched_at,
+          source: e.source,
+          estimate: e.estimate,
+          low: e.low,
+          high: e.high,
+          note,
+        });
+      }
+    } else {
+      addEstimateRow({
+        id: `${s.id || s.fetched_at}-estimate`,
+        kind: "estimate",
+        origin: "snapshot",
+        date: baseDate,
+        ts: parseEstimateDate(baseDate) ?? s.fetched_at,
+        source: s.estimate_source,
+        estimate: s.best_current_estimate,
+        low: s.estimate_low,
+        high: s.estimate_high,
+        note,
+      });
+    }
+  }
+
+  for (const h of historical || []) {
+    addEstimateRow({
+      id: `hist-${h.date}-${h.source}-${h.estimate}`,
+      kind: "estimate",
+      origin: "historical",
+      date: h.date,
+      ts: parseEstimateDate(h.date),
+      source: h.source,
+      estimate: h.estimate,
+      low: null,
+      high: null,
+      note: "Historical AVM",
+    });
+  }
+
+  const estimates = Array.from(estimateRowsByKey.values()).filter((r) => r.ts != null);
+  const bySource = new Map();
+  for (const row of [...estimates].sort((a, b) => a.ts - b.ts)) {
+    const prev = bySource.get(row.source);
+    row.vsPrior = prev ? row.estimate - prev.estimate : null;
+    row.vsPriorPct = prev && prev.estimate ? row.vsPrior / prev.estimate : null;
+    bySource.set(row.source, row);
+  }
+  rows.push(...estimates);
+
+  const sortedEstimates = [...estimates].sort((a, b) => a.ts - b.ts);
+  const sortedMarket = (marketEvents || [])
+    .filter((e) => e.date && e.event_name && e.price != null)
+    .map((e, i) => ({
+      id: `market-${e.date}-${e.event_name}-${e.price}-${i}`,
+      kind: "market",
+      subkind: marketEventKind(e.event_name),
+      ts: parseEstimateDate(e.date),
+      date: e.date,
+      name: e.event_name,
+      price: e.price,
+    }))
+    .filter((e) => e.ts != null)
+    .sort((a, b) => a.ts - b.ts);
+
+  let prevMarketPrice = null;
+  for (const row of sortedMarket) {
+    const estimateAtTime = [...sortedEstimates].reverse().find((e) => e.ts <= row.ts && e.estimate != null);
+    row.estimateAtTime = estimateAtTime?.estimate ?? null;
+    if (row.subkind === "price" && prevMarketPrice != null) {
+      row.vsPrior = row.price - prevMarketPrice;
+      row.vsPriorPct = prevMarketPrice ? row.vsPrior / prevMarketPrice : null;
+    } else if ((row.subkind === "listed" || row.subkind === "sold") && row.estimateAtTime != null) {
+      row.vsPrior = row.price - row.estimateAtTime;
+      row.vsPriorPct = row.estimateAtTime ? row.vsPrior / row.estimateAtTime : null;
+    }
+    if (row.price != null) prevMarketPrice = row.price;
+  }
+  rows.push(...sortedMarket);
+
+  return rows.sort((a, b) => {
+    if (b.ts !== a.ts) return b.ts - a.ts;
+    if (a.kind !== b.kind) return a.kind === "market" ? -1 : 1;
+    return String(a.source || a.name || "").localeCompare(String(b.source || b.name || ""));
   });
-  const histRows = historical
-    .filter((h) => h.date && h.estimate != null && !snapKeys.has(`${h.date}|${h.source}`))
-    .map((h) => ({ kind: "historical", ts: parseEstimateDate(h.date), hist: h }));
-  const rows = [...snapRows, ...histRows]
-    .filter((r) => r.ts != null)
-    .sort((a, b) => b.ts - a.ts);
-  if (!rows.length) return <div className="empty">No snapshots yet.</div>;
+}
+
+function ActivityTimeline({ snapshots, historical = [], events = [] }) {
+  const [filter, setFilter] = useState_p("all");
+  const rows = useMemo_p(() => buildActivityEvents(snapshots, historical, events), [snapshots, historical, events]);
+  const active = TIMELINE_FILTERS.find((f) => f.key === filter) || TIMELINE_FILTERS[0];
+  const filtered = rows.filter(active.match);
+  const counts = useMemo_p(() => {
+    const out = {};
+    for (const f of TIMELINE_FILTERS) out[f.key] = rows.filter(f.match).length;
+    return out;
+  }, [rows]);
+
+  if (!rows.length) return <div className="empty">No timeline data yet.</div>;
   return (
-    <div className="table-wrap">
-      <table className="data">
-        <thead>
-          <tr>
-            <th>Estimate date</th>
-            <th>Status</th>
-            <th>Estimate</th>
-            <th>Source</th>
-            <th style={{ textAlign: "right" }}>Low</th>
-            <th style={{ textAlign: "right" }}>High</th>
-            <th style={{ textAlign: "right" }}>List</th>
-            <th style={{ textAlign: "right" }}>Sold</th>
-            <th>Notes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => {
-            const curEst =
-              r.kind === "snapshot" ? r.snap.best_current_estimate : r.hist.estimate;
-            const curSrc =
-              r.kind === "snapshot" ? r.snap.estimate_source : r.hist.source;
-            const prev = rows.slice(i + 1).find((p) => {
-              const pSrc = p.kind === "snapshot" ? p.snap.estimate_source : p.hist.source;
-              return pSrc === curSrc;
-            });
-            const prevEst = prev
-              ? (prev.kind === "snapshot" ? prev.snap.best_current_estimate : prev.hist.estimate)
-              : null;
-            const change = curEst != null && prevEst != null ? curEst - prevEst : null;
+    <div>
+      <div className="activity-filters">
+        {TIMELINE_FILTERS.map((f) => (
+          <button
+            key={f.key}
+            className={`chip ${filter === f.key ? "active" : ""}`}
+            onClick={() => setFilter(f.key)}
+          >
+            {f.label}
+            <span className="count">{counts[f.key]}</span>
+          </button>
+        ))}
+        <span className="spacer" />
+        <span className="activity-count">{filtered.length} {filtered.length === 1 ? "event" : "events"}</span>
+      </div>
 
-            const key = r.kind === "snapshot" ? `s${r.snap.id}` : `h${r.hist.date}-${r.hist.source}`;
-            const s = r.kind === "snapshot" ? r.snap : null;
-            const h = r.kind === "historical" ? r.hist : null;
+      <div className="table-wrap">
+        <table className="data timeline">
+          <thead>
+            <tr>
+              <th style={{ width: 132 }}>Date</th>
+              <th style={{ width: 140 }}>Event</th>
+              <th>Value</th>
+              <th style={{ textAlign: "right", width: 210 }}>Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r) => <ActivityRow key={r.id} row={r} />)}
+            {filtered.length === 0 && (
+              <tr><td colSpan={4}><div className="empty" style={{ padding: 28 }}>No events match this filter.</div></td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
-            return (
-              <tr key={key} style={{ cursor: "default" }}>
-                <td>
-                  <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                    <span>{fmt.date(r.ts)}</span>
-                    <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.relative(r.ts)}</span>
-                  </div>
-                </td>
-                <td>
-                  {s
-                    ? <StatusBadge status={s.status} />
-                    : <span className="muted" style={{ fontSize: 11 }}>Historical</span>}
-                </td>
-                <td className="num">
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
-                    <span style={{ fontWeight: 500 }}>{fmt.usd(curEst)}</span>
-                    {change != null && (
-                      <span style={{
-                        fontSize: 10,
-                        color: change > 0 ? "var(--pos)" : (change < 0 ? "var(--neg)" : "var(--text-muted)"),
-                        fontVariantNumeric: "tabular-nums"
-                      }}>
-                        {fmt.delta(change)}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="muted" style={{ fontSize: 11 }}>{curSrc || "—"}</td>
-                <td className="num muted">{s ? fmt.usd(s.estimate_low, { compact: true }) : <span className="faint">—</span>}</td>
-                <td className="num muted">{s ? fmt.usd(s.estimate_high, { compact: true }) : <span className="faint">—</span>}</td>
-                <td className="num">{s && s.list_price ? fmt.usd(s.list_price) : <span className="faint">—</span>}</td>
-                <td className="num">{s && s.sold_price ? <span style={{ color: "var(--pos)", fontWeight: 500 }}>{fmt.usd(s.sold_price)}</span> : <span className="faint">—</span>}</td>
-                <td className="muted" style={{ fontSize: 11 }}>
-                  {s
-                    ? (s.error
-                        || (s.status === "candidate_mismatch" && s.matched_address
-                            ? `→ ${splitAddress(s.matched_address).line1}`
-                            : ""))
-                    : ""}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+function ActivityRow({ row }) {
+  return (
+    <tr className={row.origin === "historical" ? "historical-bg" : ""} style={{ cursor: "default" }}>
+      <td className="date-cell">
+        <div>{fmt.date(row.ts)}</div>
+        <div className="rel">{row.origin === "historical" ? "Historical AVM" : fmt.relative(row.ts)}</div>
+      </td>
+      <td><TimelineBadge row={row} /></td>
+      <td className="value-cell"><TimelineValue row={row} /></td>
+      <td className="change-cell"><TimelineChange row={row} /></td>
+    </tr>
+  );
+}
+
+function TimelineBadge({ row }) {
+  if (row.kind === "issue") return <span className={`event-pill ${row.label === "Error" ? "err" : "warn"}`}>{row.label}</span>;
+  if (row.kind === "estimate") return <span className="event-pill neutral">Estimate</span>;
+  return <span className={`event-pill ${eventBadgeClass(row.name)}`}>{row.name}</span>;
+}
+
+function TimelineValue({ row }) {
+  if (row.kind === "estimate") {
+    return (
+      <div>
+        <div className="main">{fmt.usd(row.estimate)}</div>
+        <div className="sub">
+          <InlineRange low={row.low} mid={row.estimate} high={row.high} />
+          {row.low != null && row.high != null && <span style={{ color: "var(--text-faint)" }}>·</span>}
+          <span>{row.source || "—"}</span>
+        </div>
+      </div>
+    );
+  }
+  if (row.kind === "market") {
+    return (
+      <div>
+        <div className="main">{fmt.usd(row.price)}</div>
+        <div className="sub">Realtor market event</div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="main" style={{ color: row.label === "Error" ? "var(--neg)" : "var(--warn)" }}>{row.label}</div>
+      <div className="sub">{row.note}</div>
+    </div>
+  );
+}
+
+function TimelineChange({ row }) {
+  if (row.kind === "estimate") {
+    if (row.vsPrior == null) return <span className="delta-sub">first estimate for source</span>;
+    return (
+      <div>
+        <div className={`delta-num ${row.vsPrior > 0 ? "pos" : (row.vsPrior < 0 ? "neg" : "")}`}>
+          {fmt.delta(row.vsPrior)} <span>({fmt.pct(row.vsPriorPct)})</span>
+        </div>
+        <div className="delta-sub">vs prior {row.source || "estimate"}</div>
+      </div>
+    );
+  }
+  if (row.kind === "market") {
+    if (row.vsPrior == null) return <span className="delta-sub">no nearby comparison</span>;
+    const label = row.subkind === "price" ? "vs prior market price" : "vs nearest estimate";
+    return (
+      <div>
+        <div className={`delta-num ${row.vsPrior > 0 ? "pos" : (row.vsPrior < 0 ? "neg" : "")}`}>
+          {fmt.delta(row.vsPrior)} <span>({fmt.pct(row.vsPriorPct)})</span>
+        </div>
+        <div className="delta-sub">{label}</div>
+      </div>
+    );
+  }
+  return <span className="delta-sub">—</span>;
+}
+
+function InlineRange({ low, mid, high }) {
+  if (low == null || high == null || mid == null) return null;
+  const range = high - low || 1;
+  const midPct = Math.max(0, Math.min(100, ((mid - low) / range) * 100));
+  return (
+    <span className="range-inline" title={`${fmt.usd(low)} – ${fmt.usd(high)}`}>
+      <span>{fmt.usd(low, { compact: true })}</span>
+      <span className="bar">
+        <span className="band" />
+        <span className="tick" style={{ left: `${midPct}%` }} />
+      </span>
+      <span>{fmt.usd(high, { compact: true })}</span>
+    </span>
+  );
+}
+
+function LifetimeStrip({ snapshots = [], historical = [], events = [] }) {
+  const estimateTimes = [];
+  for (const s of snapshots || []) {
+    if (s.fetched_at && s.best_current_estimate != null) estimateTimes.push(s.fetched_at);
+    const t = parseEstimateDate(s.estimate_date);
+    if (t != null && s.best_current_estimate != null) estimateTimes.push(t);
+  }
+  for (const h of historical || []) {
+    const t = parseEstimateDate(h.date);
+    if (t != null && h.estimate != null) estimateTimes.push(t);
+  }
+  const market = (events || [])
+    .map((e, i) => ({ ...e, ts: parseEstimateDate(e.date), subkind: marketEventKind(e.event_name), i }))
+    .filter((e) => e.ts != null && e.price != null)
+    .sort((a, b) => a.ts - b.ts);
+  const sales = market.filter((e) => e.subkind === "sold");
+
+  const allTimes = [...estimateTimes, ...market.map((e) => e.ts), Date.now()];
+  if (allTimes.length < 2) return null;
+
+  const yearMs = 365.25 * 86400000;
+  const min = Math.min(...allTimes) - yearMs;
+  const max = Math.max(...allTimes) + yearMs;
+  const range = max - min || 1;
+  const pct = (t) => ((t - min) / range) * 100;
+  const estimateStart = estimateTimes.length ? Math.min(...estimateTimes) : null;
+  const estimateEnd = estimateTimes.length ? Math.max(...estimateTimes) : null;
+  const years = [];
+  const startYear = new Date(min).getFullYear();
+  const endYear = new Date(max).getFullYear();
+  for (let y = Math.ceil(startYear / 5) * 5; y <= endYear; y += 5) {
+    const t = Date.UTC(y, 0, 1, 12, 0, 0);
+    if (t >= min && t <= max) years.push({ y, t });
+  }
+  const mostRecentSale = sales[sales.length - 1];
+  const latestEstimate = [...snapshots].reverse().find((s) => s.best_current_estimate != null)?.best_current_estimate
+    ?? [...historical].reverse().find((h) => h.estimate != null)?.estimate
+    ?? null;
+  const sinceSale = mostRecentSale && latestEstimate != null
+    ? (latestEstimate - mostRecentSale.price) / mostRecentSale.price
+    : null;
+
+  return (
+    <div className="lifetime-strip">
+      <div className="lifetime-head">
+        <div>Ownership history</div>
+        {sinceSale != null && (
+          <div>Since last sale ({new Date(mostRecentSale.ts).getUTCFullYear()}): <span className={sinceSale >= 0 ? "pos" : "neg"}>{fmt.pct(sinceSale)}</span></div>
+        )}
+      </div>
+      <div className="axis">
+        <div className="baseline" />
+        {estimateStart != null && estimateEnd != null && (
+          <div className="window" style={{ left: `${pct(estimateStart)}%`, width: `${Math.max(1, pct(estimateEnd) - pct(estimateStart))}%` }} />
+        )}
+        {years.map(({ y, t }) => (
+          <React.Fragment key={y}>
+            <span className="year-tick" style={{ left: `${pct(t)}%` }} />
+            <span className="year-label" style={{ left: `${pct(t)}%` }}>{y}</span>
+          </React.Fragment>
+        ))}
+        {sales.map((s) => (
+          <React.Fragment key={`${s.date}-${s.price}-${s.i}`}>
+            <span className="sale-mark" style={{ left: `${pct(s.ts)}%` }} title={`${fmt.date(s.ts)} · ${fmt.usd(s.price)}`} />
+            <span className="sale-label" style={{ left: `${pct(s.ts)}%` }}>
+              {fmt.usd(s.price, { compact: true })}
+              <span className="year">{new Date(s.ts).getUTCFullYear()}</span>
+            </span>
+          </React.Fragment>
+        ))}
+        <span className="today-mark" style={{ left: `${pct(Date.now())}%` }} title="Today" />
+      </div>
+      <div className="legend">
+        <span className="item"><span className="swatch sale" />{sales.length} recorded {sales.length === 1 ? "sale" : "sales"}</span>
+        <span className="item"><span className="swatch window" />Tracked estimates</span>
+        <span className="item"><span className="today-mini" />Today</span>
+      </div>
     </div>
   );
 }

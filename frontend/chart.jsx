@@ -1,12 +1,22 @@
-// SVG chart for property detail page
-// Aggregates Cotality and Quantarium estimates into monthly buckets and plots
-// one point per month per source. Hover snaps to a month and shows both sources.
+// SVG chart for property detail page.
+// AVM vendors stay as continuous monthly lines; Realtor market history renders
+// as dated event markers so list/sale events do not imply continuous prices.
 
 const { useState: useState_chart, useMemo: useMemo_chart, useRef: useRef_chart, useEffect: useEffect_chart } = React;
 
 const VENDOR_STYLES = {
   "Cotality™": { color: "var(--accent)", dash: null },
   "Quantarium": { color: "var(--pos)", dash: "5 3" },
+};
+
+const EVENT_STYLES = {
+  listed: { label: "Listed", color: "var(--info)", fill: "var(--info)" },
+  sold: { label: "Sold", color: "var(--pos)", fill: "var(--pos)" },
+  price: { label: "Price changed", color: "var(--warn)", fill: "var(--bg-elev)" },
+  relisted: { label: "Relisted", color: "var(--accent)", fill: "var(--bg-elev)" },
+  removed: { label: "Removed", color: "var(--text-muted)", fill: "var(--bg-elev)" },
+  rent: { label: "Rent event", color: "var(--info)", fill: "var(--bg-elev)" },
+  other: { label: "Event", color: "var(--text-muted)", fill: "var(--bg-elev)" },
 };
 
 function _toMs(dateStr) {
@@ -25,7 +35,25 @@ function _monthLabel(monthX) {
   return new Date(monthX).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
-function PriceChart({ snapshots, historical = [], height = 280 }) {
+function _eventKind(name) {
+  const s = (name || "").toLowerCase();
+  if (s.includes("sold")) return "sold";
+  if (s.includes("price")) return "price";
+  if (s.includes("relisted")) return "relisted";
+  if (s.includes("removed")) return "removed";
+  if (s.includes("rent")) return "rent";
+  if (s.includes("listed")) return "listed";
+  return "other";
+}
+
+function _yearMonthFromMs(t) {
+  const d = new Date(t);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function PriceChart({ snapshots, historical = [], events = [], height = 280 }) {
   const containerRef = useRef_chart(null);
   const [w, setW] = useState_chart(720);
   const [hover, setHover] = useState_chart(null);
@@ -39,8 +67,6 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
     return () => ro.disconnect();
   }, []);
 
-  // Aggregate into per-source monthly buckets. Each (source, month) gets the
-  // most recent point that falls within that month.
   const monthlySeries = useMemo_chart(() => {
     const bySrc = new Map();
     const add = (date, source, value) => {
@@ -71,33 +97,39 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
       .filter((s) => s.points.length);
   }, [snapshots, historical]);
 
+  const marketEvents = useMemo_chart(() => {
+    const seen = new Set();
+    return (events || [])
+      .map((e) => ({
+        ...e,
+        t: _toMs(e.date),
+        kind: _eventKind(e.event_name),
+      }))
+      .filter((e) => {
+        if (e.t == null || e.price == null) return false;
+        const key = `${e.date}|${e.event_name}|${e.price}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.t - b.t);
+  }, [events]);
+
   const monthXs = useMemo_chart(() => {
     const set = new Set();
     monthlySeries.forEach((s) => s.points.forEach((p) => set.add(p.monthX)));
     return [...set].sort((a, b) => a - b);
   }, [monthlySeries]);
 
-  const latestList = useMemo_chart(() => {
-    const sorted = (snapshots || []).filter((s) => s.list_price != null).sort((a, b) => b.fetched_at - a.fetched_at);
-    return sorted[0]?.list_price ?? null;
-  }, [snapshots]);
-
-  const soldEvent = useMemo_chart(() => {
-    return (snapshots || []).find((s) => s.sold_price != null) || null;
-  }, [snapshots]);
-
   const padding = { l: 56, r: 16, t: 14, b: 28 };
   const innerW = Math.max(60, w - padding.l - padding.r);
   const innerH = height - padding.t - padding.b;
 
-  const xs = [...monthXs];
+  const eventXs = marketEvents.map((e) => e.t);
+  const xs = [...monthXs, ...eventXs];
   const allYs = [];
   monthlySeries.forEach((s) => s.points.forEach((p) => allYs.push(p.v)));
-  if (latestList != null) allYs.push(latestList);
-  if (soldEvent) {
-    xs.push(soldEvent.fetched_at);
-    allYs.push(soldEvent.sold_price);
-  }
+  marketEvents.forEach((e) => allYs.push(e.price));
 
   if (!xs.length || !allYs.length) {
     return <div ref={containerRef} className="empty" style={{ height }}>No timeline data yet.</div>;
@@ -120,7 +152,7 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
   for (let i = 0; i <= tickCount; i++) {
     yTicks.push(yMin + ((yMax - yMin) * i) / tickCount);
   }
-  const xTickCount = Math.min(6, monthXs.length);
+  const xTickCount = Math.min(6, Math.max(2, xs.length));
   const xTicks = [];
   for (let i = 0; i < xTickCount; i++) {
     const t = xMin + ((xMax - xMin) * i) / (xTickCount - 1 || 1);
@@ -131,20 +163,25 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
     const rect = containerRef.current.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     if (mx < padding.l || mx > w - padding.r) { setHover(null); return; }
-    if (!monthXs.length) { setHover(null); return; }
-    let nearestX = monthXs[0], nd = Infinity;
-    for (const t of monthXs) {
+    const choices = [...monthXs, ...eventXs];
+    if (!choices.length) { setHover(null); return; }
+    let nearestX = choices[0], nd = Infinity;
+    for (const t of choices) {
       const d = Math.abs(xScale(t) - mx);
       if (d < nd) { nd = d; nearestX = t; }
     }
-    setHover({ monthX: nearestX });
+    setHover({ t: nearestX });
   };
 
+  const hoverMonth = hover ? _yearMonthFromMs(hover.t) : null;
   const hoverRows = hover
     ? monthlySeries.map((s) => ({
         source: s.source,
-        point: s.points.find((p) => p.monthX === hover.monthX) || null,
+        point: s.points.find((p) => p.month === hoverMonth) || null,
       }))
+    : [];
+  const hoverEvents = hover
+    ? marketEvents.filter((e) => e.date && e.date.slice(0, 7) === hoverMonth)
     : [];
 
   return (
@@ -164,25 +201,6 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
           </text>
         ))}
 
-        {/* List price reference line */}
-        {latestList != null && (
-          <g>
-            <line
-              x1={padding.l}
-              x2={w - padding.r}
-              y1={yScale(latestList)}
-              y2={yScale(latestList)}
-              stroke="var(--text-muted)"
-              strokeWidth="1.25"
-              strokeDasharray="4 3"
-            />
-            <text x={w - padding.r - 4} y={yScale(latestList) - 4} fontSize="10" textAnchor="end" fill="var(--text-muted)">
-              List {fmt.usd(latestList, { compact: true })}
-            </text>
-          </g>
-        )}
-
-        {/* Monthly source lines */}
         {monthlySeries.map((s) => {
           const style = VENDOR_STYLES[s.source] || { color: "var(--text-muted)", dash: null };
           const d = s.points.map((p, i) =>
@@ -205,35 +223,40 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
           );
         })}
 
-        {/* Sold marker */}
-        {soldEvent && (
-          <g>
-            <line x1={xScale(soldEvent.fetched_at)} x2={xScale(soldEvent.fetched_at)} y1={padding.t} y2={height - padding.b} stroke="var(--pos)" strokeWidth="1" strokeDasharray="2 2" opacity="0.5" />
-            <circle cx={xScale(soldEvent.fetched_at)} cy={yScale(soldEvent.sold_price)} r="5" fill="var(--pos)" stroke="var(--bg-elev)" strokeWidth="2" />
-            <text x={xScale(soldEvent.fetched_at) + 8} y={yScale(soldEvent.sold_price) - 6} fontSize="10" fill="var(--pos)" fontWeight="600">
-              Sold {fmt.usd(soldEvent.sold_price, { compact: true })}
-            </text>
-          </g>
-        )}
+        {marketEvents.map((e, i) => {
+          const style = EVENT_STYLES[e.kind] || EVENT_STYLES.other;
+          const r = e.kind === "sold" ? 5 : 4;
+          return (
+            <g key={`${e.date}-${e.event_name}-${e.price}-${i}`}>
+              <line x1={xScale(e.t)} x2={xScale(e.t)} y1={padding.t} y2={height - padding.b} stroke={style.color} strokeWidth="1" strokeDasharray="2 4" opacity="0.28" />
+              <circle cx={xScale(e.t)} cy={yScale(e.price)} r={r} fill={style.fill} stroke={style.color} strokeWidth="2" />
+            </g>
+          );
+        })}
 
-        {/* Hover crosshair */}
         {hover && (
           <g>
-            <line x1={xScale(hover.monthX)} x2={xScale(hover.monthX)} y1={padding.t} y2={height - padding.b} stroke="var(--border-strong)" strokeWidth="1" />
+            <line x1={xScale(hover.t)} x2={xScale(hover.t)} y1={padding.t} y2={height - padding.b} stroke="var(--border-strong)" strokeWidth="1" />
             {hoverRows.filter((r) => r.point).map(({ source, point }) => {
               const style = VENDOR_STYLES[source] || { color: "var(--text-muted)" };
               return (
                 <circle key={source} cx={xScale(point.monthX)} cy={yScale(point.v)} r="4" fill={style.color} stroke="var(--bg-elev)" strokeWidth="2" />
               );
             })}
+            {hoverEvents.map((e, i) => {
+              const style = EVENT_STYLES[e.kind] || EVENT_STYLES.other;
+              return (
+                <circle key={`${e.date}-${e.event_name}-${i}`} cx={xScale(e.t)} cy={yScale(e.price)} r="6" fill="transparent" stroke={style.color} strokeWidth="1.5" />
+              );
+            })}
           </g>
         )}
       </svg>
 
-      {hover && hoverRows.some((r) => r.point) && (
+      {hover && (hoverRows.some((r) => r.point) || hoverEvents.length > 0) && (
         <div style={{
           position: "absolute",
-          left: Math.min(w - 200, Math.max(8, xScale(hover.monthX) + 12)),
+          left: Math.min(w - 240, Math.max(8, xScale(hover.t) + 12)),
           top: 10,
           background: "var(--bg-elev)",
           border: "1px solid var(--border)",
@@ -242,10 +265,10 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
           padding: "8px 10px",
           fontSize: "11px",
           pointerEvents: "none",
-          minWidth: "180px",
+          minWidth: "220px",
           zIndex: 2,
         }}>
-          <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>{_monthLabel(hover.monthX)}</div>
+          <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>{_monthLabel(hover.t)}</div>
           {hoverRows.map(({ source, point }) => {
             const style = VENDOR_STYLES[source] || { color: "var(--text-muted)" };
             return (
@@ -257,12 +280,15 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
               </div>
             );
           })}
-          {latestList != null && (
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 4, paddingTop: 4, borderTop: "1px solid var(--border)", color: "var(--text-muted)" }}>
-              <span>List</span>
-              <span className="mono">{fmt.usd(latestList)}</span>
-            </div>
-          )}
+          {hoverEvents.map((e, i) => {
+            const style = EVENT_STYLES[e.kind] || EVENT_STYLES.other;
+            return (
+              <div key={`${e.date}-${e.event_name}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 4, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
+                <span style={{ color: style.color }}>{e.event_name}</span>
+                <span className="mono" style={{ fontWeight: 500 }}>{fmt.usd(e.price)}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -283,8 +309,9 @@ function PriceChart({ snapshots, historical = [], height = 280 }) {
             </span>
           );
         })}
-        {latestList != null && <span className="item"><span className="swatch dashed" /> List price</span>}
-        {soldEvent && <span className="item"><span className="swatch dot" /> Sold</span>}
+        <span className="item"><span className="swatch dot" style={{ background: "var(--info)" }} /> Listed</span>
+        <span className="item"><span className="swatch dot" style={{ background: "var(--pos)" }} /> Sold</span>
+        <span className="item"><span className="swatch dot" style={{ background: "var(--bg-elev)", border: "2px solid var(--warn)" }} /> Price change</span>
       </div>
     </div>
   );
