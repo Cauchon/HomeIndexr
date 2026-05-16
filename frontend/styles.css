@@ -866,6 +866,100 @@ table.data .address-cell .sub {
   color: var(--text-faint);
   white-space: nowrap;
 }
+/* ---------- Pager (table footer) ---------- */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.pager-info { font-variant-numeric: tabular-nums; }
+.pager-info strong { color: var(--text); font-weight: 500; }
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.pager-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.pager-size select {
+  appearance: none;
+  height: 24px;
+  padding: 0 22px 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background-color: var(--bg-elev);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+                    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
+  background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+.pager-size select:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.pager-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.pager-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pager-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+.pager-btn.active {
+  background: var(--bg-elev);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  font-weight: 500;
+}
+.pager-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+.pager-gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 26px;
+  color: var(--text-faint);
+  user-select: none;
+}
 
 table.data.timeline tbody td {
   padding: 10px 12px;
@@ -1261,6 +1355,11 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   table.data .address-cell { max-width: 220px; }
   .delta { min-width: 90px; }
   .delta .bar { width: 36px; }
+  .pager { align-items: stretch; flex-direction: column; }
+  .pager-controls {
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
 }
 
 /* ---------- Small phones ---------- */

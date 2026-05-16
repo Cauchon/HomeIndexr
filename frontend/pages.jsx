@@ -760,6 +760,7 @@ const TIMELINE_FILTERS = [
   { key: "issue", label: "Issues", match: (e) => e.kind === "issue" },
 ];
 const TIMELINE_PAGE_SIZE = 10;
+const TIMELINE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 function buildActivityEvents(snapshots = [], historical = [], marketEvents = []) {
   const rows = [];
@@ -881,6 +882,7 @@ function buildActivityEvents(snapshots = [], historical = [], marketEvents = [])
 function ActivityTimeline({ snapshots, historical = [], events = [] }) {
   const [filter, setFilter] = useState_p("all");
   const [page, setPage] = useState_p(1);
+  const [pageSize, setPageSize] = useState_p(TIMELINE_PAGE_SIZE);
   const rows = useMemo_p(() => buildActivityEvents(snapshots, historical, events), [snapshots, historical, events]);
   const active = TIMELINE_FILTERS.find((f) => f.key === filter) || TIMELINE_FILTERS[0];
   const filtered = rows.filter(active.match);
@@ -889,10 +891,12 @@ function ActivityTimeline({ snapshots, historical = [], events = [] }) {
     for (const f of TIMELINE_FILTERS) out[f.key] = rows.filter(f.match).length;
     return out;
   }, [rows]);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / TIMELINE_PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
-  const pageStart = (currentPage - 1) * TIMELINE_PAGE_SIZE;
-  const pageRows = filtered.slice(pageStart, pageStart + TIMELINE_PAGE_SIZE);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageRows = filtered.slice(pageStart, pageStart + pageSize);
+  const rangeFrom = filtered.length === 0 ? 0 : pageStart + 1;
+  const rangeTo = Math.min(pageStart + pageSize, filtered.length);
 
   useEffect_p(() => {
     setPage(1);
@@ -901,6 +905,11 @@ function ActivityTimeline({ snapshots, historical = [], events = [] }) {
   function chooseFilter(key) {
     setFilter(key);
     setPage(1);
+  }
+  function choosePageSize(size) {
+    const firstVisibleIndex = pageStart;
+    setPageSize(size);
+    setPage(Math.floor(firstVisibleIndex / size) + 1);
   }
 
   if (!rows.length) return <div className="empty">No timeline data yet.</div>;
@@ -938,33 +947,77 @@ function ActivityTimeline({ snapshots, historical = [], events = [] }) {
             )}
           </tbody>
         </table>
+        {filtered.length > 0 && (
+          <TimelinePager
+            page={currentPage}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            rangeFrom={rangeFrom}
+            rangeTo={rangeTo}
+            total={filtered.length}
+            onPage={setPage}
+            onPageSize={choosePageSize}
+          />
+        )}
       </div>
-      {filtered.length > TIMELINE_PAGE_SIZE && (
-        <div className="timeline-pager">
-          <div className="pager-summary">
-            Showing {pageStart + 1}–{Math.min(pageStart + TIMELINE_PAGE_SIZE, filtered.length)} of {filtered.length}
-          </div>
-          <div className="pager-controls">
-            <button
-              className="btn btn-sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              <Icon name="chevronLeft" /> Previous
-            </button>
-            <span className="pager-page">Page {currentPage} of {pageCount}</span>
-            <button
-              className="btn btn-sm"
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-              disabled={currentPage === pageCount}
-            >
-              Next <Icon name="chevronRight" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
+}
+
+function TimelinePager({ page, pageCount, pageSize, rangeFrom, rangeTo, total, onPage, onPageSize }) {
+  const pages = timelinePageWindow(page, pageCount);
+  return (
+    <div className="pager">
+      <div className="pager-info">
+        Showing <strong>{rangeFrom.toLocaleString()}–{rangeTo.toLocaleString()}</strong> of{" "}
+        <strong>{total.toLocaleString()}</strong>
+      </div>
+      <div className="pager-controls">
+        <label className="pager-size">
+          <span>Rows</span>
+          <select value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))}>
+            {TIMELINE_PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <div className="pager-nav">
+          <button
+            className="pager-btn"
+            onClick={() => onPage(page - 1)}
+            disabled={page <= 1}
+            aria-label="Previous page"
+          >‹</button>
+          {pages.map((p, i) => p === "…" ? (
+            <span key={`gap-${i}`} className="pager-gap">…</span>
+          ) : (
+            <button
+              key={p}
+              className={`pager-btn ${p === page ? "active" : ""}`}
+              onClick={() => onPage(p)}
+              aria-current={p === page ? "page" : undefined}
+            >{p}</button>
+          ))}
+          <button
+            className="pager-btn"
+            onClick={() => onPage(page + 1)}
+            disabled={page >= pageCount}
+            aria-label="Next page"
+          >›</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function timelinePageWindow(page, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const out = [1];
+  const left = Math.max(2, page - 1);
+  const right = Math.min(total - 1, page + 1);
+  if (left > 2) out.push("…");
+  for (let i = left; i <= right; i++) out.push(i);
+  if (right < total - 1) out.push("…");
+  out.push(total);
+  return out;
 }
 
 function ActivityRow({ row }) {
