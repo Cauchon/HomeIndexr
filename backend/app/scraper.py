@@ -206,10 +206,12 @@ def normalize_listing_state(raw: dict | None, now_ms: int | None = None) -> str:
     """Return one dashboard listing bucket.
 
     Precedence:
-      1. Pending / contingent / under-contract cues.
-      2. Active for-sale cues.
-      3. Sold cues, but only for SOLD_TO_OFF_MARKET_DAYS after sale date.
-      4. Off market.
+      1. Explicit sold / closed current-status cues, but only for
+         SOLD_TO_OFF_MARKET_DAYS after sale date.
+      2. Pending / contingent / under-contract cues.
+      3. Active for-sale cues.
+      4. Other sold cues, but only for SOLD_TO_OFF_MARKET_DAYS after sale date.
+      5. Off market.
     """
     if not isinstance(raw, dict):
         return "off_market"
@@ -220,6 +222,16 @@ def normalize_listing_state(raw: dict | None, now_ms: int | None = None) -> str:
     statuses = {status, mls}
     statuses.discard("")
 
+    sold_words = ("sold", "closed")
+    has_sold_status = any(any(word in s for word in sold_words) for s in statuses)
+    if has_sold_status:
+        sale_ms = _sale_date_ms(raw)
+        if sale_ms is not None:
+            age_days = (now_ms - sale_ms) / 86_400_000
+            if 0 <= age_days <= SOLD_TO_OFF_MARKET_DAYS:
+                return "sold"
+        return "off_market"
+
     pending_words = ("pending", "under_contract", "contingent")
     if raw.get("pending_date") or any(any(word in s for word in pending_words) for s in statuses):
         return "pending"
@@ -228,14 +240,11 @@ def normalize_listing_state(raw: dict | None, now_ms: int | None = None) -> str:
     has_active_cue = bool(statuses & active_statuses)
     if has_active_cue:
         return "for_sale"
-    has_sold_status = any("sold" in s or "closed" in s for s in statuses)
     if raw.get("list_price") is not None and raw.get("listing_id") and not has_sold_status:
         return "for_sale"
 
-    sold_words = ("sold", "closed")
     has_sold_cue = (
-        any(any(word in s for word in sold_words) for s in statuses)
-        or raw.get("sold_price") is not None
+        raw.get("sold_price") is not None
         or raw.get("last_sold_date") is not None
     )
     if has_sold_cue:

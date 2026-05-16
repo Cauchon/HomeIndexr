@@ -177,12 +177,12 @@ function RangePill({ low, mid, high }) {
 }
 
 // ---------- Sortable Header ----------
-function SortHeader({ label, k, sort, setSort, align = "left", style }) {
+function SortHeader({ label, k, sort, setSort, align = "left", style, defaultDir = "asc" }) {
   const active = sort.key === k;
   return (
     <th
       style={{ textAlign: align, ...style }}
-      onClick={() => setSort({ key: k, dir: active && sort.dir === "asc" ? "desc" : "asc" })}
+      onClick={() => setSort({ key: k, dir: active && sort.dir === "asc" ? "desc" : defaultDir })}
     >
       {label}
       <span className="sort">{active ? (sort.dir === "asc" ? "↑" : "↓") : "↕"}</span>

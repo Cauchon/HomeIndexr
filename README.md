@@ -82,14 +82,18 @@ shapes HomeHarvest returns: `raw["current_estimates"]` (flat snake_case) or
 The Properties page uses `properties.listing_state`, normalized server-side from
 the latest HomeHarvest/Realtor raw JSON. The dashboard buckets are:
 
-1. `pending` — `pending_date` exists, or Realtor/HomeHarvest status text
-   contains `pending`, `contingent`, or `under contract`.
-2. `for_sale` — status text indicates `for_sale`, `active`, `coming soon`, or
+1. `sold` — explicit current status text indicates `sold`/`closed`, and the
+   sale date is no more than **180 days** old. This wins over stale
+   `pending_date` values left on sold listings.
+2. `pending` — `pending_date` exists, or Realtor/HomeHarvest status text
+   contains `pending`, `contingent`, or `under contract`, unless the current
+   status is already sold/closed.
+3. `for_sale` — status text indicates `for_sale`, `active`, `coming soon`, or
    similar active listing state; as a fallback, a row with both `listing_id` and
    `list_price` is treated as for sale unless it has sold/closed cues.
-3. `sold` — status text indicates `sold`/`closed`, or a sale price/date exists,
+4. `sold` — sale price/date exists without active or pending cues,
    and the sale date is no more than **180 days** old.
-4. `off_market` — no active/pending signal, or a sold/closed signal whose sale
+5. `off_market` — no active/pending signal, or a sold/closed signal whose sale
    date is older than 180 days.
 
 The sold window is intentionally finite so old Realtor sold records do not stay

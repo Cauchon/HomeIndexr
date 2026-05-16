@@ -152,16 +152,17 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               <SortHeader label="Sale price"   k="sold"          sort={sort} setSort={setSort} align="right" />
               <SortHeader label="Est − List"   k="estVsList"     sort={sort} setSort={setSort} align="right" />
               <SortHeader label="Est − Sale"   k="estVsSold"     sort={sort} setSort={setSort} align="right" />
-              <SortHeader label="Last refresh" k="updated_at"    sort={sort} setSort={setSort} />
+              <SortHeader label="Added"        k="created_at"    sort={sort} setSort={setSort} defaultDir="desc" />
+              <SortHeader label="Last refresh" k="updated_at"    sort={sort} setSort={setSort} defaultDir="desc" />
               <SortHeader label="Status"       k="status"        sort={sort} setSort={setSort} />
             </tr>
           </thead>
           <tbody>
             {loading && properties.length === 0 && (
-              <tr><td colSpan={9} className="empty">Loading…</td></tr>
+              <tr><td colSpan={10} className="empty">Loading…</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={9}>
+              <tr><td colSpan={10}>
                 <div className="empty">
                   <div className="title">{properties.length === 0 ? "No properties yet" : "No matches"}</div>
                   <div>
@@ -186,6 +187,12 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                   <td className="num">{r.sold ? fmt.usd(r.sold) : <span className="faint">—</span>}</td>
                   <td className="num"><DeltaCell value={r.estimate} base={r.list} /></td>
                   <td className="num"><DeltaCell value={r.estimate} base={r.sold} /></td>
+                  <td className="muted">
+                    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                      <span style={{ color: "var(--text)" }}>{fmt.relative(r.created_at)}</span>
+                      <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.shortDate(r.created_at)}</span>
+                    </div>
+                  </td>
                   <td className="muted">
                     <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
                       <span style={{ color: "var(--text)" }}>{fmt.relative(r.updated_at)}</span>
