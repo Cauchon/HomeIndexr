@@ -541,7 +541,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
               </div>
             </div>
             <div className="card-body">
-              <PriceChart snapshots={property.snapshots} historical={property.historical || []} mode="band" height={280} />
+              <PriceChart snapshots={property.snapshots} historical={property.historical || []} height={280} />
             </div>
           </div>
 
