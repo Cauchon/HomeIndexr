@@ -105,6 +105,10 @@ function splitAddress(addr) {
   return { line1: m[1], line2: `${m[2]}, ${m[3]} ${m[4]}` };
 }
 
+function displayAddress(property) {
+  return (property && (property.canonical_address || property.input_address)) || "";
+}
+
 // ---------- Status badge ----------
 const STATUS_META = {
   matched:            { label: "Matched",   cls: "ok" },
@@ -269,7 +273,7 @@ function bestEstimate(rawOrSnap) {
 
 // expose
 Object.assign(window, {
-  Icon, fmt, splitAddress,
+  Icon, fmt, splitAddress, displayAddress,
   StatusBadge, ListingBadge, DeltaCell, RangePill, SortHeader,
   ToastProvider, useToast, JsonViewer, Sparkline, bestEstimate,
   STATUS_META, LISTING_META,

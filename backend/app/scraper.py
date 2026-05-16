@@ -115,11 +115,20 @@ def _to_int(v: Any) -> int | None:
         return None
 
 
+def _title_city(city: str | None) -> str | None:
+    if not city:
+        return None
+    city = " ".join(city.split())
+    if city == city.lower() or city == city.upper():
+        return " ".join(part[:1].upper() + part[1:].lower() for part in city.split())
+    return city
+
+
 def _build_matched_address(raw: dict) -> str | None:
     loc = (raw.get("location") or {}).get("address") or {}
     line = loc.get("line")
-    city = loc.get("city")
-    state = loc.get("state_code")
+    city = _title_city(loc.get("city"))
+    state = loc.get("state_code").upper() if loc.get("state_code") else None
     zip_ = loc.get("postal_code")
     if line and city and state and zip_:
         return f"{line}, {city}, {state} {zip_}"
@@ -239,8 +248,8 @@ def _flatten(raw: dict) -> dict:
         "listing_id": raw.get("listing_id"),
         "property_url": _href(raw),
         "listing_state": raw.get("status"),
-        "city": loc.get("city"),
-        "state": loc.get("state_code"),
+        "city": _title_city(loc.get("city")),
+        "state": loc.get("state_code").upper() if loc.get("state_code") else None,
         "zip": loc.get("postal_code"),
     }
 

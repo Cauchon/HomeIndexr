@@ -28,6 +28,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         : {};
       return {
         ...p,
+        display_address: displayAddress(p),
         last,
         estimate: last.best_current_estimate,
         list: last.list_price,
@@ -44,7 +45,12 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
     });
 
     const ql = q.trim().toLowerCase();
-    if (ql) arr = arr.filter((r) => (r.input_address || "").toLowerCase().includes(ql));
+    if (ql) {
+      arr = arr.filter((r) => (
+        (r.display_address || "").toLowerCase().includes(ql) ||
+        (r.input_address || "").toLowerCase().includes(ql)
+      ));
+    }
     if (city !== "all") arr = arr.filter((r) => r.city === city);
     if (state !== "all") arr = arr.filter((r) => r.state === state);
     if (status !== "all") arr = arr.filter((r) => r.status === status);
@@ -131,7 +137,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         <table className="data">
           <thead>
             <tr>
-              <SortHeader label="Address"      k="input_address" sort={sort} setSort={setSort} />
+              <SortHeader label="Address"      k="display_address" sort={sort} setSort={setSort} />
               <SortHeader label="Listing"      k="listing_state" sort={sort} setSort={setSort} />
               <SortHeader label="Est. value"   k="estimate"      sort={sort} setSort={setSort} align="right" />
               <SortHeader label="List price"   k="list"          sort={sort} setSort={setSort} align="right" />
@@ -159,7 +165,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               </td></tr>
             )}
             {rows.map((r) => {
-              const sp = splitAddress(r.input_address || "");
+              const sp = splitAddress(r.display_address || "");
               return (
                 <tr key={r.id} onClick={() => navigate("detail", r.id)}>
                   <td className="address-cell">
@@ -206,7 +212,7 @@ function AddPropertyPage({ navigate, onAdded }) {
       const res = await API.addProperty(t, false);
       if (res.status === "matched") {
         // Created (or appended) — done.
-        toast.push({ kind: "ok", text: `Added ${splitAddress(res.property.input_address).line1}` });
+        toast.push({ kind: "ok", text: `Added ${splitAddress(displayAddress(res.property)).line1}` });
         onAdded(res.property);
         navigate("dashboard");
         return;
@@ -230,7 +236,7 @@ function AddPropertyPage({ navigate, onAdded }) {
     try {
       const res = await API.addProperty(result.input, true);
       if (res.property) {
-        toast.push({ kind: "ok", text: `Tracking ${splitAddress(res.property.input_address).line1}` });
+        toast.push({ kind: "ok", text: `Tracking ${splitAddress(displayAddress(res.property)).line1}` });
         onAdded(res.property);
         navigate("dashboard");
       } else {
@@ -432,7 +438,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   if (!property) return <div className="empty"><div className="title">Property not found</div></div>;
 
   const last = property.snapshots[property.snapshots.length - 1] || {};
-  const sp = splitAddress(property.input_address || "");
+  const sp = splitAddress(displayAddress(property));
 
   const firstEst = (() => {
     const s = property.snapshots.find((x) => x.best_current_estimate != null);
@@ -753,6 +759,7 @@ const TIMELINE_FILTERS = [
   { key: "market", label: "Market events", match: (e) => e.kind === "market" },
   { key: "issue", label: "Issues", match: (e) => e.kind === "issue" },
 ];
+const TIMELINE_PAGE_SIZE = 10;
 
 function buildActivityEvents(snapshots = [], historical = [], marketEvents = []) {
   const rows = [];
@@ -873,6 +880,7 @@ function buildActivityEvents(snapshots = [], historical = [], marketEvents = [])
 
 function ActivityTimeline({ snapshots, historical = [], events = [] }) {
   const [filter, setFilter] = useState_p("all");
+  const [page, setPage] = useState_p(1);
   const rows = useMemo_p(() => buildActivityEvents(snapshots, historical, events), [snapshots, historical, events]);
   const active = TIMELINE_FILTERS.find((f) => f.key === filter) || TIMELINE_FILTERS[0];
   const filtered = rows.filter(active.match);
@@ -881,6 +889,19 @@ function ActivityTimeline({ snapshots, historical = [], events = [] }) {
     for (const f of TIMELINE_FILTERS) out[f.key] = rows.filter(f.match).length;
     return out;
   }, [rows]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / TIMELINE_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * TIMELINE_PAGE_SIZE;
+  const pageRows = filtered.slice(pageStart, pageStart + TIMELINE_PAGE_SIZE);
+
+  useEffect_p(() => {
+    setPage(1);
+  }, [filter, rows]);
+
+  function chooseFilter(key) {
+    setFilter(key);
+    setPage(1);
+  }
 
   if (!rows.length) return <div className="empty">No timeline data yet.</div>;
   return (
@@ -890,7 +911,7 @@ function ActivityTimeline({ snapshots, historical = [], events = [] }) {
           <button
             key={f.key}
             className={`chip ${filter === f.key ? "active" : ""}`}
-            onClick={() => setFilter(f.key)}
+            onClick={() => chooseFilter(f.key)}
           >
             {f.label}
             <span className="count">{counts[f.key]}</span>
@@ -911,13 +932,37 @@ function ActivityTimeline({ snapshots, historical = [], events = [] }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => <ActivityRow key={r.id} row={r} />)}
+            {pageRows.map((r) => <ActivityRow key={r.id} row={r} />)}
             {filtered.length === 0 && (
               <tr><td colSpan={4}><div className="empty" style={{ padding: 28 }}>No events match this filter.</div></td></tr>
             )}
           </tbody>
         </table>
       </div>
+      {filtered.length > TIMELINE_PAGE_SIZE && (
+        <div className="timeline-pager">
+          <div className="pager-summary">
+            Showing {pageStart + 1}–{Math.min(pageStart + TIMELINE_PAGE_SIZE, filtered.length)} of {filtered.length}
+          </div>
+          <div className="pager-controls">
+            <button
+              className="btn btn-sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <Icon name="chevronLeft" /> Previous
+            </button>
+            <span className="pager-page">Page {currentPage} of {pageCount}</span>
+            <button
+              className="btn btn-sm"
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              disabled={currentPage === pageCount}
+            >
+              Next <Icon name="chevronRight" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

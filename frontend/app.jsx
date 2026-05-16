@@ -76,7 +76,7 @@ function App() {
     if (route.page === "add") return ["Properties", "Add property"];
     if (route.page === "detail") {
       const p = properties.find((x) => x.id === route.arg);
-      return ["Properties", p ? splitAddress(p.input_address).line1 : "—"];
+      return ["Properties", p ? splitAddress(displayAddress(p)).line1 : "—"];
     }
     return [];
   }, [route, properties]);
