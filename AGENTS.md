@@ -55,19 +55,24 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
    `raw["estimates"]["currentValues"]` (nested camelCase). Preference order:
    entry flagged `isBestHomeValue` → first entry. Keep this normalizer in one
    place; don't fork it.
-6. **Historical AVMs and Realtor market events are separate from current state.**
+6. **Listing state is a normalized dashboard bucket.** Keep
+   `scraper.normalize_listing_state` as the single source of truth for
+   `for_sale`, `pending`, `sold`, and `off_market`. Sold/closed records remain
+   `sold` for `SOLD_TO_OFF_MARKET_DAYS` (currently 180 days) after the sale date,
+   then become `off_market`.
+7. **Historical AVMs and Realtor market events are separate from current state.**
    Backfill writes `historical_estimates` for monthly AVM history and
    `property_events` for sparse market events such as `Listed`, `Sold`,
    `Price Changed`, `Relisted`, and `Listing removed`. Do not fold those into
    the current property row just to make the frontend simpler.
-7. **The Property timeline is event-shaped.**
+8. **The Property timeline is event-shaped.**
    List/sale/price-change events should render as their own rows. Estimate
    rows should keep low/high range visually attached to the estimate value
    instead of spreading it across disconnected columns.
-8. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
+9. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
    If you add a file, register it in `index.html` with `type="text/babel"` and
    expose any new component on `window` so other files can use it.
-9. **Refresh scheduling UI is not a backend scheduler.** The Refresh jobs page
+10. **Refresh scheduling UI is not a backend scheduler.** The Refresh jobs page
    can run `POST /api/properties/refresh-all`, show latest issue status, and
    persist the selected cadence in localStorage. Do not add cron/looping work
    inside the FastAPI process; wire external cron/launchd to the API endpoint
@@ -93,6 +98,10 @@ property_events(property_id, date, event_name, price)
 ```
 
 `status` is one of: `matched`, `candidate_mismatch`, `no_candidates`, `error`.
+
+`listing_state` is one of: `for_sale`, `pending`, `sold`, `off_market`.
+`sold` is only for recent sales inside the configured 180-day sold window; older
+sold/closed records are considered `off_market` for dashboard filtering.
 
 Timestamps (`created_at`, `updated_at`, `last_fetched_at`, and history/event
 `fetched_at`) are **milliseconds since epoch** — the frontend treats them as JS

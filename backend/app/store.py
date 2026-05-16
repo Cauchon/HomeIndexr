@@ -39,6 +39,8 @@ def _row_to_property(row: Any) -> dict:
         except (TypeError, ValueError):
             pass
     p["all_estimates"] = scraper.all_estimates(p["raw_json"]) if isinstance(p.get("raw_json"), dict) else []
+    if isinstance(p.get("raw_json"), dict):
+        p["listing_state"] = scraper.normalize_listing_state(p["raw_json"])
     return p
 
 

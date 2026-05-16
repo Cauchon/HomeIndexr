@@ -54,6 +54,26 @@ AVM normalization picks the "best" current estimate from either of the two
 shapes HomeHarvest returns: `raw["current_estimates"]` (flat snake_case) or
 `raw["estimates"]["currentValues"]` (nested camelCase).
 
+## Listing state logic
+
+The Properties page uses `properties.listing_state`, normalized server-side from
+the latest HomeHarvest/Realtor raw JSON. The dashboard buckets are:
+
+1. `pending` — `pending_date` exists, or Realtor/HomeHarvest status text
+   contains `pending`, `contingent`, or `under contract`.
+2. `for_sale` — status text indicates `for_sale`, `active`, `coming soon`, or
+   similar active listing state; as a fallback, a row with both `listing_id` and
+   `list_price` is treated as for sale unless it has sold/closed cues.
+3. `sold` — status text indicates `sold`/`closed`, or a sale price/date exists,
+   and the sale date is no more than **180 days** old.
+4. `off_market` — no active/pending signal, or a sold/closed signal whose sale
+   date is older than 180 days.
+
+The sold window is intentionally finite so old Realtor sold records do not stay
+visually "Sold" forever on the Properties page. Change
+`SOLD_TO_OFF_MARKET_DAYS` in `backend/app/scraper.py` if you want a different
+threshold.
+
 ## Property timeline
 
 The Property page is event-oriented:

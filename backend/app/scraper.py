@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import homeharvest
@@ -19,6 +20,7 @@ import requests
 from homeharvest.core.scrapers import DEFAULT_HEADERS
 
 LISTING_TYPES = ["for_sale", "sold", "pending", "for_rent"]
+SOLD_TO_OFF_MARKET_DAYS = 180
 
 REALTOR_GQL_URL = "https://www.realtor.com/frontdoor/graphql"
 
@@ -113,6 +115,94 @@ def _to_int(v: Any) -> int | None:
         return int(round(float(v)))
     except (TypeError, ValueError):
         return None
+
+
+def _norm_status(s: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(s or "").strip().lower()).strip("_")
+
+
+def _parse_date_ms(value: Any) -> int | None:
+    if not value:
+        return None
+    if isinstance(value, (int, float)):
+        # Realtor fields are normally ISO dates, but accept epoch seconds/ms.
+        return int(value if value > 10_000_000_000 else value * 1000)
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        return int(datetime.fromisoformat(text).timestamp() * 1000)
+    except ValueError:
+        try:
+            parsed = datetime.strptime(text[:10], "%Y-%m-%d")
+            return int(parsed.replace(tzinfo=timezone.utc).timestamp() * 1000)
+        except ValueError:
+            return None
+
+
+def _sale_date_ms(raw: dict) -> int | None:
+    for key in (
+        "last_sold_date",
+        "sold_date",
+        "close_date",
+        "closing_date",
+        "last_status_change_date",
+    ):
+        parsed = _parse_date_ms(raw.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def normalize_listing_state(raw: dict | None, now_ms: int | None = None) -> str:
+    """Return one dashboard listing bucket.
+
+    Precedence:
+      1. Pending / contingent / under-contract cues.
+      2. Active for-sale cues.
+      3. Sold cues, but only for SOLD_TO_OFF_MARKET_DAYS after sale date.
+      4. Off market.
+    """
+    if not isinstance(raw, dict):
+        return "off_market"
+
+    now_ms = now_ms or int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    status = _norm_status(raw.get("status"))
+    mls = _norm_status(raw.get("mls_status"))
+    statuses = {status, mls}
+    statuses.discard("")
+
+    pending_words = ("pending", "under_contract", "contingent")
+    if raw.get("pending_date") or any(any(word in s for word in pending_words) for s in statuses):
+        return "pending"
+
+    active_statuses = {"for_sale", "active", "coming_soon", "new_listing"}
+    has_active_cue = bool(statuses & active_statuses)
+    if has_active_cue:
+        return "for_sale"
+    has_sold_status = any("sold" in s or "closed" in s for s in statuses)
+    if raw.get("list_price") is not None and raw.get("listing_id") and not has_sold_status:
+        return "for_sale"
+
+    sold_words = ("sold", "closed")
+    has_sold_cue = (
+        any(any(word in s for word in sold_words) for s in statuses)
+        or raw.get("sold_price") is not None
+        or raw.get("last_sold_date") is not None
+    )
+    if has_sold_cue:
+        sale_ms = _sale_date_ms(raw)
+        if sale_ms is not None:
+            age_days = (now_ms - sale_ms) / 86_400_000
+            if 0 <= age_days <= SOLD_TO_OFF_MARKET_DAYS:
+                return "sold"
+        return "off_market"
+
+    return "off_market"
 
 
 def _title_city(city: str | None) -> str | None:
@@ -247,7 +337,7 @@ def _flatten(raw: dict) -> dict:
         "property_id": raw.get("property_id"),
         "listing_id": raw.get("listing_id"),
         "property_url": _href(raw),
-        "listing_state": raw.get("status"),
+        "listing_state": normalize_listing_state(raw),
         "city": _title_city(loc.get("city")),
         "state": loc.get("state_code").upper() if loc.get("state_code") else None,
         "zip": loc.get("postal_code"),
