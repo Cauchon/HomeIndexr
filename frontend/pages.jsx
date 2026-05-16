@@ -1,4 +1,4 @@
-// HomeTracker — pages (Dashboard, Add Property, Property Detail)
+// HomeIndexr pages (Dashboard, Add Property, Property Detail)
 // All data flows through `window.API`; no client-side scraping.
 
 const { useState: useState_p, useMemo: useMemo_p, useEffect: useEffect_p } = React;

@@ -1,4 +1,4 @@
-// Tiny API client for HomeTracker backend.
+// Tiny API client for HomeIndexr backend.
 // All HomeHarvest scraping happens server-side.
 (function () {
   async function req(path, opts) {

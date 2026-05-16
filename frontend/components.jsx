@@ -1,4 +1,4 @@
-// Shared components and helpers for HomeTracker
+// Shared components and helpers for HomeIndexr
 
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
 

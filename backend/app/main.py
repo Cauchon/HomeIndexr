@@ -18,7 +18,7 @@ from .db import init_db
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = ROOT / "frontend"
 
-app = FastAPI(title="HomeTracker")
+app = FastAPI(title="HomeIndexr")
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,4 +1,4 @@
-// HomeTracker — app shell
+// HomeIndexr app shell
 
 const { useState: useS, useEffect: useE, useMemo: useM, useCallback: useCB } = React;
 
@@ -7,12 +7,12 @@ function App() {
   const [properties, setProperties] = useS([]);
   const [loading, setLoading] = useS(true);
   const [refreshingAll, setRefreshingAll] = useS(false);
-  const [theme, setTheme] = useS(() => localStorage.getItem("ht_theme") || "light");
+  const [theme, setTheme] = useS(() => localStorage.getItem("hi_theme") || localStorage.getItem("ht_theme") || "light");
   const [sidebarOpen, setSidebarOpen] = useS(false);
 
   useE(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("ht_theme", theme);
+    localStorage.setItem("hi_theme", theme);
   }, [theme]);
 
   const reload = useCB(async () => {
@@ -121,8 +121,8 @@ function App() {
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
         <aside className="sidebar">
           <div className="sidebar-brand">
-            <div className="mark">HT</div>
-            <div className="name">HomeTracker</div>
+            <div className="mark">HI</div>
+            <div className="name">HomeIndexr</div>
             <div className="badge">local</div>
           </div>
           <div className="nav-group-label">Workspace</div>

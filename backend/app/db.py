@@ -6,7 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
-DB_PATH = Path(os.environ.get("HT_DB_PATH", DATA_DIR / "app.db"))
+DB_PATH = Path(
+    os.environ.get("HOMEINDEXR_DB_PATH")
+    or os.environ.get("HT_DB_PATH", DATA_DIR / "app.db")
+)
 
 _lock = threading.Lock()
 

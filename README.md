@@ -1,4 +1,4 @@
-# HomeTracker
+# HomeIndexr
 
 Local-first dashboard for tracking home prices over time. Fetches property data
 from Realtor.com via [HomeHarvest](https://github.com/Bunsly/HomeHarvest)
@@ -130,7 +130,7 @@ FastAPI.
 ## Scheduled refreshes
 
 Scheduled refreshes are implemented as a macOS LaunchAgent that calls the
-existing local API endpoint. Keep the HomeTracker server running on the same
+existing local API endpoint. Keep the HomeIndexr server running on the same
 port used when installing the job.
 
 ```bash
