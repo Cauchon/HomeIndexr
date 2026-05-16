@@ -1191,6 +1191,327 @@ function LifetimeStrip({ current = null, historical = [], events = [] }) {
   );
 }
 
+// ---------- Admin / Refresh Jobs ----------
+const ADMIN_JOB_STORAGE_KEY = "ht_admin_jobs";
+const CADENCE_STORAGE_KEY = "ht_refresh_cadence";
+const CADENCE_OPTIONS = [
+  { key: "daily", label: "Daily" },
+  { key: "weekly", label: "Weekly" },
+  { key: "biweekly", label: "Twice / month" },
+  { key: "monthly", label: "Monthly" },
+  { key: "manual", label: "Manual only" },
+];
+const CADENCE_LABEL = Object.fromEntries(CADENCE_OPTIONS.map((o) => [o.key, o.label]));
+
+function loadAdminJobs() {
+  try {
+    const raw = localStorage.getItem(ADMIN_JOB_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, 8) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveAdminJobs(jobs) {
+  localStorage.setItem(ADMIN_JOB_STORAGE_KEY, JSON.stringify(jobs.slice(0, 8)));
+}
+
+function nextCadenceTarget(cadence, now = new Date()) {
+  if (cadence === "manual") return "Manual trigger only";
+  const next = new Date(now);
+  next.setHours(3, 0, 0, 0);
+  if (cadence === "daily") {
+    if (next <= now) next.setDate(next.getDate() + 1);
+  } else if (cadence === "weekly") {
+    const daysUntilMonday = (8 - next.getDay()) % 7 || 7;
+    next.setDate(next.getDate() + daysUntilMonday);
+  } else if (cadence === "monthly") {
+    next.setMonth(next.getMonth() + 1, 1);
+  } else {
+    const day = now.getDate() < 15 ? 15 : 1;
+    if (day === 15) next.setDate(15);
+    else next.setMonth(next.getMonth() + 1, 1);
+  }
+  return fmt.datetime(next.getTime());
+}
+
+function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
+  const [jobs, setJobs] = useState_p(loadAdminJobs);
+  const [cadence, setCadence] = useState_p(() => localStorage.getItem(CADENCE_STORAGE_KEY) || "biweekly");
+  const [progress, setProgress] = useState_p(0);
+  const toast = useToast();
+
+  useEffect_p(() => {
+    localStorage.setItem(CADENCE_STORAGE_KEY, cadence);
+  }, [cadence]);
+
+  const issues = useMemo_p(
+    () => properties.filter((p) => p.status && p.status !== "matched"),
+    [properties]
+  );
+  const lastSweep = properties.length
+    ? Math.max(...properties.map((p) => p.last_fetched_at || p.updated_at || 0))
+    : null;
+  const latestJob = jobs[0] || null;
+
+  async function startRefreshAll() {
+    const startedAt = Date.now();
+    setProgress(properties.length ? 8 : 100);
+    let timer = null;
+    if (properties.length) {
+      timer = setInterval(() => {
+        setProgress((p) => Math.min(92, p + Math.max(2, Math.round(84 / properties.length))));
+      }, 450);
+    }
+
+    try {
+      const res = await onRefreshAll();
+      if (timer) clearInterval(timer);
+      setProgress(100);
+      const finishedAt = Date.now();
+      const results = Array.isArray(res?.results) ? res.results : [];
+      const job = {
+        id: `job-${finishedAt}`,
+        kind: "manual",
+        status: "completed",
+        started_at: startedAt,
+        finished_at: finishedAt,
+        total: results.length || properties.length,
+        ok: results.filter((r) => r.status === "matched").length,
+        issues: results.filter((r) => r.status && r.status !== "matched").length,
+        error: null,
+      };
+      const next = [job, ...jobs].slice(0, 8);
+      setJobs(next);
+      saveAdminJobs(next);
+      toast.push({ kind: "ok", text: `Refreshed ${job.total} properties` });
+      setTimeout(() => setProgress(0), 700);
+    } catch (e) {
+      if (timer) clearInterval(timer);
+      setProgress(0);
+      const finishedAt = Date.now();
+      const job = {
+        id: `job-${finishedAt}`,
+        kind: "manual",
+        status: "error",
+        started_at: startedAt,
+        finished_at: finishedAt,
+        total: properties.length,
+        ok: 0,
+        issues: properties.length,
+        error: e.message || "Refresh failed",
+      };
+      const next = [job, ...jobs].slice(0, 8);
+      setJobs(next);
+      saveAdminJobs(next);
+      toast.push({ kind: "err", text: job.error });
+    }
+  }
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Refresh jobs</h1>
+          <div className="page-subtitle">
+            Current scrape health across all tracked properties · cadence defaults to twice per month
+          </div>
+        </div>
+        <div className="admin-actions">
+          <button
+            className="btn btn-primary"
+            onClick={startRefreshAll}
+            disabled={refreshingAll || loading || properties.length === 0}
+          >
+            <Icon name="refresh" />
+            {refreshingAll ? "Running…" : "Refresh all now"}
+          </button>
+        </div>
+      </div>
+
+      <div className="facts" style={{ marginBottom: 16 }}>
+        <div className="fact">
+          <div className="label">Last sweep</div>
+          <div className="value sm">{lastSweep ? fmt.relative(lastSweep) : "—"}</div>
+          <div className="sub">{lastSweep ? fmt.datetime(lastSweep) : "No refreshes yet"}</div>
+        </div>
+        <div className="fact">
+          <div className="label">Active properties</div>
+          <div className="value">{properties.filter((p) => p.active !== false).length}</div>
+          <div className="sub">{properties.length} tracked total</div>
+        </div>
+        <div className="fact">
+          <div className="label">Issues</div>
+          <div className="value" style={{ color: issues.length ? "var(--warn)" : "var(--text)" }}>{issues.length}</div>
+          <div className="sub">
+            {issues.filter((p) => p.status === "error").length} errors · {issues.filter((p) => p.status === "candidate_mismatch").length} mismatches
+          </div>
+        </div>
+        <div className="fact">
+          <div className="label">Cadence</div>
+          <div className="value sm">{CADENCE_LABEL[cadence] || CADENCE_LABEL.biweekly}</div>
+          <div className="sub">{nextCadenceTarget(cadence)}</div>
+        </div>
+      </div>
+
+      {refreshingAll && (
+        <div className="card admin-progress">
+          <div className="card-body">
+            <div className="progress">
+              <div className="fill" style={{ width: `${progress}%` }} />
+            </div>
+            <div className="tnum">
+              {Math.max(1, Math.round((progress / 100) * Math.max(properties.length, 1)))} / {properties.length || 1}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="admin-grid">
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <div className="card-title">Properties with issues · {issues.length}</div>
+            </div>
+            <div className="card-body flush">
+              {issues.length === 0 ? (
+                <div className="empty">
+                  <div className="title">All clear</div>
+                  <div>Every tracked property matched on its latest refresh.</div>
+                </div>
+              ) : (
+                <div className="table-wrap admin-table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr><th>Address</th><th>Status</th><th>Note</th><th>Last refresh</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      {issues.map((p) => {
+                        const sp = splitAddress(displayAddress(p));
+                        const note = p.error ||
+                          (p.status === "candidate_mismatch" ? `Matched ${p.matched_address || "candidate"}` : "No candidates returned");
+                        return (
+                          <tr key={p.id} onClick={() => navigate("detail", p.id)}>
+                            <td className="address-cell">{sp.line1} <span className="sub">· {sp.line2}</span></td>
+                            <td><StatusBadge status={p.status} /></td>
+                            <td className="muted" style={{ fontSize: 11 }}>{note}</td>
+                            <td className="muted">{fmt.relative(p.last_fetched_at || p.updated_at)}</td>
+                            <td style={{ textAlign: "right" }}><Icon name="chevronRight" /></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header"><div className="card-title">Recent jobs</div></div>
+            <div className="card-body flush">
+              {jobs.length === 0 ? (
+                <div className="empty">
+                  <div className="title">No admin runs yet</div>
+                  <div>Manual refresh runs started here will appear in this log.</div>
+                </div>
+              ) : (
+                <div className="table-wrap admin-table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr>
+                        <th>Started</th>
+                        <th>Kind</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: "right" }}>Properties</th>
+                        <th style={{ textAlign: "right" }}>Duration</th>
+                        <th style={{ textAlign: "right" }}>Issues</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {jobs.map((j) => (
+                        <tr key={j.id} style={{ cursor: "default" }}>
+                          <td>
+                            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                              <span>{fmt.datetime(j.started_at)}</span>
+                              <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.relative(j.started_at)}</span>
+                            </div>
+                          </td>
+                          <td><span className="badge info">Manual</span></td>
+                          <td>
+                            <span className={`badge ${j.status === "completed" ? "ok" : "err"}`}>
+                              <span className="dot" />
+                              {j.status === "completed" ? "Completed" : "Error"}
+                            </span>
+                          </td>
+                          <td className="num">{j.ok}/{j.total}</td>
+                          <td className="num muted">{Math.max(1, Math.round((j.finished_at - j.started_at) / 1000))}s</td>
+                          <td className="num">
+                            {j.issues > 0
+                              ? <span style={{ color: "var(--warn)", fontWeight: 500 }}>{j.issues}</span>
+                              : <span className="faint">0</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <CadencePanel cadence={cadence} setCadence={setCadence} latestJob={latestJob} />
+      </div>
+    </div>
+  );
+}
+
+function CadencePanel({ cadence, setCadence, latestJob }) {
+  return (
+    <div className="card">
+      <div className="card-header"><div className="card-title">Schedule</div></div>
+      <div className="card-body">
+        <div className="admin-label">Refresh cadence</div>
+        <div className="cadence-list">
+          {CADENCE_OPTIONS.map((o) => (
+            <label key={o.key} className={`cadence-option ${cadence === o.key ? "active" : ""}`}>
+              <input
+                type="radio"
+                name="cadence"
+                checked={cadence === o.key}
+                onChange={() => setCadence(o.key)}
+              />
+              <span>{o.label}</span>
+              {o.key === "biweekly" && <em>default</em>}
+            </label>
+          ))}
+        </div>
+
+        <div className="schedule-note">
+          <div className="admin-label">Next target</div>
+          <div className="schedule-note-main">{nextCadenceTarget(cadence)}</div>
+          <div className="schedule-note-sub">
+            Stored locally for the admin panel. The backend remains manual; wire cron or launchd to the refresh-all endpoint when scheduling is enabled.
+          </div>
+        </div>
+
+        {latestJob && (
+          <div className="schedule-note" style={{ marginTop: 10 }}>
+            <div className="admin-label">Latest admin run</div>
+            <div className="schedule-note-main">{fmt.relative(latestJob.finished_at)}</div>
+            <div className="schedule-note-sub">
+              {latestJob.ok}/{latestJob.total} properties completed · {latestJob.issues} issues
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 window.DashboardPage = DashboardPage;
 window.AddPropertyPage = AddPropertyPage;
 window.PropertyDetailPage = PropertyDetailPage;
+window.AdminPage = AdminPage;
