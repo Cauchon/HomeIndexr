@@ -35,6 +35,7 @@ function App() {
       const h = window.location.hash.replace(/^#/, "");
       const [page, arg] = h.split("/").filter(Boolean);
       if (page === "add") setRoute({ page: "add", arg: null });
+      else if (page === "admin") setRoute({ page: "admin", arg: null });
       else if (page === "property" && arg) setRoute({ page: "detail", arg: Number(arg) });
       else setRoute({ page: "dashboard", arg: null });
       setSidebarOpen(false);
@@ -48,6 +49,7 @@ function App() {
     let h = "";
     if (page === "dashboard") h = "";
     else if (page === "add") h = "#add";
+    else if (page === "admin") h = "#admin";
     else if (page === "detail") h = `#property/${arg}`;
     if (h !== window.location.hash) window.location.hash = h;
     else setRoute({ page, arg });
@@ -57,10 +59,12 @@ function App() {
   async function handleRefreshAll() {
     setRefreshingAll(true);
     try {
-      await API.refreshAll();
+      const result = await API.refreshAll();
       await reload();
+      return result;
     } catch (e) {
       console.error(e);
+      throw e;
     } finally {
       setRefreshingAll(false);
     }
@@ -74,6 +78,7 @@ function App() {
   const crumbs = useM(() => {
     if (route.page === "dashboard") return ["Properties"];
     if (route.page === "add") return ["Properties", "Add property"];
+    if (route.page === "admin") return ["Refresh jobs"];
     if (route.page === "detail") {
       const p = properties.find((x) => x.id === route.arg);
       return ["Properties", p ? splitAddress(displayAddress(p)).line1 : "—"];
@@ -92,6 +97,14 @@ function App() {
     />;
   } else if (route.page === "add") {
     pageEl = <AddPropertyPage navigate={navigate} onAdded={reload} />;
+  } else if (route.page === "admin") {
+    pageEl = <AdminPage
+      properties={properties}
+      loading={loading}
+      navigate={navigate}
+      onRefreshAll={handleRefreshAll}
+      refreshingAll={refreshingAll}
+    />;
   } else if (route.page === "detail") {
     pageEl = <PropertyDetailPage
       key={route.arg}
@@ -120,6 +133,11 @@ function App() {
           <div className={`nav-item ${route.page === "add" ? "active" : ""}`}
                onClick={() => navigate("add")}>
             <Icon name="plus" /> Add property
+          </div>
+          <div className={`nav-item ${route.page === "admin" ? "active" : ""}`}
+               onClick={() => navigate("admin")}>
+            <Icon name="settings" /> Refresh jobs
+            {counts.issues > 0 && <span className="count" style={{ color: "var(--warn)" }}>{counts.issues}</span>}
           </div>
 
           <div className="nav-group-label">Filters</div>
@@ -157,6 +175,10 @@ function App() {
               <button className="icon-btn" title="Toggle theme"
                       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
                 <Icon name={theme === "dark" ? "sun" : "moon"} size={15} />
+              </button>
+              <button className="icon-btn" title="Refresh jobs"
+                      onClick={() => navigate("admin")}>
+                <Icon name="settings" size={15} />
               </button>
             </div>
           </div>

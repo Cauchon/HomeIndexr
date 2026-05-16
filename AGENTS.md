@@ -23,7 +23,7 @@ frontend/
   styles.css     all visual tokens; from the design bundle
   components.jsx shared UI (icons, badges, formatters, JsonViewer)
   chart.jsx      PriceChart (AVM lines + Realtor event markers)
-  pages.jsx      Dashboard, AddProperty, PropertyDetail
+  pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
 run.sh           uvicorn dev launcher (port 5173)
@@ -67,6 +67,11 @@ The first request creates `data/app.db`. To reset, delete `data/app.db*`.
 8. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
    If you add a file, register it in `index.html` with `type="text/babel"` and
    expose any new component on `window` so other files can use it.
+9. **Refresh scheduling UI is not a backend scheduler.** The Refresh jobs page
+   can run `POST /api/properties/refresh-all`, show latest issue status, and
+   persist the selected cadence in localStorage. Do not add cron/looping work
+   inside the FastAPI process; wire external cron/launchd to the API endpoint
+   when real scheduling is needed.
 
 ## Data model
 
@@ -135,8 +140,6 @@ frontend formatters.
   it — don't bake scheduling into the FastAPI process.
 - **Auth.** Local single-user. The backend has no user model so a session
   layer can be added without touching storage.
-- **Admin/jobs page.** The design has one; the spec didn't ask for it. The
-  "Refresh all" button lives on the Dashboard instead.
 
 If you're tempted to add any of these, confirm with the user first.
 

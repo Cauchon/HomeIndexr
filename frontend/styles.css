@@ -760,6 +760,97 @@ table.data .address-cell .sub {
   transition: width 0.4s ease;
 }
 
+/* ---------- Admin / refresh jobs ---------- */
+.admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.admin-progress {
+  margin-bottom: 16px;
+}
+.admin-progress .card-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-progress .progress {
+  flex: 1;
+  width: auto;
+}
+.admin-progress .tnum {
+  min-width: 68px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+.admin-table-wrap {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.admin-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.cadence-list {
+  display: grid;
+  gap: 4px;
+}
+.cadence-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+}
+.cadence-option:hover {
+  background: var(--bg-hover);
+}
+.cadence-option.active {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 30%, transparent);
+  font-weight: 500;
+}
+.cadence-option input {
+  accent-color: var(--accent);
+}
+.cadence-option em {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+}
+.schedule-note {
+  margin-top: 16px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+}
+.schedule-note .admin-label {
+  margin-bottom: 4px;
+}
+.schedule-note-main {
+  font-weight: 500;
+}
+.schedule-note-sub {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 /* ---------- Toast ---------- */
 .toast-wrap {
   position: fixed;
@@ -1359,6 +1450,17 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   .pager-controls {
     flex-wrap: wrap;
     justify-content: space-between;
+  }
+
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .admin-table-wrap table.data {
+    min-width: 640px;
   }
 }
 

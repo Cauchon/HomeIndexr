@@ -69,11 +69,24 @@ The Property page is event-oriented:
 Use **Backfill history** on a Property page to populate `historical_estimates`
 and `property_events` for that property.
 
+## Refresh jobs admin
+
+The gear icon in the top bar opens the Refresh jobs page (`#admin`). It shows:
+
+- latest sweep and active-property counts
+- current properties with match/errors/no-candidate issues
+- a recent manual job log stored in `localStorage`
+- a cadence selector, defaulting to twice per month
+
+The **Refresh all now** button calls `POST /api/properties/refresh-all` and then
+reloads current property state. The cadence selector is UI state only for now;
+it does not start background work inside FastAPI.
+
 ## Scheduled refreshes
 
-Not wired up yet — v1 ships manual refresh only (per-property and
-"Refresh all" on the dashboard). The intended cadence is twice per month; the
-endpoint `POST /api/properties/refresh-all` is the obvious hook for a cron or
+Not wired up yet — v1 ships manual refresh only (per-property, dashboard
+"Refresh all", and the Refresh jobs page). The intended cadence is twice per
+month; the endpoint `POST /api/properties/refresh-all` is the hook for a cron or
 launchd job later.
 
 ## Auth
