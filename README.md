@@ -43,7 +43,7 @@ Then open <http://127.0.0.1:5173>.
 |-------:|---------------------------------------|----------------------------------------|
 | GET    | `/api/properties`                     | List properties with current state     |
 | GET    | `/api/properties/{id}`                | Property + history + events + taxes    |
-| POST   | `/api/properties`                     | Add a property (returns match status)  |
+| POST   | `/api/properties`                     | Add property, refresh current state, and backfill history |
 | PATCH  | `/api/properties/{id}`                | Edit address/display fields and active state |
 | POST   | `/api/properties/{id}/archive`        | Hide from default dashboard and refresh-all |
 | POST   | `/api/properties/{id}/restore`        | Restore an archived property           |
@@ -114,8 +114,9 @@ The Property page is event-oriented:
   rows keep low/high range inline with the estimate value; market rows show
   list/sale/price-change values independently.
 
-Use **Backfill history** on a Property page to populate `historical_estimates`,
-`property_events`, and `tax_history` for that property.
+Newly added properties populate `historical_estimates`, `property_events`, and
+`tax_history` before the add response returns. Use **Backfill history** on a
+Property page to retry or refresh those imported history rows later.
 
 ## Refresh jobs admin
 

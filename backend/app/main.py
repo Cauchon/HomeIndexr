@@ -55,15 +55,53 @@ def get_properties():
     return store.list_properties()
 
 
+def _property_with_related(pid: int) -> dict | None:
+    prop = store.get_property(pid)
+    if not prop:
+        return None
+    prop["historical"] = store.list_historical(pid)
+    prop["events"] = store.list_events(pid)
+    prop["tax_history"] = store.list_tax_history(pid)
+    prop["schools"] = store.list_schools(pid)
+    return prop
+
+
+def _backfill_history(pid: int, property_id: str | None) -> dict:
+    if not property_id:
+        return {
+            "id": pid,
+            "written": 0,
+            "events_written": 0,
+            "taxes_written": 0,
+            "error": "no property_id on record",
+        }
+    try:
+        bundle = scraper.fetch_history_bundle(property_id)
+    except Exception as e:  # noqa: BLE001
+        return {
+            "id": pid,
+            "written": 0,
+            "events_written": 0,
+            "taxes_written": 0,
+            "error": f"{type(e).__name__}: {e}",
+        }
+    written = store.replace_historical(pid, bundle["estimates"])
+    events_written = store.replace_events(pid, bundle["events"])
+    taxes_written = store.replace_tax_history(pid, bundle.get("taxes", []))
+    return {
+        "id": pid,
+        "written": written,
+        "events_written": events_written,
+        "taxes_written": taxes_written,
+        "error": None,
+    }
+
+
 @app.get("/api/properties/{pid}")
 def get_property(pid: int):
-    p = store.get_property(pid)
+    p = _property_with_related(pid)
     if not p:
         raise HTTPException(404, "property not found")
-    p["historical"] = store.list_historical(pid)
-    p["events"] = store.list_events(pid)
-    p["tax_history"] = store.list_tax_history(pid)
-    p["schools"] = store.list_schools(pid)
     return p
 
 
@@ -83,11 +121,7 @@ def update_property(pid: int, body: UpdatePropertyBody):
         raise HTTPException(409, "another property already uses that canonical address") from e
     if not prop:
         raise HTTPException(404, "property not found")
-    prop["historical"] = store.list_historical(pid)
-    prop["events"] = store.list_events(pid)
-    prop["tax_history"] = store.list_tax_history(pid)
-    prop["schools"] = store.list_schools(pid)
-    return prop
+    return _property_with_related(pid)
 
 
 @app.post("/api/properties/{pid}/archive")
@@ -95,11 +129,7 @@ def archive_property(pid: int):
     prop = store.set_property_active(pid, False)
     if not prop:
         raise HTTPException(404, "property not found")
-    prop["historical"] = store.list_historical(pid)
-    prop["events"] = store.list_events(pid)
-    prop["tax_history"] = store.list_tax_history(pid)
-    prop["schools"] = store.list_schools(pid)
-    return prop
+    return _property_with_related(pid)
 
 
 @app.post("/api/properties/{pid}/restore")
@@ -107,11 +137,7 @@ def restore_property(pid: int):
     prop = store.set_property_active(pid, True)
     if not prop:
         raise HTTPException(404, "property not found")
-    prop["historical"] = store.list_historical(pid)
-    prop["events"] = store.list_events(pid)
-    prop["tax_history"] = store.list_tax_history(pid)
-    prop["schools"] = store.list_schools(pid)
-    return prop
+    return _property_with_related(pid)
 
 
 @app.delete("/api/properties/{pid}")
@@ -127,16 +153,7 @@ def backfill_property(pid: int):
     prop = store.get_property(pid)
     if not prop:
         raise HTTPException(404, "property not found")
-    if not prop.get("property_id"):
-        return {"id": pid, "written": 0, "events_written": 0, "taxes_written": 0, "error": "no property_id on record"}
-    try:
-        bundle = scraper.fetch_history_bundle(prop["property_id"])
-    except Exception as e:  # noqa: BLE001
-        return {"id": pid, "written": 0, "events_written": 0, "taxes_written": 0, "error": f"{type(e).__name__}: {e}"}
-    written = store.replace_historical(pid, bundle["estimates"])
-    events_written = store.replace_events(pid, bundle["events"])
-    taxes_written = store.replace_tax_history(pid, bundle.get("taxes", []))
-    return {"id": pid, "written": written, "events_written": events_written, "taxes_written": taxes_written, "error": None}
+    return _backfill_history(pid, prop.get("property_id"))
 
 
 @app.post("/api/properties/backfill-all")
@@ -144,17 +161,7 @@ def backfill_all():
     props = store.list_properties()
     results = []
     for p in props:
-        if not p.get("property_id"):
-            results.append({"id": p["id"], "written": 0, "events_written": 0, "taxes_written": 0, "error": "no property_id"})
-            continue
-        try:
-            bundle = scraper.fetch_history_bundle(p["property_id"])
-            written = store.replace_historical(p["id"], bundle["estimates"])
-            events_written = store.replace_events(p["id"], bundle["events"])
-            taxes_written = store.replace_tax_history(p["id"], bundle.get("taxes", []))
-            results.append({"id": p["id"], "written": written, "events_written": events_written, "taxes_written": taxes_written, "error": None})
-        except Exception as e:  # noqa: BLE001
-            results.append({"id": p["id"], "written": 0, "events_written": 0, "taxes_written": 0, "error": f"{type(e).__name__}: {e}"})
+        results.append(_backfill_history(p["id"], p.get("property_id")))
     return {"backfilled": sum(1 for r in results if r["error"] is None), "results": results}
 
 
@@ -200,11 +207,9 @@ def add_property(body: AddBody):
     else:
         prop = store.create_property(body.address, fetched)
 
-    prop["historical"] = store.list_historical(prop["id"])
-    prop["events"] = store.list_events(prop["id"])
-    prop["tax_history"] = store.list_tax_history(prop["id"])
-    prop["schools"] = store.list_schools(prop["id"])
-    return {"status": status, "property": prop, "candidate": None, "error": None}
+    backfill = _backfill_history(prop["id"], prop.get("property_id"))
+    prop = _property_with_related(prop["id"])
+    return {"status": status, "property": prop, "candidate": None, "error": None, "backfill": backfill}
 
 
 @app.post("/api/properties/{pid}/refresh")
@@ -215,12 +220,7 @@ def refresh_property(pid: int):
     addr = prop["canonical_address"] or prop["input_address"]
     fetched = scraper.fetch(addr)
     store.update_property_meta(pid, fetched)
-    out = store.get_property(pid)
-    out["historical"] = store.list_historical(pid)
-    out["events"] = store.list_events(pid)
-    out["tax_history"] = store.list_tax_history(pid)
-    out["schools"] = store.list_schools(pid)
-    return out
+    return _property_with_related(pid)
 
 
 @app.post("/api/properties/refresh-all")

@@ -135,9 +135,8 @@ def create_property(input_address: str, fetched: dict) -> dict:
             ),
         )
         pid = cur.lastrowid
-        replace_schools(pid, fetched.get("schools") or [])
-        row = conn.execute("SELECT * FROM properties WHERE id = ?", (pid,)).fetchone()
-        return _row_to_property(row)
+    replace_schools(pid, fetched.get("schools") or [])
+    return get_property(pid)
 
 
 def update_property(property_id: int, changes: dict) -> dict | None:
