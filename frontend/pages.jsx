@@ -425,7 +425,6 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                 </div>
                 <div className="head-right">
                   <ListingBadge state={r.listing_state} />
-                  <StatusBadge status={r.status} />
                 </div>
               </div>
               {r.active === false && (
