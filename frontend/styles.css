@@ -510,6 +510,31 @@ table.data tbody tr.archived-row td {
 .badge.info { color: var(--info); background: var(--info-soft); border-color: color-mix(in oklab, var(--info) 30%, transparent); }
 .badge.neutral { color: var(--text-muted); }
 
+/* ---------- Contextual price cell ----------
+   One column replaces the old List / Sale / Est−List / Est−Sale quartet.
+   Shows whichever price is relevant for the row's current listing state
+   (asking / pending / sold / historical), with a tiny tag above the value. */
+.price-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+  gap: 1px;
+}
+.price-cell .val { font-variant-numeric: tabular-nums; font-weight: 500; }
+.price-cell .tag {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+.price-cell .tag.list    { color: var(--info); }
+.price-cell .tag.pending { color: var(--warn); }
+.price-cell .tag.sold    { color: var(--pos); }
+.price-cell .tag.hist    { color: var(--text-faint); }
+.price-cell .tag.hist + .val { color: var(--text-muted); font-weight: 400; }
+
 /* ---------- Delta cell ---------- */
 .delta {
   display: inline-flex;

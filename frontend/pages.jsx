@@ -3,6 +3,53 @@
 
 const { useState: useState_p, useMemo: useMemo_p, useEffect: useEffect_p } = React;
 
+// ---------- Contextual price ----------
+// Returns whichever price is meaningful for this property's current listing
+// state, plus a tag for context. `base` is the value to diff the estimate
+// against; historical fallbacks have base=null so they don't drive a
+// misleading delta.
+function _saleYear(p) {
+  const raw = p.raw_json;
+  if (!raw || typeof raw !== "object") return null;
+  for (const k of ["last_sold_date", "sold_date", "close_date", "closing_date", "last_status_change_date"]) {
+    const v = raw[k];
+    if (!v) continue;
+    const s = String(v);
+    const m = s.match(/(\d{4})/);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+function priceFor(p) {
+  const state = p.listing_state;
+  if (state === "sold" && p.sold_price != null) {
+    const y = _saleYear(p);
+    return { value: p.sold_price, label: y ? `Sold ${y}` : "Sold", cls: "sold", base: p.sold_price };
+  }
+  if (state === "for_sale" && p.list_price != null) {
+    return { value: p.list_price, label: "Asking", cls: "list", base: p.list_price };
+  }
+  if (state === "pending" && p.list_price != null) {
+    return { value: p.list_price, label: "Pending", cls: "pending", base: p.list_price };
+  }
+  if (p.last_sold_price != null) {
+    const y = _saleYear(p);
+    return { value: p.last_sold_price, label: y ? `Sold ${y}` : "Sold", cls: "hist", base: null };
+  }
+  return null;
+}
+
+function PriceCell({ price }) {
+  if (!price) return <span className="faint">—</span>;
+  return (
+    <span className="price-cell">
+      <span className={`tag ${price.cls}`}>{price.label}</span>
+      <span className="val">{fmt.usd(price.value)}</span>
+    </span>
+  );
+}
+
 // ---------- Dashboard ----------
 function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
   const [q, setQ] = useState_p("");
@@ -24,19 +71,16 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
 
   const rows = useMemo_p(() => {
     let arr = properties.map((p) => {
+      const price = priceFor(p);
       return {
         ...p,
         display_address: displayAddress(p),
         estimate: p.best_current_estimate,
-        list: p.list_price,
-        sold: p.sold_price ?? p.last_sold_price,
-        estVsList:
-          p.best_current_estimate != null && p.list_price != null
-            ? p.best_current_estimate - p.list_price
-            : null,
-        estVsSold:
-          p.best_current_estimate != null && (p.sold_price ?? p.last_sold_price) != null
-            ? p.best_current_estimate - (p.sold_price ?? p.last_sold_price)
+        price,
+        priceValue: price ? price.value : null,
+        priceVsEst:
+          price && price.base != null && p.best_current_estimate != null
+            ? p.best_current_estimate - price.base
             : null,
       };
     });
@@ -161,10 +205,8 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               <SortHeader label="Address"      k="display_address" sort={sort} setSort={setSort} />
               <SortHeader label="Listing"      k="listing_state" sort={sort} setSort={setSort} />
               <SortHeader label="Est. value"   k="estimate"      sort={sort} setSort={setSort} align="right" />
-              <SortHeader label="List price"   k="list"          sort={sort} setSort={setSort} align="right" />
-              <SortHeader label="Last sale"    k="sold"          sort={sort} setSort={setSort} align="right" />
-              <SortHeader label="Est − List"   k="estVsList"     sort={sort} setSort={setSort} align="right" />
-              <SortHeader label="Est − Last"   k="estVsSold"     sort={sort} setSort={setSort} align="right" />
+              <SortHeader label="Price"        k="priceValue"    sort={sort} setSort={setSort} align="right" />
+              <SortHeader label="vs Est."      k="priceVsEst"    sort={sort} setSort={setSort} align="right" />
               <SortHeader label="Added"        k="created_at"    sort={sort} setSort={setSort} defaultDir="desc" />
               <SortHeader label="Last refresh" k="updated_at"    sort={sort} setSort={setSort} defaultDir="desc" />
               <SortHeader label="Status"       k="status"        sort={sort} setSort={setSort} />
@@ -172,10 +214,10 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
           </thead>
           <tbody>
             {loading && properties.length === 0 && (
-              <tr><td colSpan={10} className="empty">Loading…</td></tr>
+              <tr><td colSpan={8} className="empty">Loading…</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={10}>
+              <tr><td colSpan={8}>
                 <div className="empty">
                   <div className="title">{properties.length === 0 ? "No properties yet" : "No matches"}</div>
                   <div>
@@ -196,10 +238,12 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                   </td>
                   <td><ListingBadge state={r.listing_state} /></td>
                   <td className="num">{fmt.usd(r.estimate)}</td>
-                  <td className="num">{fmt.usd(r.list)}</td>
-                  <td className="num">{r.sold ? fmt.usd(r.sold) : <span className="faint">—</span>}</td>
-                  <td className="num"><DeltaCell value={r.estimate} base={r.list} /></td>
-                  <td className="num"><DeltaCell value={r.estimate} base={r.sold} /></td>
+                  <td className="num"><PriceCell price={r.price} /></td>
+                  <td className="num">
+                    {r.price && r.price.base != null
+                      ? <DeltaCell value={r.estimate} base={r.price.base} />
+                      : <span className="faint">—</span>}
+                  </td>
                   <td className="muted">
                     <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
                       <span style={{ color: "var(--text)" }}>{fmt.relative(r.created_at)}</span>
