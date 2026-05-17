@@ -1446,9 +1446,260 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   text-align: center;
 }
 
+/* ---------- Mobile card list (dashboard) ----------
+   Hidden by default; shown via @media (max-width: 880px). */
+.prop-list {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+.prop-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.prop-card:active { background: var(--bg-hover); }
+.prop-card .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.prop-card .addr {
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+}
+.prop-card .addr .sub {
+  display: block;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.prop-card .head-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.prop-card .body {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px 12px;
+  font-variant-numeric: tabular-nums;
+}
+.prop-card .kv .k {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 1px;
+}
+.prop-card .kv .v {
+  font-size: 13px;
+  font-weight: 500;
+}
+.prop-card .foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* Delta inside prop-card: no bar, left-aligned, value + pct stacked */
+.prop-card .body .delta { min-width: 0; justify-content: flex-start; }
+.prop-card .body .delta .num {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+.prop-card .body .delta .num .muted { font-size: 10px; font-weight: 400; }
+.prop-card.is-archived .addr,
+.prop-card.is-archived .kv .v { color: var(--text-muted); }
+
+/* ---------- Mobile filters (inline expand) ----------
+   Hidden by default; shown via @media (max-width: 880px). */
+.mfilters { display: none; }
+.mfilters-row { display: flex; gap: 8px; align-items: center; }
+.mfilters-row .field { flex: 1; }
+.mfilters-row .btn { white-space: nowrap; }
+.mfilters-row .btn.on {
+  background: var(--bg-sunken);
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+.mfilters-count {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 8px;
+  margin-left: 2px;
+  min-width: 14px;
+  display: inline-grid;
+  place-items: center;
+  height: 14px;
+}
+.mfilters-chev {
+  transition: transform 0.2s ease;
+  margin-left: 2px;
+  color: var(--text-faint);
+}
+.mfilters-chev.open { transform: rotate(180deg); color: var(--text-muted); }
+.mfilters-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mfilters-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg));
+  border: 1px solid color-mix(in oklab, var(--accent) 28%, var(--border));
+  color: var(--text);
+  line-height: 1.4;
+}
+.mfilters-chip .k {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mfilters-chip .v { font-weight: 500; }
+.mfilters-chip button.x {
+  width: 18px; height: 18px;
+  display: inline-grid; place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  color: var(--accent);
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.mfilters-chip button.x:hover {
+  background: color-mix(in oklab, var(--accent) 32%, transparent);
+}
+.mfilters-chip.clear-all {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 10px;
+}
+.mfilters-chip.clear-all:hover { color: var(--text); border-color: var(--text-muted); }
+.mfilters-panel {
+  overflow: hidden;
+  max-height: 0;
+  margin-top: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--bg-sunken);
+  transition: max-height 0.26s ease, margin-top 0.2s ease, border-color 0.2s ease;
+}
+.mfilters-panel.on {
+  max-height: 520px;
+  margin-top: 10px;
+  border-color: var(--border);
+}
+.mfilters-panel-inner {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mfilters-group .lab {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.mfilters-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.mfilters-pills button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mfilters-pills button.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.mfilters-panel .field.has-select { background: var(--bg); }
+
 /* ---------- Sidebar toggle / backdrop (mobile only) ---------- */
 .sidebar-toggle { display: none; }
 .sidebar-backdrop { display: none; }
+
+/* ---------- Dashboard mobile: cards + inline filter ----------
+   At 880px the desktop filterbar hides, the data table hides,
+   and the mobile card list + inline-expand filter panel show. */
+@media (max-width: 880px) {
+  /* Page header stacks vertically; action buttons fill the row */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page-header > div:last-child { display: flex; gap: 8px; }
+  .page-header > div:last-child .btn { flex: 1; justify-content: center; }
+  .page-title { font-size: 18px; }
+
+  /* Swap filterbar → mobile inline filters */
+  .filterbar { display: none; }
+  .mfilters { display: flex; flex-direction: column; margin-bottom: 10px; }
+
+  /* Swap data table → prop-list cards (dashboard only) */
+  .table-wrap { display: none; }
+  .prop-list { display: flex; }
+
+  /* Keep tables inside detail and admin sections scrollable */
+  .detail-grid .table-wrap,
+  .admin-grid .table-wrap {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .detail-grid table.data,
+  .admin-grid table.data { min-width: 640px; }
+
+  /* Facts: 2-column grid */
+  .facts { grid-template-columns: repeat(2, 1fr); }
+  .fact { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .fact:nth-child(2n) { border-right: none; }
+  .facts > .fact:nth-last-child(1),
+  .facts > .fact:nth-last-child(2):nth-child(odd) { border-bottom: none; }
+  .fact .value { font-size: 16px; }
+
+  /* Detail header stacks; action buttons go 2-up */
+  .detail-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  .detail-header h1 { font-size: 19px; }
+  .detail-actions { flex-wrap: wrap; }
+  .detail-actions .btn { flex: 1 1 calc(50% - 4px); justify-content: center; }
+
+  /* Admin grid stacks */
+  .admin-grid { grid-template-columns: 1fr; }
+}
 
 /* ---------- Tablet: narrower sidebar ---------- */
 @media (max-width: 1024px) {

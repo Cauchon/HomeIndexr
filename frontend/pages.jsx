@@ -50,6 +50,121 @@ function PriceCell({ price }) {
   );
 }
 
+// ---------- Mobile filter labels ----------
+const STATUS_LABEL_MAP = {
+  matched: "Matched",
+  candidate_mismatch: "Mismatch",
+  no_candidates: "No candidates",
+  error: "Error",
+};
+const LISTING_LABEL_MAP = {
+  for_sale: "For sale",
+  pending: "Pending",
+  sold: "Sold",
+  off_market: "Off market",
+};
+
+// ---------- Mobile inline-expand filter panel ----------
+// Shown at ≤880px; replaces the desktop .filterbar.
+// Tapping "Filters" expands a panel in-place (no overlay). Active filters
+// surface as removable chips so users see what's applied at a glance.
+function MobileFilters({
+  q, setQ,
+  state, setState,
+  city, setCity,
+  status, setStatus,
+  listingState, setListingState,
+  cities, states,
+  open, setOpen,
+  activeFilterCount,
+}) {
+  const activeChips = [
+    state !== "all"        && { k: "state",   label: "State",   v: state,                           clear: () => setState("all") },
+    city !== "all"         && { k: "city",    label: "City",    v: city,                            clear: () => setCity("all") },
+    listingState !== "all" && { k: "listing", label: "Listing", v: LISTING_LABEL_MAP[listingState] || listingState, clear: () => setListingState("all") },
+    status !== "all"       && { k: "status",  label: "Status",  v: STATUS_LABEL_MAP[status] || status, clear: () => setStatus("all") },
+  ].filter(Boolean);
+
+  function resetAll() {
+    setState("all"); setCity("all"); setStatus("all"); setListingState("all");
+  }
+
+  return (
+    <div className="mfilters">
+      <div className="mfilters-row">
+        <div className="field grow">
+          <Icon name="search" />
+          <input placeholder="Search address" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <button className={`btn ${open ? "on" : ""}`} onClick={() => setOpen(!open)} aria-expanded={open}>
+          <Icon name="filter" />
+          Filters
+          {activeFilterCount > 0 && <span className="mfilters-count">{activeFilterCount}</span>}
+          <Icon name="chevronDown" size={12} className={`mfilters-chev${open ? " open" : ""}`} />
+        </button>
+      </div>
+
+      {activeChips.length > 0 && (
+        <div className="mfilters-chips">
+          {activeChips.map((c) => (
+            <span key={c.k} className="mfilters-chip">
+              <span className="k">{c.label}</span>
+              <span className="v">{c.v}</span>
+              <button className="x" onClick={c.clear} aria-label={`Clear ${c.label}`}>
+                <Icon name="x" size={10} />
+              </button>
+            </span>
+          ))}
+          {activeChips.length > 1 && (
+            <button className="mfilters-chip clear-all" onClick={resetAll}>Clear all</button>
+          )}
+        </div>
+      )}
+
+      <div className={`mfilters-panel ${open ? "on" : ""}`}>
+        <div className="mfilters-panel-inner">
+          <div className="mfilters-group">
+            <div className="lab">State</div>
+            <div className="field has-select">
+              <select value={state} onChange={(e) => setState(e.target.value)}>
+                <option value="all">All states</option>
+                {states.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="mfilters-group">
+            <div className="lab">City</div>
+            <div className="field has-select">
+              <select value={city} onChange={(e) => setCity(e.target.value)}>
+                <option value="all">All cities</option>
+                {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="mfilters-group">
+            <div className="lab">Listing</div>
+            <div className="mfilters-pills">
+              <button className={listingState === "all" ? "on" : ""} onClick={() => setListingState("all")}>Any</button>
+              {Object.entries(LISTING_LABEL_MAP).map(([v, label]) => (
+                <button key={v} className={listingState === v ? "on" : ""} onClick={() => setListingState(v)}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="mfilters-group">
+            <div className="lab">Match status</div>
+            <div className="mfilters-pills">
+              <button className={status === "all" ? "on" : ""} onClick={() => setStatus("all")}>Any</button>
+              {Object.entries(STATUS_LABEL_MAP).map(([v, label]) => (
+                <button key={v} className={status === v ? "on" : ""} onClick={() => setStatus(v)}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Dashboard ----------
 function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
   const [q, setQ] = useState_p("");
@@ -59,6 +174,9 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
   const [listingState, setListingState] = useState_p("all");
   const [tracking, setTracking] = useState_p("active");
   const [sort, setSort] = useState_p({ key: "updated_at", dir: "desc" });
+  const [filterPanelOpen, setFilterPanelOpen] = useState_p(false);
+
+  const activeFilterCount = [state, city, status, listingState].filter((v) => v !== "all").length;
 
   const cities = useMemo_p(
     () => Array.from(new Set(properties.map((p) => p.city).filter(Boolean))).sort(),
@@ -198,6 +316,17 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         <div className="results-count">{rows.length} of {properties.length}</div>
       </div>
 
+      <MobileFilters
+        q={q} setQ={setQ}
+        state={state} setState={setState}
+        city={city} setCity={setCity}
+        status={status} setStatus={setStatus}
+        listingState={listingState} setListingState={setListingState}
+        cities={cities} states={states}
+        open={filterPanelOpen} setOpen={setFilterPanelOpen}
+        activeFilterCount={activeFilterCount}
+      />
+
       <div className="table-wrap">
         <table className="data">
           <thead>
@@ -262,6 +391,76 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile card list — hidden at ≥881px via CSS */}
+      <div className="prop-list">
+        {loading && properties.length === 0 && (
+          <div className="empty" style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            Loading…
+          </div>
+        )}
+        {!loading && rows.length === 0 && (
+          <div className="empty" style={{ background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 8 }}>
+            <div className="title">{properties.length === 0 ? "No properties yet" : "No matches"}</div>
+            <div>
+              {properties.length === 0
+                ? <>Click <b>Add property</b> to start tracking.</>
+                : "Try clearing some filters."}
+            </div>
+          </div>
+        )}
+        {rows.map((r) => {
+          const sp = splitAddress(r.display_address || "");
+          return (
+            <div
+              key={r.id}
+              className={`prop-card ${r.active === false ? "is-archived" : ""}`}
+              onClick={() => navigate("detail", r.id)}
+            >
+              <div className="head">
+                <div className="addr">
+                  {sp.line1}
+                  <span className="sub">{sp.line2}</span>
+                </div>
+                <div className="head-right">
+                  <ListingBadge state={r.listing_state} />
+                </div>
+              </div>
+              {r.active === false && (
+                <div style={{ padding: "0 0 6px", marginTop: -4 }}>
+                  <span className="badge neutral">Archived</span>
+                </div>
+              )}
+              <div className="body">
+                <div className="kv">
+                  <div className="k">Estimate</div>
+                  <div className="v">{fmt.usd(r.estimate)}</div>
+                </div>
+                <div className="kv">
+                  <div className="k">{r.price ? r.price.label : "Price"}</div>
+                  <div className="v">
+                    {r.price
+                      ? <span className={r.price.cls === "hist" ? "faint" : undefined}>{fmt.usd(r.price.value)}</span>
+                      : <span className="faint">—</span>}
+                  </div>
+                </div>
+                <div className="kv">
+                  <div className="k">vs Est.</div>
+                  <div className="v">
+                    {r.price && r.price.base != null
+                      ? <DeltaCell value={r.estimate} base={r.price.base} mode="text" />
+                      : <span className="faint">—</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="foot">
+                <span>Last refresh · {fmt.relative(r.updated_at)}</span>
+                <span><Icon name="chevronRight" /></span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
