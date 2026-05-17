@@ -655,27 +655,6 @@ function MatchPreview({ result }) {
   );
 }
 
-// ---------- Archived banner ----------
-function ArchivedBanner({ onRestore, onDelete }) {
-  return (
-    <div className="archived-banner">
-      <div className="archived-banner-icon"><Icon name="archive" size={16} /></div>
-      <div className="archived-banner-text">
-        <div className="t">This property is archived</div>
-        <div className="s">Excluded from scheduled refreshes · data preserved</div>
-      </div>
-      <div className="archived-banner-actions">
-        <button className="btn" onClick={onRestore}>
-          <Icon name="refresh" /> Restore
-        </button>
-        <button className="btn btn-danger" onClick={onDelete}>
-          <Icon name="trash" /> Delete…
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ---------- Property Detail ----------
 function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [property, setProperty] = useState_p(null);
@@ -826,13 +805,6 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
         <Icon name="chevronLeft" /> All properties
       </button>
 
-      {property.active === false && (
-        <ArchivedBanner
-          onRestore={() => setArchived(false)}
-          onDelete={() => setManagementMode("delete")}
-        />
-      )}
-
       <div className="detail-header">
         <div>
           <h1>{sp.line1}</h1>
@@ -841,6 +813,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <span style={{ color: "var(--text-faint)" }}>·</span>
             <ListingBadge state={property.listing_state} />
             <StatusBadge status={property.status} />
+            {property.active === false && <span className="badge neutral">Archived</span>}
             {property.property_url && (
               <a href={property.property_url} target="_blank" rel="noopener noreferrer">
                 Realtor.com page <Icon name="arrowUpRight" size={12} />

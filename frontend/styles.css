@@ -1651,52 +1651,10 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 .sidebar-toggle { display: none; }
 .sidebar-backdrop { display: none; }
 
-/* ---------- Archived property banner ---------- */
-.archived-banner {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 16px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--text-muted);
-  border-radius: 8px;
-  margin-bottom: 16px;
-}
-.archived-banner-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.archived-banner-text { flex: 1; min-width: 0; }
-.archived-banner-text .t {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 1px;
-}
-.archived-banner-text .s { font-size: 11px; color: var(--text-muted); }
-.archived-banner-actions { display: flex; gap: 6px; flex-shrink: 0; }
-@media (max-width: 600px) {
-  .archived-banner { flex-wrap: wrap; }
-  .archived-banner-actions { width: 100%; }
-  .archived-banner-actions .btn { flex: 1; justify-content: center; }
-}
-
 /* ---------- Dashboard mobile: cards + inline filter ----------
    At 880px the desktop filterbar hides, the data table hides,
    and the mobile card list + inline-expand filter panel show. */
 @media (max-width: 880px) {
-  /* Tighten page and topbar padding */
-  .page { padding: 14px 14px 32px; }
-  .topbar { padding: 0 12px; }
-
   /* Page header stacks vertically; action buttons fill the row */
   .page-header {
     flex-direction: column;
@@ -1735,7 +1693,7 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 
   /* Detail header stacks; action buttons go 2-up */
   .detail-header { flex-direction: column; align-items: stretch; gap: 12px; }
-  .detail-header h1 { font-size: 18px; }
+  .detail-header h1 { font-size: 19px; }
   .detail-actions { flex-wrap: wrap; }
   .detail-actions .btn { flex: 1 1 calc(50% - 4px); justify-content: center; }
 
