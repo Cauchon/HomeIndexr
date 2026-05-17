@@ -351,7 +351,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                   <div className="title">{properties.length === 0 ? "No properties yet" : "No matches"}</div>
                   <div>
                     {properties.length === 0
-                      ? <>Click <b>Add property</b> to fetch current data from HomeHarvest.</>
+                      ? <>Click <b>Add property</b> to fetch current data from Realtor.com.</>
                       : "Adjust the filters or search above."}
                   </div>
                 </div>
@@ -528,7 +528,7 @@ function AddPropertyPage({ navigate, onAdded }) {
       </button>
       <h1 className="page-title">Track a new property</h1>
       <div className="page-subtitle" style={{ marginBottom: 18 }}>
-        Enter a full street address. We'll fetch the latest HomeHarvest data and
+        Enter a full street address. We'll fetch the latest Realtor.com data and
         require an exact match before activating tracking.
       </div>
 
@@ -553,7 +553,7 @@ function AddPropertyPage({ navigate, onAdded }) {
             </div>
           </form>
           <div className="hint">
-            Include city, state, ZIP for the best match. The fetch runs server-side via HomeHarvest.
+            Include city, state, ZIP for the best match. The fetch runs server-side against Realtor.com.
           </div>
 
           {phase === "searching" && (
@@ -562,7 +562,7 @@ function AddPropertyPage({ navigate, onAdded }) {
                 width: 8, height: 8, borderRadius: "50%",
                 background: "var(--accent)", animation: "pulse 1.2s infinite"
               }} />
-              Fetching from HomeHarvest…
+              Fetching from Realtor.com…
             </div>
           )}
 
@@ -571,7 +571,7 @@ function AddPropertyPage({ navigate, onAdded }) {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <StatusBadge status="candidate_mismatch" />
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  HomeHarvest returned a candidate that doesn't exactly match your input. Confirm before saving.
+                  Realtor.com returned a candidate that doesn't exactly match your input. Confirm before saving.
                 </span>
               </div>
               <div className="compare-rows">
@@ -603,7 +603,7 @@ function AddPropertyPage({ navigate, onAdded }) {
                 <strong style={{ fontSize: 13 }}>No candidates returned</strong>
               </div>
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                HomeHarvest didn't surface any properties for that address. Check spelling and ZIP and try again.
+                Realtor.com didn't surface any properties for that address. Check spelling and ZIP and try again.
               </div>
             </div>
           )}
@@ -615,7 +615,7 @@ function AddPropertyPage({ navigate, onAdded }) {
                 <strong style={{ fontSize: 13, color: "var(--neg)" }}>Upstream error</strong>
               </div>
               <div style={{ fontSize: 12, wordBreak: "break-word" }}>
-                {errorMsg || "Something went wrong contacting HomeHarvest. Try again in a moment."}
+                {errorMsg || "Something went wrong contacting Realtor.com. Try again in a moment."}
               </div>
             </div>
           )}

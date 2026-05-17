@@ -5,8 +5,8 @@ Operating notes for AI coding agents working on this repo.
 ## What this is
 
 A local-first dashboard for tracking home prices over time. The backend scrapes
-Realtor.com via [HomeHarvest](https://github.com/Bunsly/HomeHarvest) and stores
-the latest fetched state on each property row in SQLite. The frontend is a
+Realtor.com directly via their `frontdoor/graphql` endpoint and stores the
+latest fetched state on each property row in SQLite. The frontend is a
 no-build React app (UMD + Babel-standalone) that the backend also serves.
 
 ## Layout
@@ -14,7 +14,7 @@ no-build React app (UMD + Babel-standalone) that the backend also serves.
 ```
 backend/app/
   main.py        FastAPI routes + serves the frontend at /
-  scraper.py     HomeHarvest/Realtor wrappers; normalizes AVM + history data
+  scraper.py     Realtor.com GraphQL client; normalizes AVM + history data
   store.py       SQLite reads/writes (current property state + history/events/taxes)
   db.py          schema + connection helper (data/app.db)
   models.py      pydantic types (currently unused by routes)
@@ -41,15 +41,17 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
 
 ## Architectural rules
 
-1. **HomeHarvest runs server-side only.** The frontend never imports it or hits
-   realtor.com directly. All scraping flows through `backend/app/scraper.py`.
-2. **Current HomeHarvest data lives on `properties`.** Refreshing a property
+1. **Realtor scraping runs server-side only.** The frontend never hits
+   realtor.com directly. All scraping flows through `backend/app/scraper.py`,
+   which POSTs GraphQL operations to `https://www.realtor.com/frontdoor/graphql`
+   via the shared `_post_gql` helper.
+2. **Current Realtor data lives on `properties`.** Refreshing a property
    overwrites the current normalized fields and raw JSON on the existing row.
 3. **Adding the same address must not duplicate the property.** `store.find_property_by_address`
    matches case- and whitespace-insensitive against both `input_address` and
    `canonical_address`; new fetches for an existing address update and
    reactivate that row.
-4. **Raw HomeHarvest JSON is preserved on the property row** in `properties.raw_json`
+4. **Raw Realtor JSON is preserved on the property row** in `properties.raw_json`
    for debugging. Don't strip it.
 5. **AVM data lives in two shapes.** `scraper._normalize_estimates` handles
    both `raw["current_estimates"]` (flat snake_case) and
@@ -88,7 +90,7 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
 ## Data model
 
 `properties` is one row per tracked address and includes the latest fetched
-HomeHarvest state.
+Realtor.com state.
 
 ```
 properties(id, input_address, canonical_address, city, state, zip,
@@ -140,10 +142,10 @@ frontend formatters.
 `POST /api/properties` returns one of:
 
 - `matched` — saved; property in response.
-- `candidate_mismatch` — **not yet saved.** `candidate` describes what
-  HomeHarvest returned. Caller must retry with `confirm_mismatch: true` to
-  persist.
-- `no_candidates` — HomeHarvest returned nothing.
+- `candidate_mismatch` — **not yet saved.** `candidate` describes the
+  property Realtor resolved. Caller must retry with `confirm_mismatch: true`
+  to persist.
+- `no_candidates` — Realtor returned no address match.
 - `error` — upstream failure. `error` field has the message.
 
 ## Conventions

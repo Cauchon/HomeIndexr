@@ -1,5 +1,5 @@
 // Tiny API client for HomeIndexr backend.
-// All HomeHarvest scraping happens server-side.
+// All Realtor.com scraping happens server-side.
 (function () {
   async function req(path, opts) {
     const res = await fetch(path, {

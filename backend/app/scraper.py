@@ -1,4 +1,4 @@
-"""HomeHarvest wrapper + AVM normalization.
+"""Realtor.com GraphQL scraper + AVM normalization.
 
 Normalizes AVM data from both shapes:
   - raw["current_estimates"]              (snake_case, flat list)
@@ -15,14 +15,123 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-import homeharvest
 import requests
-from homeharvest.core.scrapers import DEFAULT_HEADERS
 
-LISTING_TYPES = ["for_sale", "sold", "pending", "for_rent"]
 SOLD_TO_OFF_MARKET_DAYS = 180
 
 REALTOR_GQL_URL = "https://www.realtor.com/frontdoor/graphql"
+
+DEFAULT_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Origin": "https://www.realtor.com",
+    "Pragma": "no-cache",
+    "Referer": "https://www.realtor.com/",
+    "rdc-client-name": "RDC_WEB_SRP_FS_PAGE",
+    "rdc-client-version": "3.0.2515",
+    "sec-ch-ua": '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/135.0.0.0 Safari/537.36"
+    ),
+    "x-is-bot": "false",
+}
+
+
+def _post_gql(operation_name: str, query: str, variables: dict) -> dict:
+    """POST a GraphQL operation to Realtor and return the parsed JSON body."""
+    payload = {
+        "operationName": operation_name,
+        "query": query,
+        "variables": variables,
+    }
+    resp = requests.post(
+        REALTOR_GQL_URL,
+        headers=DEFAULT_HEADERS,
+        data=json.dumps(payload, separators=(",", ":")),
+        timeout=20,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+SEARCH_SUGGESTIONS_QUERY = (
+    "query Search_suggestions($searchInput: SearchSuggestionsInput!) {"
+    "  search_suggestions(search_input: $searchInput) {"
+    "    geo_results { geo { _id mpr_id area_type } }"
+    "  }"
+    "}"
+)
+
+HOME_DETAILS_QUERY = (
+    "query GetHomeDetails($property_id: ID!) {"
+    "  home(property_id: $property_id) {"
+    "    property_id listing_id href permalink"
+    "    status mls_status pending_date"
+    "    list_price last_sold_price last_sold_date last_status_change_date"
+    "    description { beds baths_full baths_half sqft lot_sqft year_built }"
+    "    location {"
+    "      address {"
+    "        line city state_code postal_code"
+    "        coordinate { lat lon }"
+    "      }"
+    "    }"
+    "    estimates {"
+    "      currentValues: current_values {"
+    "        source { type name }"
+    "        estimate"
+    "        estimateHigh: estimate_high"
+    "        estimateLow: estimate_low"
+    "        date"
+    "        isBestHomeValue: isbest_homevalue"
+    "      }"
+    "    }"
+    "  }"
+    "}"
+)
+
+
+def _search_suggestions(address: str) -> str | None:
+    """Geocode a free-text address to a Realtor mpr_id. Returns None if no address match."""
+    data = _post_gql(
+        "Search_suggestions",
+        SEARCH_SUGGESTIONS_QUERY,
+        {"searchInput": {"search_term": address}},
+    )
+    results = (
+        ((data.get("data") or {}).get("search_suggestions") or {}).get("geo_results")
+        or []
+    )
+    for r in results:
+        geo = (r or {}).get("geo") or {}
+        if geo.get("area_type") != "address":
+            continue
+        mpr = geo.get("mpr_id")
+        if mpr:
+            return str(mpr)
+        gid = geo.get("_id") or ""
+        if isinstance(gid, str) and gid.startswith("addr:"):
+            return gid[len("addr:") :]
+    return None
+
+
+def _get_home_details(property_id: str) -> dict | None:
+    """Fetch a property by id. Returns the home node dict, or None if missing."""
+    data = _post_gql(
+        "GetHomeDetails",
+        HOME_DETAILS_QUERY,
+        {"property_id": str(property_id)},
+    )
+    home = (data.get("data") or {}).get("home")
+    return home if isinstance(home, dict) else None
 
 HISTORICAL_QUERY = (
     "query GetHomeHistoricalEstimates($property_id: ID!) {"
@@ -60,19 +169,11 @@ def fetch_history_bundle(property_id: str) -> dict:
     """
     if not property_id:
         return {"estimates": [], "events": [], "taxes": []}
-    payload = {
-        "operationName": "GetHomeHistoricalEstimates",
-        "query": HISTORICAL_QUERY,
-        "variables": {"property_id": str(property_id)},
-    }
-    resp = requests.post(
-        REALTOR_GQL_URL,
-        headers=DEFAULT_HEADERS,
-        data=json.dumps(payload, separators=(",", ":")),
-        timeout=20,
+    data = _post_gql(
+        "GetHomeHistoricalEstimates",
+        HISTORICAL_QUERY,
+        {"property_id": str(property_id)},
     )
-    resp.raise_for_status()
-    data = resp.json()
     home = (data.get("data") or {}).get("home") or {}
     series = (
         (home.get("estimates") or {})
@@ -365,7 +466,7 @@ def _baths_combined(desc: dict) -> float | None:
 
 
 def _flatten(raw: dict) -> dict:
-    """Project HomeHarvest raw row into normalized property fields."""
+    """Project a Realtor.com home node into normalized property fields."""
     loc = (raw.get("location") or {}).get("address") or {}
     coord = loc.get("coordinate") or {}
     desc = raw.get("description") or {}
@@ -409,31 +510,23 @@ def _href(raw: dict) -> str | None:
     return None
 
 
-def _pick_best_candidate(rows: list[dict], query: str) -> tuple[dict | None, str]:
-    """Choose the best candidate and decide match status.
+def _match_status(raw: dict, query: str) -> str:
+    """Decide whether the resolved property matches the user's query.
 
-    Returns (raw_row, status) where status is one of:
-      matched, candidate_mismatch
-    Caller handles no_candidates / error separately.
+    Returns "matched" if the geocoded street line equals the input (modulo whitespace/case),
+    or if the full canonical address equals the input. Otherwise "candidate_mismatch".
     """
     nq = _norm_str(query)
-    # exact substring match on the line first
-    for row in rows:
-        addr = _build_matched_address(row) or ""
-        if _norm_str(addr) == nq:
-            return row, "matched"
-    # try prefix match on street line
-    nstart = nq.split(",")[0].strip()
-    for row in rows:
-        addr_line = ((row.get("location") or {}).get("address") or {}).get("line") or ""
-        if _norm_str(addr_line) == nstart:
-            return row, "matched"
-    # fall through to first
-    return rows[0], "candidate_mismatch"
+    if _norm_str(_build_matched_address(raw) or "") == nq:
+        return "matched"
+    addr_line = ((raw.get("location") or {}).get("address") or {}).get("line") or ""
+    if _norm_str(addr_line) == nq.split(",")[0].strip():
+        return "matched"
+    return "candidate_mismatch"
 
 
 def fetch(address: str) -> dict:
-    """Fetch a property from HomeHarvest. Returns a dict with:
+    """Fetch a property from Realtor.com via direct GraphQL. Returns a dict with:
         status: matched | candidate_mismatch | no_candidates | error
         matched_address, normalized fields, raw_json, error
     """
@@ -442,22 +535,18 @@ def fetch(address: str) -> dict:
         return {"status": "error", "error": "empty address", "raw_json": None}
 
     try:
-        rows = homeharvest.scrape_property(
-            address,
-            return_type="raw",
-            listing_type=LISTING_TYPES,
-            limit=5,
-            extra_property_data=False,
-        )
+        mpr_id = _search_suggestions(address)
+        if not mpr_id:
+            return {"status": "no_candidates", "error": None, "raw_json": None}
+        raw = _get_home_details(mpr_id)
     except Exception as e:  # noqa: BLE001
         return {"status": "error", "error": f"{type(e).__name__}: {e}", "raw_json": None}
 
-    if not rows:
+    if not raw:
         return {"status": "no_candidates", "error": None, "raw_json": None}
 
-    raw, status = _pick_best_candidate(rows, address)
     flat = _flatten(raw)
-    flat["status"] = status
+    flat["status"] = _match_status(raw, address)
     flat["raw_json"] = raw
     flat["error"] = None
     return flat

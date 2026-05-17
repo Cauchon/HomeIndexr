@@ -1,28 +1,27 @@
 # HomeIndexr
 
-Local-first dashboard for tracking home prices over time. Fetches property data
-from Realtor.com via [HomeHarvest](https://github.com/Bunsly/HomeHarvest)
-server-side and stores the latest fetched state on each tracked property in
-SQLite. The Property view can also backfill Realtor historical AVMs, sparse
-market events, and tax assessment history.
+Local-first dashboard for tracking home prices over time. Scrapes property
+data directly from Realtor.com's `frontdoor/graphql` endpoint server-side and
+stores the latest fetched state on each tracked property in SQLite. The
+Property view can also backfill Realtor historical AVMs, sparse market events,
+and tax assessment history.
 
 ## Stack
 
-- **Backend**: FastAPI + sqlite3 (stdlib), HomeHarvest for scraping.
+- **Backend**: FastAPI + sqlite3 (stdlib). Scraping is a thin GraphQL client
+  over `requests` in `backend/app/scraper.py`.
 - **Frontend**: React (via UMD + Babel-standalone) served as static files by the
   backend. No build step.
 - **Storage**: `data/app.db` (SQLite, WAL mode). Auto-created on first run.
 
 ## Setup
 
-Use Python 3.12 for this project. HomeHarvest 0.8.18 did not import reliably
-under the system Python 3.9 on this machine.
+Use Python 3.12 for this project.
 
 ```bash
 python3.12 -m venv .venv312
 .venv312/bin/python -m pip install \
   fastapi==0.136.1 \
-  homeharvest==0.8.18 \
   uvicorn==0.47.0 \
   requests==2.34.1 \
   pydantic==2.13.4
@@ -62,7 +61,7 @@ save.
 ## Data model
 
 - `properties` — one row per tracked address, including the latest normalized
-  AVM, list/sale prices, property facts, match status, and raw HomeHarvest JSON.
+  AVM, list/sale prices, property facts, match status, and raw Realtor JSON.
 - `historical_estimates` — monthly historical AVM series keyed by property,
   source, and date.
 - `property_events` — Realtor market events such as listed, sold, relisted,
@@ -74,20 +73,21 @@ defaults to active rows and refresh-all skips archived rows. Delete is permanent
 and relies on SQLite foreign-key cascades to remove history, events, and taxes.
 
 AVM normalization picks the "best" current estimate from either of the two
-shapes HomeHarvest returns: `raw["current_estimates"]` (flat snake_case) or
-`raw["estimates"]["currentValues"]` (nested camelCase).
+shapes Realtor returns: `raw["current_estimates"]` (flat snake_case, returned
+by the legacy search-results path) or `raw["estimates"]["currentValues"]`
+(nested camelCase, returned by `GetHomeDetails`).
 
 ## Listing state logic
 
 The Properties page uses `properties.listing_state`, normalized server-side from
-the latest HomeHarvest/Realtor raw JSON. The dashboard buckets are:
+the latest Realtor raw JSON. The dashboard buckets are:
 
 1. `sold` — explicit current status text indicates `sold`/`closed`, and the
    sale date is no more than **180 days** old. This wins over stale
    `pending_date` values left on sold listings.
-2. `pending` — `pending_date` exists, or Realtor/HomeHarvest status text
-   contains `pending`, `contingent`, or `under contract`, unless the current
-   status is already sold/closed.
+2. `pending` — `pending_date` exists, or Realtor status text contains
+   `pending`, `contingent`, or `under contract`, unless the current status is
+   already sold/closed.
 3. `for_sale` — status text indicates `for_sale`, `active`, `coming soon`, or
    similar active listing state; as a fallback, a row with both `listing_id` and
    `list_price` is treated as for sale unless it has sold/closed cues.

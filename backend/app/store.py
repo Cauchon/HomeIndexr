@@ -1,6 +1,6 @@
 """SQLite persistence helpers.
 
-Each property stores the latest fetched HomeHarvest state directly on the
+Each property stores the latest fetched Realtor.com state directly on the
 property row. Adding the same address never creates a duplicate property.
 """
 from __future__ import annotations
@@ -92,7 +92,7 @@ def get_property(property_id: int) -> dict | None:
 
 
 def list_properties() -> list[dict]:
-    """Return all properties with their current fetched HomeHarvest state."""
+    """Return all properties with their current fetched Realtor.com state."""
     with get_conn() as conn:
         return [
             _row_to_property(r)
