@@ -53,5 +53,44 @@ class NormalizeListingStateTests(unittest.TestCase):
         )
 
 
+class MatchStatusTests(unittest.TestCase):
+    def test_multiline_address_with_country_matches_location(self):
+        raw = {
+            "location": {
+                "address": {
+                    "line": "18735 Effinger Way",
+                    "city": "Oregon City",
+                    "state_code": "OR",
+                    "postal_code": "97045",
+                }
+            }
+        }
+
+        self.assertEqual(
+            scraper._match_status(
+                raw,
+                "18735 Effinger Way\nOregon City, OR  97045\nUnited States",
+            ),
+            "matched",
+        )
+
+    def test_different_street_still_requires_mismatch_confirmation(self):
+        raw = {
+            "location": {
+                "address": {
+                    "line": "18735 Effinger Way",
+                    "city": "Oregon City",
+                    "state_code": "OR",
+                    "postal_code": "97045",
+                }
+            }
+        }
+
+        self.assertEqual(
+            scraper._match_status(raw, "18737 Effinger Way, Oregon City, OR 97045"),
+            "candidate_mismatch",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -436,6 +436,17 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
 }
 
 // ---------- Add Property ----------
+function StatusBadge({ status }) {
+  const meta = {
+    matched: { label: "Matched", cls: "ok" },
+    candidate_mismatch: { label: "Review match", cls: "warn" },
+    no_candidates: { label: "No match", cls: "neutral" },
+    error: { label: "Error", cls: "err" },
+  }[status] || { label: status || "Unknown", cls: "neutral" };
+
+  return <span className={`badge ${meta.cls}`}>{meta.label}</span>;
+}
+
 function AddPropertyPage({ navigate, onAdded }) {
   const [addr, setAddr] = useState_p("");
   const [phase, setPhase] = useState_p("idle"); // idle | searching | matched | mismatch | none | error | saving
@@ -656,7 +667,7 @@ function SchoolsCard({ schools }) {
       <div className="card-body flush">
         <div className="facts-stack">
           {schools.map((s) => (
-            <div key={s.school_id} className="fact-row" style={{ alignItems: "flex-start" }}>
+            <div key={s.school_id} className="fact-row" style={{ alignItems: "center" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
                 <span className="v" style={{ fontWeight: 500, whiteSpace: "normal" }}>{s.name}</span>
                 <span className="k" style={{ fontSize: 11 }}>
@@ -1824,6 +1835,14 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
   useEffect_p(() => {
     localStorage.setItem(CADENCE_STORAGE_KEY, cadence);
   }, [cadence]);
+
+  useEffect_p(() => {
+    function onStorage(e) {
+      if (e.key === ADMIN_JOB_STORAGE_KEY) setJobs(loadAdminJobs());
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const activeProperties = useMemo_p(
     () => properties.filter((p) => p.active !== false),

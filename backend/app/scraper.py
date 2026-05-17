@@ -268,6 +268,12 @@ def _norm_str(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "")).strip().lower()
 
 
+def _norm_address_query(s: str | None) -> str:
+    out = _norm_str(s)
+    out = re.sub(r"\b(united states|usa|u\.s\.a\.|us)\b\.?$", "", out)
+    return out.strip(" ,")
+
+
 def _to_int(v: Any) -> int | None:
     try:
         if v is None:
@@ -585,14 +591,30 @@ def _href(raw: dict) -> str | None:
 def _match_status(raw: dict, query: str) -> str:
     """Decide whether the resolved property matches the user's query.
 
-    Returns "matched" if the geocoded street line equals the input (modulo whitespace/case),
-    or if the full canonical address equals the input. Otherwise "candidate_mismatch".
+    Returns "matched" if the resolved address agrees with the input. This keeps
+    the mismatch gate for nearby candidates, while allowing common copied
+    address formats such as multiline addresses with a trailing country.
     """
-    nq = _norm_str(query)
-    if _norm_str(_build_matched_address(raw) or "") == nq:
+    nq = _norm_address_query(query)
+    if _norm_address_query(_build_matched_address(raw) or "") == nq:
         return "matched"
-    addr_line = ((raw.get("location") or {}).get("address") or {}).get("line") or ""
+    loc_addr = ((raw.get("location") or {}).get("address") or {})
+    addr_line = loc_addr.get("line") or ""
     if _norm_str(addr_line) == nq.split(",")[0].strip():
+        return "matched"
+    city = _title_city(loc_addr.get("city"))
+    state = loc_addr.get("state_code")
+    zip_ = loc_addr.get("postal_code")
+    if (
+        addr_line
+        and city
+        and state
+        and zip_
+        and _norm_str(addr_line) in nq
+        and _norm_str(city) in nq
+        and re.search(rf"\b{re.escape(_norm_str(state))}\b", nq)
+        and re.search(rf"\b{re.escape(str(zip_))}\b", nq)
+    ):
         return "matched"
     return "candidate_mismatch"
 

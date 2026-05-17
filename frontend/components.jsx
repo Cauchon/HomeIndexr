@@ -126,26 +126,16 @@ function ListingBadge({ state }) {
 }
 
 // ---------- Delta cell ----------
-function DeltaCell({ value, base, mode = "bar" }) {
+function DeltaCell({ value, base }) {
   if (value == null || base == null) {
     return <span className="faint">—</span>;
   }
   const diff = value - base;
   const pct = base ? diff / base : 0;
   const cls = Math.abs(pct) < 0.005 ? "flat" : (diff > 0 ? "pos" : "neg");
-  // bar scale: max ±15% maps to full width
-  const ratio = Math.max(-1, Math.min(1, pct / 0.15));
-  const half = 28; // px, half width of 56
-  const fillW = Math.abs(ratio) * half;
-  const fillLeft = diff >= 0 ? "50%" : `calc(50% - ${fillW}px)`;
   return (
     <span className={`delta ${cls}`}>
       <span className="num">{fmt.delta(diff)} <span className="muted" style={{fontWeight: 400}}>({fmt.pct(pct)})</span></span>
-      {mode === "bar" && (
-        <span className="bar">
-          <span className="fill" style={{ left: fillLeft, width: fillW + "px" }} />
-        </span>
-      )}
     </span>
   );
 }
