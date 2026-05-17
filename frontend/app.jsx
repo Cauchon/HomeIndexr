@@ -121,9 +121,31 @@ function App() {
         <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
         <aside className="sidebar">
           <div className="sidebar-brand">
-            <div className="mark">HI</div>
-            <div className="name">HomeIndexr</div>
-            <div className="badge">local</div>
+            <button className="brand-link" onClick={() => navigate("dashboard")} aria-label="Go to dashboard">
+            <svg className="brand-icon" viewBox="0 0 256 256" role="img" aria-hidden="true">
+              <defs>
+                <linearGradient id="nav-blueLine" x1="48" y1="190" x2="220" y2="76" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stopColor="#2563EB"/>
+                  <stop offset="1" stopColor="#38A7FF"/>
+                </linearGradient>
+                <filter id="nav-softShadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#0F172A" floodOpacity="0.12"/>
+                </filter>
+              </defs>
+              <g fill="none" strokeLinecap="round" strokeLinejoin="round" filter="url(#nav-softShadow)">
+                <path d="M41 188 V93 L128 29 L215 93 V143" stroke="currentColor" strokeWidth="15"/>
+                <path d="M42 188 H89 L121 154 L160 171 L215 103" stroke="url(#nav-blueLine)" strokeWidth="15"/>
+                <circle cx="215" cy="103" r="14" fill="#2F74FF" stroke="none"/>
+              </g>
+              <g fill="#6B7280" opacity="0.92">
+                <rect x="107" y="83" width="16" height="16" rx="2"/>
+                <rect x="133" y="83" width="16" height="16" rx="2"/>
+                <rect x="107" y="109" width="16" height="16" rx="2"/>
+                <rect x="133" y="109" width="16" height="16" rx="2"/>
+              </g>
+            </svg>
+            <span className="brand-name"><span>Home</span><span className="brand-name-accent">Indexr</span></span>
+            </button>
           </div>
           <div className="nav-group-label">Workspace</div>
           <div className={`nav-item ${route.page === "dashboard" || route.page === "detail" ? "active" : ""}`}
@@ -155,7 +177,7 @@ function App() {
 
           <div className="sidebar-footer">
             <span className="dot" />
-            HomeHarvest · local
+            HomeIndexr · local
           </div>
         </aside>
 

@@ -114,20 +114,31 @@ input, select, textarea {
   border-bottom: 1px solid var(--border);
   margin-bottom: 10px;
 }
-.sidebar-brand .mark {
-  width: 22px; height: 22px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  display: grid; place-items: center;
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: -0.02em;
+.sidebar-brand .brand-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
 }
-.sidebar-brand .name {
+.sidebar-brand .brand-icon {
+  height: 36px;
+  width: 36px;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.sidebar-brand .brand-name {
+  font-size: 17px;
   font-weight: 600;
-  font-size: 13px;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.4px;
+  color: var(--text);
+  line-height: 1;
+}
+.sidebar-brand .brand-name-accent {
+  color: #2563EB;
 }
 .sidebar-brand .badge {
   margin-left: auto;
