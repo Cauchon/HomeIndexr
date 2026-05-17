@@ -73,7 +73,6 @@ function App() {
   const counts = useM(() => ({
     active: properties.filter((p) => p.active !== false).length,
     archived: properties.filter((p) => p.active === false).length,
-    issues: properties.filter((p) => p.active !== false && p.status && p.status !== "matched").length,
   }), [properties]);
 
   const crumbs = useM(() => {
@@ -160,7 +159,6 @@ function App() {
           <div className={`nav-item ${route.page === "admin" ? "active" : ""}`}
                onClick={() => navigate("admin")}>
             <Icon name="settings" /> Refresh jobs
-            {counts.issues > 0 && <span className="count" style={{ color: "var(--warn)" }}>{counts.issues}</span>}
           </div>
 
           <div className="nav-group-label">Filters</div>
@@ -168,12 +166,7 @@ function App() {
             <Icon name="eye" /> All properties
             {counts.archived > 0 && <span className="count">{counts.active + counts.archived}</span>}
           </div>
-          {counts.issues > 0 && (
-            <div className="nav-item" onClick={() => navigate("dashboard")}>
-              <Icon name="alert" /> Issues
-              <span className="count" style={{ color: "var(--warn)" }}>{counts.issues}</span>
-            </div>
-          )}
+
 
           <div className="sidebar-footer">
             <span className="dot" />

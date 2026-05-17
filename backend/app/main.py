@@ -63,6 +63,7 @@ def get_property(pid: int):
     p["historical"] = store.list_historical(pid)
     p["events"] = store.list_events(pid)
     p["tax_history"] = store.list_tax_history(pid)
+    p["schools"] = store.list_schools(pid)
     return p
 
 
@@ -85,6 +86,7 @@ def update_property(pid: int, body: UpdatePropertyBody):
     prop["historical"] = store.list_historical(pid)
     prop["events"] = store.list_events(pid)
     prop["tax_history"] = store.list_tax_history(pid)
+    prop["schools"] = store.list_schools(pid)
     return prop
 
 
@@ -96,6 +98,7 @@ def archive_property(pid: int):
     prop["historical"] = store.list_historical(pid)
     prop["events"] = store.list_events(pid)
     prop["tax_history"] = store.list_tax_history(pid)
+    prop["schools"] = store.list_schools(pid)
     return prop
 
 
@@ -107,6 +110,7 @@ def restore_property(pid: int):
     prop["historical"] = store.list_historical(pid)
     prop["events"] = store.list_events(pid)
     prop["tax_history"] = store.list_tax_history(pid)
+    prop["schools"] = store.list_schools(pid)
     return prop
 
 
@@ -199,6 +203,7 @@ def add_property(body: AddBody):
     prop["historical"] = store.list_historical(prop["id"])
     prop["events"] = store.list_events(prop["id"])
     prop["tax_history"] = store.list_tax_history(prop["id"])
+    prop["schools"] = store.list_schools(prop["id"])
     return {"status": status, "property": prop, "candidate": None, "error": None}
 
 
@@ -214,6 +219,7 @@ def refresh_property(pid: int):
     out["historical"] = store.list_historical(pid)
     out["events"] = store.list_events(pid)
     out["tax_history"] = store.list_tax_history(pid)
+    out["schools"] = store.list_schools(pid)
     return out
 
 

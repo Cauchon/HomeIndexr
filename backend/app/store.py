@@ -17,8 +17,24 @@ PROPERTY_COLS = (
     "id input_address canonical_address city state zip property_id listing_id property_url "
     "listing_state active status matched_address best_current_estimate estimate_source "
     "estimate_low estimate_high estimate_date list_price sold_price last_sold_price "
-    "beds baths sqft lot_sqft year_built latitude longitude raw_json error last_fetched_at "
-    "created_at updated_at"
+    "beds baths sqft lot_sqft year_built latitude longitude "
+    "list_date days_on_market last_price_change_amount last_price_change_date hoa_fee "
+    "property_type property_sub_type stories garage garage_type "
+    "pool cooling heating fireplace "
+    "is_new_listing is_price_reduced is_foreclosure "
+    "flood_factor_score flood_factor_severity "
+    "raw_json error last_fetched_at created_at updated_at"
+).split()
+
+CURRENT_FIELDS = (
+    "matched_address best_current_estimate estimate_source "
+    "estimate_low estimate_high estimate_date list_price sold_price last_sold_price "
+    "beds baths sqft lot_sqft year_built latitude longitude "
+    "list_date days_on_market last_price_change_amount last_price_change_date hoa_fee "
+    "property_type property_sub_type stories garage garage_type "
+    "pool cooling heating fireplace "
+    "is_new_listing is_price_reduced is_foreclosure "
+    "flood_factor_score flood_factor_severity"
 ).split()
 
 
@@ -50,27 +66,14 @@ def _raw_json_for_db(fetched: dict) -> str | None:
 
 
 def _current_values(fetched: dict, now: int) -> tuple:
-    return (
-        fetched.get("matched_address"),
-        fetched.get("best_current_estimate"),
-        fetched.get("estimate_source"),
-        fetched.get("estimate_low"),
-        fetched.get("estimate_high"),
-        fetched.get("estimate_date"),
-        fetched.get("list_price"),
-        fetched.get("sold_price"),
-        fetched.get("last_sold_price"),
-        fetched.get("beds"),
-        fetched.get("baths"),
-        fetched.get("sqft"),
-        fetched.get("lot_sqft"),
-        fetched.get("year_built"),
-        fetched.get("latitude"),
-        fetched.get("longitude"),
-        _raw_json_for_db(fetched),
-        fetched.get("error"),
-        now,
-    )
+    """Values for the CURRENT_FIELDS columns plus raw_json, error, last_fetched_at."""
+    base = tuple(fetched.get(k) for k in CURRENT_FIELDS)
+    return base + (_raw_json_for_db(fetched), fetched.get("error"), now)
+
+
+_CURRENT_COL_LIST = ", ".join(CURRENT_FIELDS + ["raw_json", "error", "last_fetched_at"])
+_CURRENT_PLACEHOLDERS = ", ".join(["?"] * (len(CURRENT_FIELDS) + 3))
+_CURRENT_ASSIGNMENTS = ", ".join(f"{c} = ?" for c in CURRENT_FIELDS + ["raw_json", "error", "last_fetched_at"])
 
 
 def find_property_by_address(input_address: str) -> dict | None:
@@ -107,16 +110,13 @@ def create_property(input_address: str, fetched: dict) -> dict:
     canonical = fetched.get("matched_address") or input_address
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO properties
-               (input_address, canonical_address, city, state, zip,
-                property_id, listing_id, property_url, listing_state,
-                active, status,
-                matched_address, best_current_estimate, estimate_source,
-                estimate_low, estimate_high, estimate_date, list_price, sold_price,
-                last_sold_price, beds, baths, sqft, lot_sqft, year_built,
-                latitude, longitude, raw_json, error, last_fetched_at,
-                created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            f"""INSERT INTO properties
+                (input_address, canonical_address, city, state, zip,
+                 property_id, listing_id, property_url, listing_state,
+                 active, status,
+                 {_CURRENT_COL_LIST},
+                 created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,{_CURRENT_PLACEHOLDERS},?,?)""",
             (
                 input_address,
                 canonical,
@@ -135,6 +135,7 @@ def create_property(input_address: str, fetched: dict) -> dict:
             ),
         )
         pid = cur.lastrowid
+        replace_schools(pid, fetched.get("schools") or [])
         row = conn.execute("SELECT * FROM properties WHERE id = ?", (pid,)).fetchone()
         return _row_to_property(row)
 
@@ -192,37 +193,19 @@ def update_property_meta(property_id: int, fetched: dict) -> None:
     now = _now()
     with get_conn() as conn:
         conn.execute(
-            """UPDATE properties SET
-                 canonical_address = COALESCE(?, canonical_address),
-                 city               = COALESCE(?, city),
-                 state              = COALESCE(?, state),
-                 zip                = COALESCE(?, zip),
-                 property_id        = COALESCE(?, property_id),
-                 listing_id         = COALESCE(?, listing_id),
-                 property_url       = COALESCE(?, property_url),
-                 listing_state      = COALESCE(?, listing_state),
-                 status             = ?,
-                 matched_address    = ?,
-                 best_current_estimate = ?,
-                 estimate_source    = ?,
-                 estimate_low       = ?,
-                 estimate_high      = ?,
-                 estimate_date      = ?,
-                 list_price         = ?,
-                 sold_price         = ?,
-                 last_sold_price    = ?,
-                 beds               = ?,
-                 baths              = ?,
-                 sqft               = ?,
-                 lot_sqft           = ?,
-                 year_built         = ?,
-                 latitude           = ?,
-                 longitude          = ?,
-                 raw_json           = ?,
-                 error              = ?,
-                 last_fetched_at    = ?,
-                 updated_at         = ?
-               WHERE id = ?""",
+            f"""UPDATE properties SET
+                  canonical_address = COALESCE(?, canonical_address),
+                  city               = COALESCE(?, city),
+                  state              = COALESCE(?, state),
+                  zip                = COALESCE(?, zip),
+                  property_id        = COALESCE(?, property_id),
+                  listing_id         = COALESCE(?, listing_id),
+                  property_url       = COALESCE(?, property_url),
+                  listing_state      = COALESCE(?, listing_state),
+                  status             = ?,
+                  {_CURRENT_ASSIGNMENTS},
+                  updated_at         = ?
+                WHERE id = ?""",
             (
                 fetched.get("matched_address"),
                 fetched.get("city"),
@@ -238,6 +221,7 @@ def update_property_meta(property_id: int, fetched: dict) -> None:
                 property_id,
             ),
         )
+    replace_schools(property_id, fetched.get("schools") or [])
 
 
 def replace_historical(property_id: int, records: list[dict]) -> int:
@@ -356,6 +340,73 @@ def list_events(property_id: int) -> list[dict]:
             for r in conn.execute(
                 "SELECT date, event_name, price FROM property_events "
                 "WHERE property_id = ? ORDER BY date ASC, event_name ASC, price ASC",
+                (property_id,),
+            )
+        ]
+
+
+def replace_schools(property_id: int, records: list[dict]) -> int:
+    """Replace the schools list for a property. Returns rows written."""
+    now = _now()
+    rows = []
+    seen: set[str] = set()
+    for r in records or []:
+        sid = r.get("school_id")
+        name = r.get("name")
+        if not sid or not name or sid in seen:
+            continue
+        seen.add(sid)
+        rows.append((
+            property_id,
+            sid,
+            name,
+            r.get("rating"),
+            r.get("grades"),
+            r.get("education_levels"),
+            r.get("funding_type"),
+            r.get("distance_in_miles"),
+            r.get("student_count"),
+            now,
+        ))
+    with get_conn() as conn:
+        conn.execute("DELETE FROM property_schools WHERE property_id = ?", (property_id,))
+        if rows:
+            conn.executemany(
+                """INSERT INTO property_schools
+                   (property_id, school_id, name, rating, grades, education_levels,
+                    funding_type, distance_in_miles, student_count, fetched_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                rows,
+            )
+    return len(rows)
+
+
+def list_schools(property_id: int) -> list[dict]:
+    with get_conn() as conn:
+        return [
+            {
+                "school_id": r["school_id"],
+                "name": r["name"],
+                "rating": r["rating"],
+                "grades": r["grades"],
+                "education_levels": r["education_levels"],
+                "funding_type": r["funding_type"],
+                "distance_in_miles": r["distance_in_miles"],
+                "student_count": r["student_count"],
+            }
+            for r in conn.execute(
+                """SELECT school_id, name, rating, grades, education_levels,
+                          funding_type, distance_in_miles, student_count
+                   FROM property_schools
+                   WHERE property_id = ?
+                   ORDER BY
+                     CASE
+                       WHEN education_levels LIKE '%elementary%' THEN 0
+                       WHEN education_levels LIKE '%middle%' THEN 1
+                       WHEN education_levels LIKE '%high%' THEN 2
+                       ELSE 3
+                     END,
+                     distance_in_miles ASC""",
                 (property_id,),
             )
         ]

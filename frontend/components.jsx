@@ -113,12 +113,6 @@ function displayAddress(property) {
 }
 
 // ---------- Status badge ----------
-const STATUS_META = {
-  matched:            { label: "Matched",   cls: "ok" },
-  candidate_mismatch: { label: "Mismatch",  cls: "warn" },
-  no_candidates:      { label: "No match",  cls: "neutral" },
-  error:              { label: "Error",     cls: "err" },
-};
 const LISTING_META = {
   for_sale:   { label: "For sale",   cls: "info" },
   pending:    { label: "Pending",    cls: "warn" },
@@ -126,15 +120,6 @@ const LISTING_META = {
   off_market: { label: "Off market", cls: "neutral" },
 };
 
-function StatusBadge({ status }) {
-  const m = STATUS_META[status] || STATUS_META.matched;
-  return (
-    <span className={`badge ${m.cls}`}>
-      <span className="dot" />
-      {m.label}
-    </span>
-  );
-}
 function ListingBadge({ state }) {
   const m = LISTING_META[state] || LISTING_META.off_market;
   return <span className={`badge ${m.cls}`}>{m.label}</span>;
@@ -277,7 +262,7 @@ function bestEstimate(rawOrCurrent) {
 // expose
 Object.assign(window, {
   Icon, fmt, splitAddress, displayAddress,
-  StatusBadge, ListingBadge, DeltaCell, RangePill, SortHeader,
+  ListingBadge, DeltaCell, RangePill, SortHeader,
   ToastProvider, useToast, JsonViewer, Sparkline, bestEstimate,
-  STATUS_META, LISTING_META,
+  LISTING_META,
 });

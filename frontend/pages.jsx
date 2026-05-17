@@ -51,12 +51,6 @@ function PriceCell({ price }) {
 }
 
 // ---------- Mobile filter labels ----------
-const STATUS_LABEL_MAP = {
-  matched: "Matched",
-  candidate_mismatch: "Mismatch",
-  no_candidates: "No candidates",
-  error: "Error",
-};
 const LISTING_LABEL_MAP = {
   for_sale: "For sale",
   pending: "Pending",
@@ -72,7 +66,6 @@ function MobileFilters({
   q, setQ,
   state, setState,
   city, setCity,
-  status, setStatus,
   listingState, setListingState,
   cities, states,
   open, setOpen,
@@ -82,11 +75,10 @@ function MobileFilters({
     state !== "all"        && { k: "state",   label: "State",   v: state,                           clear: () => setState("all") },
     city !== "all"         && { k: "city",    label: "City",    v: city,                            clear: () => setCity("all") },
     listingState !== "all" && { k: "listing", label: "Listing", v: LISTING_LABEL_MAP[listingState] || listingState, clear: () => setListingState("all") },
-    status !== "all"       && { k: "status",  label: "Status",  v: STATUS_LABEL_MAP[status] || status, clear: () => setStatus("all") },
   ].filter(Boolean);
 
   function resetAll() {
-    setState("all"); setCity("all"); setStatus("all"); setListingState("all");
+    setState("all"); setCity("all"); setListingState("all");
   }
 
   return (
@@ -150,15 +142,6 @@ function MobileFilters({
               ))}
             </div>
           </div>
-          <div className="mfilters-group">
-            <div className="lab">Match status</div>
-            <div className="mfilters-pills">
-              <button className={status === "all" ? "on" : ""} onClick={() => setStatus("all")}>Any</button>
-              {Object.entries(STATUS_LABEL_MAP).map(([v, label]) => (
-                <button key={v} className={status === v ? "on" : ""} onClick={() => setStatus(v)}>{label}</button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -170,13 +153,12 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
   const [q, setQ] = useState_p("");
   const [city, setCity] = useState_p("all");
   const [state, setState] = useState_p("all");
-  const [status, setStatus] = useState_p("all");
   const [listingState, setListingState] = useState_p("all");
   const [tracking, setTracking] = useState_p("active");
   const [sort, setSort] = useState_p({ key: "updated_at", dir: "desc" });
   const [filterPanelOpen, setFilterPanelOpen] = useState_p(false);
 
-  const activeFilterCount = [state, city, status, listingState].filter((v) => v !== "all").length;
+  const activeFilterCount = [state, city, listingState].filter((v) => v !== "all").length;
 
   const cities = useMemo_p(
     () => Array.from(new Set(properties.map((p) => p.city).filter(Boolean))).sort(),
@@ -212,7 +194,6 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
     }
     if (city !== "all") arr = arr.filter((r) => r.city === city);
     if (state !== "all") arr = arr.filter((r) => r.state === state);
-    if (status !== "all") arr = arr.filter((r) => r.status === status);
     if (listingState !== "all") arr = arr.filter((r) => r.listing_state === listingState);
     if (tracking === "active") arr = arr.filter((r) => r.active !== false);
     if (tracking === "archived") arr = arr.filter((r) => r.active === false);
@@ -227,7 +208,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
       return sort.dir === "asc" ? av - bv : bv - av;
     });
     return arr;
-  }, [properties, q, city, state, status, listingState, tracking, sort]);
+  }, [properties, q, city, state, listingState, tracking, sort]);
 
   const lastSweep = properties.length
     ? Math.max(...properties.map((p) => p.updated_at || 0))
@@ -296,15 +277,6 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         </div>
         <div className="divider" />
         <div className="field has-select">
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="all">All match status</option>
-            <option value="matched">Matched</option>
-            <option value="candidate_mismatch">Mismatch</option>
-            <option value="no_candidates">No candidates</option>
-            <option value="error">Error</option>
-          </select>
-        </div>
-        <div className="field has-select">
           <select value={listingState} onChange={(e) => setListingState(e.target.value)}>
             <option value="all">All listing states</option>
             <option value="for_sale">For sale</option>
@@ -320,7 +292,6 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         q={q} setQ={setQ}
         state={state} setState={setState}
         city={city} setCity={setCity}
-        status={status} setStatus={setStatus}
         listingState={listingState} setListingState={setListingState}
         cities={cities} states={states}
         open={filterPanelOpen} setOpen={setFilterPanelOpen}
@@ -338,15 +309,14 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               <SortHeader label="vs Est."      k="priceVsEst"    sort={sort} setSort={setSort} align="right" />
               <SortHeader label="Added"        k="created_at"    sort={sort} setSort={setSort} defaultDir="desc" />
               <SortHeader label="Last refresh" k="updated_at"    sort={sort} setSort={setSort} defaultDir="desc" />
-              <SortHeader label="Status"       k="status"        sort={sort} setSort={setSort} />
             </tr>
           </thead>
           <tbody>
             {loading && properties.length === 0 && (
-              <tr><td colSpan={8} className="empty">Loading…</td></tr>
+              <tr><td colSpan={7} className="empty">Loading…</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={8}>
+              <tr><td colSpan={7}>
                 <div className="empty">
                   <div className="title">{properties.length === 0 ? "No properties yet" : "No matches"}</div>
                   <div>
@@ -385,7 +355,6 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                       <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.shortDate(r.updated_at)}</span>
                     </div>
                   </td>
-                  <td><StatusBadge status={r.status} /></td>
                 </tr>
               );
             })}
@@ -655,6 +624,58 @@ function MatchPreview({ result }) {
   );
 }
 
+function formatPropertyType(type, subType) {
+  if (!type && !subType) return "—";
+  const pretty = (s) => String(s).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  if (type && subType && subType !== type) return `${pretty(type)} · ${pretty(subType)}`;
+  return pretty(type || subType);
+}
+
+
+function schoolLevelLabel(levels) {
+  if (!levels) return "";
+  if (levels.includes("elementary")) return "Elementary";
+  if (levels.includes("middle")) return "Middle";
+  if (levels.includes("high")) return "High";
+  return levels.split(",")[0];
+}
+
+function ratingClass(rating) {
+  if (rating == null) return "neutral";
+  if (rating >= 8) return "ok";
+  if (rating >= 5) return "info";
+  if (rating >= 3) return "warn";
+  return "err";
+}
+
+function SchoolsCard({ schools }) {
+  if (!schools || schools.length === 0) return null;
+  return (
+    <div className="card">
+      <div className="card-header"><div className="card-title">Schools</div></div>
+      <div className="card-body flush">
+        <div className="facts-stack">
+          {schools.map((s) => (
+            <div key={s.school_id} className="fact-row" style={{ alignItems: "flex-start" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
+                <span className="v" style={{ fontWeight: 500, whiteSpace: "normal" }}>{s.name}</span>
+                <span className="k" style={{ fontSize: 11 }}>
+                  {schoolLevelLabel(s.education_levels)}
+                  {s.funding_type === "private" ? " · Private" : ""}
+                  {s.distance_in_miles != null ? ` · ${s.distance_in_miles} mi` : ""}
+                </span>
+              </div>
+              <span className={`badge ${ratingClass(s.rating)}`} style={{ marginLeft: 8 }}>
+                {s.rating != null ? `${s.rating}/10` : "NR"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Property Detail ----------
 function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [property, setProperty] = useState_p(null);
@@ -812,7 +833,6 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <span>{sp.line2}</span>
             <span style={{ color: "var(--text-faint)" }}>·</span>
             <ListingBadge state={property.listing_state} />
-            <StatusBadge status={property.status} />
             {property.active === false && <span className="badge neutral">Archived</span>}
             {property.property_url && (
               <a href={property.property_url} target="_blank" rel="noopener noreferrer">
@@ -1042,6 +1062,25 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
                 <div className="fact-row"><span className="k">Living area</span><span className="v">{current.sqft != null ? `${fmt.num(current.sqft)} sqft` : "—"}</span></div>
                 <div className="fact-row"><span className="k">Lot</span><span className="v">{current.lot_sqft != null ? `${fmt.num(current.lot_sqft)} sqft` : "—"}</span></div>
                 <div className="fact-row"><span className="k">Year built</span><span className="v">{current.year_built ?? "—"}</span></div>
+                <div className="fact-row"><span className="k">Type</span><span className="v">{formatPropertyType(current.property_type, current.property_sub_type)}</span></div>
+                {current.stories != null && (
+                  <div className="fact-row"><span className="k">Stories</span><span className="v">{current.stories}</span></div>
+                )}
+                {current.garage != null && (
+                  <div className="fact-row"><span className="k">Garage</span><span className="v">{current.garage} {current.garage === 1 ? "car" : "cars"}</span></div>
+                )}
+                {current.hoa_fee != null && current.hoa_fee > 0 && (
+                  <div className="fact-row"><span className="k">HOA</span><span className="v">{fmt.usd(current.hoa_fee)}/mo</span></div>
+                )}
+                {current.flood_factor_score != null && (
+                  <div className="fact-row">
+                    <span className="k">Flood risk</span>
+                    <span className="v">
+                      {current.flood_factor_score}/10
+                      {current.flood_factor_severity ? ` · ${current.flood_factor_severity}` : ""}
+                    </span>
+                  </div>
+                )}
                 <div className="fact-row">
                   <span className="k">Coordinates</span>
                   <span className="v mono" style={{ fontSize: 11 }}>
@@ -1056,12 +1095,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             </div>
           </div>
 
-          <div className="card">
+          <div className="card" style={{ marginBottom: 12 }}>
             <div className="card-header"><div className="card-title">Estimate breakdown</div></div>
             <div className="card-body">
               <AllEstimates estimates={current.all_estimates} fallback={current} />
             </div>
           </div>
+
+          <SchoolsCard schools={property.schools || []} />
         </div>
       </div>
     </div>
@@ -1926,7 +1967,7 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
                 <div className="table-wrap admin-table-wrap">
                   <table className="data">
                     <thead>
-                      <tr><th>Address</th><th>Status</th><th>Note</th><th>Last refresh</th><th></th></tr>
+                      <tr><th>Address</th><th>Note</th><th>Last refresh</th><th></th></tr>
                     </thead>
                     <tbody>
                       {issues.map((p) => {
@@ -1936,7 +1977,6 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
                         return (
                           <tr key={p.id} onClick={() => navigate("detail", p.id)}>
                             <td className="address-cell">{sp.line1} <span className="sub">· {sp.line2}</span></td>
-                            <td><StatusBadge status={p.status} /></td>
                             <td className="muted" style={{ fontSize: 11 }}>{note}</td>
                             <td className="muted">{fmt.relative(p.last_fetched_at || p.updated_at)}</td>
                             <td style={{ textAlign: "right" }}><Icon name="chevronRight" /></td>

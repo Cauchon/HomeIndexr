@@ -77,7 +77,22 @@ HOME_DETAILS_QUERY = (
     "    property_id listing_id href permalink"
     "    status mls_status pending_date"
     "    list_price last_sold_price last_sold_date last_status_change_date"
-    "    description { beds baths_full baths_half sqft lot_sqft year_built }"
+    "    list_date days_on_market"
+    "    last_price_change_amount last_price_change_date"
+    "    hoa { fee }"
+    "    description {"
+    "      beds baths_full baths_half sqft lot_sqft year_built"
+    "      type sub_type stories garage garage_type"
+    "      pool cooling heating fireplace"
+    "    }"
+    "    flags { is_new_listing is_price_reduced is_pending is_contingent is_foreclosure }"
+    "    local { flood { flood_factor_score flood_factor_severity } }"
+    "    schools {"
+    "      schools {"
+    "        id name rating grades distance_in_miles"
+    "        education_levels funding_type student_count"
+    "      }"
+    "    }"
     "    location {"
     "      address {"
     "        line city state_code postal_code"
@@ -471,6 +486,9 @@ def _flatten(raw: dict) -> dict:
     coord = loc.get("coordinate") or {}
     desc = raw.get("description") or {}
     est = _normalize_estimates(raw)
+    hoa = raw.get("hoa") or {}
+    flags = raw.get("flags") or {}
+    flood = ((raw.get("local") or {}).get("flood")) or {}
     return {
         "matched_address": _build_matched_address(raw),
         "best_current_estimate": est["best_current_estimate"],
@@ -495,7 +513,61 @@ def _flatten(raw: dict) -> dict:
         "city": _title_city(loc.get("city")),
         "state": loc.get("state_code").upper() if loc.get("state_code") else None,
         "zip": loc.get("postal_code"),
+        "list_date": raw.get("list_date"),
+        "days_on_market": _to_int(raw.get("days_on_market")),
+        "last_price_change_amount": _to_int(raw.get("last_price_change_amount")),
+        "last_price_change_date": raw.get("last_price_change_date"),
+        "hoa_fee": _to_int(hoa.get("fee")),
+        "property_type": desc.get("type"),
+        "property_sub_type": desc.get("sub_type"),
+        "stories": _to_int(desc.get("stories")),
+        "garage": _to_int(desc.get("garage")),
+        "garage_type": desc.get("garage_type"),
+        "pool": desc.get("pool"),
+        "cooling": desc.get("cooling"),
+        "heating": desc.get("heating"),
+        "fireplace": desc.get("fireplace"),
+        "is_new_listing": _to_bool(flags.get("is_new_listing")),
+        "is_price_reduced": _to_bool(flags.get("is_price_reduced")),
+        "is_foreclosure": _to_bool(flags.get("is_foreclosure")),
+        "flood_factor_score": _to_int(flood.get("flood_factor_score")),
+        "flood_factor_severity": flood.get("flood_factor_severity"),
+        "schools": _normalize_schools(raw),
     }
+
+
+def _to_bool(v: Any) -> int | None:
+    if v is None:
+        return None
+    return 1 if bool(v) else 0
+
+
+def _normalize_schools(raw: dict) -> list[dict]:
+    """Flatten Realtor schools list into stable per-school records."""
+    schools = ((raw.get("schools") or {}).get("schools")) or []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for s in schools:
+        if not isinstance(s, dict):
+            continue
+        sid = str(s.get("id") or "").strip()
+        name = s.get("name")
+        if not sid or not name or sid in seen:
+            continue
+        seen.add(sid)
+        grades = s.get("grades") or []
+        levels = s.get("education_levels") or []
+        out.append({
+            "school_id": sid,
+            "name": name,
+            "rating": _to_int(s.get("rating")),
+            "grades": ",".join(str(g) for g in grades) if grades else None,
+            "education_levels": ",".join(str(l) for l in levels) if levels else None,
+            "funding_type": s.get("funding_type"),
+            "distance_in_miles": float(s["distance_in_miles"]) if s.get("distance_in_miles") is not None else None,
+            "student_count": _to_int(s.get("student_count")),
+        })
+    return out
 
 
 def _href(raw: dict) -> str | None:
