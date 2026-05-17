@@ -127,38 +127,22 @@ The gear icon in the top bar opens the Refresh jobs page (`#admin`). It shows:
 - a cadence selector, defaulting to twice per month
 
 The **Refresh all now** button calls `POST /api/properties/refresh-all` and then
-reloads current property state. The cadence selector maps to the launchd install
-command shown in the Schedule panel; it does not start background work inside
+reloads current property state. The cadence selector is stored in
+`localStorage` for the admin panel; it does not start background work inside
 FastAPI.
 
 ## Scheduled refreshes
 
-Scheduled refreshes are implemented as a macOS LaunchAgent that calls the
-existing local API endpoint. Keep the HomeIndexr server running on the same
-port used when installing the job.
+Scheduled refreshes are not implemented in this checkout. The backend exposes
+the hook that an external scheduler should call:
 
 ```bash
-./scripts/install_scheduled_refresh.py --cadence biweekly --port 5173
+curl -s -X POST http://127.0.0.1:5173/api/properties/refresh-all
 ```
 
-Supported cadences are `daily`, `weekly`, `biweekly`, `monthly`, and `manual`.
-`manual` removes the installed LaunchAgent. `biweekly` runs on the 1st and 15th
-of each month at 03:00 by default. To choose a time:
-
-```bash
-./scripts/install_scheduled_refresh.py --cadence weekly --time 08:30 --port 5173
-```
-
-To remove the LaunchAgent:
-
-```bash
-./scripts/install_scheduled_refresh.py --uninstall
-# equivalent to:
-./scripts/install_scheduled_refresh.py --cadence manual
-```
-
-The LaunchAgent writes stdout/stderr logs to `data/scheduled-refresh.out.log`
-and `data/scheduled-refresh.err.log`.
+Keep the HomeIndexr server running on the same port the external job calls.
+If scheduling is added later, use cron, launchd, or another runner outside the
+FastAPI process; do not add an internal background loop to the app server.
 
 ## Auth
 

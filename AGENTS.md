@@ -76,10 +76,10 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
    expose any new component on `window` so other files can use it.
 10. **Scheduled refreshes stay outside FastAPI.** The Refresh jobs page can run
    `POST /api/properties/refresh-all`, show latest issue status, and persist
-   the selected cadence in localStorage. Real scheduling is handled by
-   `scripts/install_scheduled_refresh.py`, which installs a macOS LaunchAgent
-   that calls the API endpoint. Do not add cron/looping work inside the FastAPI
-   process.
+   the selected cadence in localStorage. There is no scheduler script checked
+   into this repo right now. If real scheduling is added, wire cron/launchd or
+   another external runner to the API endpoint instead of adding cron/looping
+   work inside the FastAPI process.
 11. **Archived properties are soft-hidden, not deleted.** `properties.active = 0`
     removes a row from the default dashboard and refresh-all sweeps while
     preserving current state, raw JSON, historical AVMs, events, and taxes.
