@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 runs/
+.playwright-mcp/
 .DS_Store
 .pycache/
 data/addresses.csv
