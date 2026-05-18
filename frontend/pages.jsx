@@ -816,20 +816,30 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const current = property || {};
   const sp = splitAddress(displayAddress(property));
 
-  const firstEst = (() => {
-    const rows = [...(property.historical || [])]
-      .filter((x) => x.estimate != null)
-      .sort((a, b) => parseEstimateDate(a.date) - parseEstimateDate(b.date));
-    return rows.length ? rows[0].estimate : null;
+  const saleBasis = current.sold_price ?? current.last_sold_price;
+  const estimateSinceSale =
+    current.best_current_estimate != null && saleBasis != null
+      ? current.best_current_estimate - saleBasis
+      : null;
+  const estimateSinceSalePct =
+    saleBasis && current.best_current_estimate != null
+      ? (current.best_current_estimate - saleBasis) / saleBasis
+      : null;
+  const hasCurrentListPrice =
+    ["for_sale", "pending"].includes(current.listing_state) && current.list_price != null;
+  const avmChartRangeLabel = (() => {
+    const ts = [];
+    if (current.estimate_date && current.best_current_estimate != null) {
+      const t = parseEstimateDate(current.estimate_date);
+      if (t != null) ts.push(t);
+    }
+    for (const h of property.historical || []) {
+      const t = parseEstimateDate(h.date);
+      if (t != null && h.estimate != null) ts.push(t);
+    }
+    if (!ts.length) return "—";
+    return `${formatMonthYear(Math.min(...ts))} - ${formatMonthYear(Math.max(...ts))}`;
   })();
-  const sinceStart =
-    current.best_current_estimate != null && firstEst != null
-      ? current.best_current_estimate - firstEst
-      : null;
-  const sinceStartPct =
-    firstEst && current.best_current_estimate != null
-      ? (current.best_current_estimate - firstEst) / firstEst
-      : null;
 
   return (
     <div>
@@ -968,17 +978,19 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             {current.estimate_source || "—"}
           </div>
         </div>
-        <div className="fact">
-          <div className="label">List price</div>
-          <div className="value">{current.list_price ? fmt.usd(current.list_price) : "—"}</div>
-          <div className="sub">
-            {current.list_price != null && current.best_current_estimate != null
-              ? <span style={{ color: current.best_current_estimate >= current.list_price ? "var(--pos)" : "var(--neg)" }}>
-                  Est. {fmt.delta(current.best_current_estimate - current.list_price)} vs list
-                </span>
-              : "Not currently listed"}
+        {hasCurrentListPrice && (
+          <div className="fact">
+            <div className="label">List price</div>
+            <div className="value">{fmt.usd(current.list_price)}</div>
+            <div className="sub">
+              {current.best_current_estimate != null
+                ? <span style={{ color: current.best_current_estimate >= current.list_price ? "var(--pos)" : "var(--neg)" }}>
+                    Est. {fmt.delta(current.best_current_estimate - current.list_price)} vs list
+                  </span>
+                : "Currently listed"}
+            </div>
           </div>
-        </div>
+        )}
         <div className="fact">
           <div className="label">{current.sold_price ? "Sale price" : "Last sale"}</div>
           <div className="value">{current.sold_price ? fmt.usd(current.sold_price) : fmt.usd(current.last_sold_price)}</div>
@@ -991,11 +1003,15 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
         </div>
         <div className="fact">
-          <div className="label">Since earliest AVM</div>
-          <div className="value" style={{ color: sinceStart != null ? (sinceStart >= 0 ? "var(--pos)" : "var(--neg)") : undefined }}>
-            {sinceStart != null ? fmt.delta(sinceStart) : "—"}
+          <div className="label">Est. change since sale</div>
+          <div className="value metric-pair" style={{ color: estimateSinceSale != null ? (estimateSinceSale >= 0 ? "var(--pos)" : "var(--neg)") : undefined }}>
+            <span>{estimateSinceSale != null ? fmt.delta(estimateSinceSale) : "—"}</span>
+            {estimateSinceSalePct != null && (
+              <span className={`metric-pct ${estimateSinceSale >= 0 ? "pos" : "neg"}`}>
+                {fmt.pct(estimateSinceSalePct)}
+              </span>
+            )}
           </div>
-          <div className="sub">{fmt.pct(sinceStartPct)} · current vs history</div>
         </div>
       </div>
 
@@ -1005,20 +1021,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <div className="card-header">
               <div className="card-title">Value over time</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                {(() => {
-                  const ts = [];
-                  if (property.last_fetched_at) ts.push(property.last_fetched_at);
-                  for (const h of property.historical || []) {
-                    const t = parseEstimateDate(h.date);
-                    if (t != null && h.estimate != null) ts.push(t);
-                  }
-                  for (const e of property.events || []) {
-                    const t = parseEstimateDate(e.date);
-                    if (t != null && e.price != null) ts.push(t);
-                  }
-                  if (!ts.length) return "—";
-                  return <>{fmt.date(Math.min(...ts))} – {fmt.date(Math.max(...ts))}</>;
-                })()}
+                {avmChartRangeLabel}
               </div>
             </div>
             <div className="card-body">
@@ -1320,6 +1323,10 @@ function parseEstimateDate(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   if (!m) return null;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+}
+
+function formatMonthYear(ts) {
+  return new Date(ts).toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
 function marketEventKind(name) {

@@ -640,6 +640,39 @@ table.data tbody tr.archived-row td {
   font-variant-numeric: tabular-nums;
 }
 .fact .value.sm { font-size: 14px; font-weight: 500; }
+.fact .metric-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.fact .metric-pair > span:first-child {
+  line-height: 1.15;
+}
+.metric-pct {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.metric-pct.pos {
+  color: var(--pos);
+  background: var(--pos-soft);
+  border-color: color-mix(in oklab, var(--pos) 28%, transparent);
+}
+.metric-pct.neg {
+  color: var(--neg);
+  background: var(--neg-soft);
+  border-color: color-mix(in oklab, var(--neg) 28%, transparent);
+}
 .fact .sub {
   font-size: 11px;
   color: var(--text-muted);
