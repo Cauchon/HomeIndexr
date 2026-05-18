@@ -230,8 +230,8 @@ def refresh_all():
     for p in props:
         addr = p.get("canonical_address") or p["input_address"]
         fetched = scraper.fetch(addr)
-        store.update_property_meta(p["id"], fetched)
-        results.append({"id": p["id"], "status": fetched.get("status")})
+        observed_event = store.update_property_meta(p["id"], fetched)
+        results.append({"id": p["id"], "status": fetched.get("status"), "observed_event": observed_event})
     return {"refreshed": len(results), "results": results}
 
 

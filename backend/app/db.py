@@ -128,6 +128,24 @@ CREATE TABLE IF NOT EXISTS property_events (
 
 CREATE INDEX IF NOT EXISTS idx_events_property ON property_events(property_id, date);
 
+CREATE TABLE IF NOT EXISTS observed_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+    observed_at INTEGER NOT NULL,
+    event_name TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'refresh',
+    listing_state TEXT,
+    listing_id TEXT,
+    old_price INTEGER,
+    new_price INTEGER,
+    price INTEGER NOT NULL,
+    delta INTEGER,
+    pct REAL,
+    UNIQUE(property_id, event_name, source, listing_id, old_price, new_price)
+);
+
+CREATE INDEX IF NOT EXISTS idx_observed_events_property ON observed_events(property_id, observed_at);
+
 CREATE TABLE IF NOT EXISTS tax_history (
     property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
     year INTEGER NOT NULL,

@@ -102,5 +102,71 @@ class AddPropertyBackfillTests(unittest.TestCase):
         fetch_history_bundle.assert_called_once_with("12345")
 
 
+class ObservedPriceEventTests(unittest.TestCase):
+    def setUp(self):
+        _reset_db()
+
+    def test_refresh_records_price_drop_for_active_listing(self):
+        prop = store.create_property(
+            "5907 Cape Hatteras Dr, Houston, TX 77041",
+            _fetched(
+                listing_state="for_sale",
+                list_price=700000,
+                raw_json={"status": "for_sale", "list_price": 700000, "listing_id": "listing-1"},
+            ),
+        )
+
+        event = store.update_property_meta(
+            prop["id"],
+            _fetched(
+                listing_state="for_sale",
+                list_price=675000,
+                raw_json={"status": "for_sale", "list_price": 675000, "listing_id": "listing-1"},
+            ),
+        )
+
+        self.assertIsNotNone(event)
+        self.assertEqual(event["event_name"], "Price dropped")
+        self.assertEqual(event["old_price"], 700000)
+        self.assertEqual(event["new_price"], 675000)
+        self.assertEqual(event["delta"], -25000)
+
+        events = store.list_events(prop["id"])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["source"], "observed")
+        self.assertEqual(events[0]["event_name"], "Price dropped")
+        self.assertEqual(events[0]["price"], 675000)
+        self.assertEqual(events[0]["old_price"], 700000)
+        self.assertEqual(events[0]["new_price"], 675000)
+
+        store.replace_events(prop["id"], [{"date": "2021-03-15", "event_name": "Sold", "price": 350000}])
+        merged = store.list_events(prop["id"])
+        self.assertEqual([e["source"] for e in merged], ["realtor", "observed"])
+
+    def test_refresh_does_not_record_price_change_for_new_listing_id(self):
+        prop = store.create_property(
+            "5907 Cape Hatteras Dr, Houston, TX 77041",
+            _fetched(
+                listing_state="for_sale",
+                list_price=700000,
+                listing_id="listing-1",
+                raw_json={"status": "for_sale", "list_price": 700000, "listing_id": "listing-1"},
+            ),
+        )
+
+        event = store.update_property_meta(
+            prop["id"],
+            _fetched(
+                listing_state="for_sale",
+                list_price=675000,
+                listing_id="listing-2",
+                raw_json={"status": "for_sale", "list_price": 675000, "listing_id": "listing-2"},
+            ),
+        )
+
+        self.assertIsNone(event)
+        self.assertEqual(store.list_events(prop["id"]), [])
+
+
 if __name__ == "__main__":
     unittest.main()

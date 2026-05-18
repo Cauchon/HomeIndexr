@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from . import scraper
@@ -65,6 +66,21 @@ def _raw_json_for_db(fetched: dict) -> str | None:
     return json.dumps(raw, default=str) if raw is not None else None
 
 
+def _date_from_ms(ms: int | None) -> str | None:
+    if ms is None:
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).date().isoformat()
+
+
+def _event_sort_ms(event: dict) -> int:
+    if event.get("observed_at") is not None:
+        return int(event["observed_at"])
+    try:
+        return int(datetime.fromisoformat(str(event.get("date"))[:10]).replace(tzinfo=timezone.utc).timestamp() * 1000)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _current_values(fetched: dict, now: int) -> tuple:
     """Values for the CURRENT_FIELDS columns plus raw_json, error, last_fetched_at."""
     base = tuple(fetched.get(k) for k in CURRENT_FIELDS)
@@ -74,6 +90,7 @@ def _current_values(fetched: dict, now: int) -> tuple:
 _CURRENT_COL_LIST = ", ".join(CURRENT_FIELDS + ["raw_json", "error", "last_fetched_at"])
 _CURRENT_PLACEHOLDERS = ", ".join(["?"] * (len(CURRENT_FIELDS) + 3))
 _CURRENT_ASSIGNMENTS = ", ".join(f"{c} = ?" for c in CURRENT_FIELDS + ["raw_json", "error", "last_fetched_at"])
+_ACTIVE_LISTING_STATES = {"for_sale", "pending"}
 
 
 def find_property_by_address(input_address: str) -> dict | None:
@@ -187,10 +204,81 @@ def delete_property(property_id: int) -> bool:
         return cur.rowcount > 0
 
 
-def update_property_meta(property_id: int, fetched: dict) -> None:
-    """Refresh metadata and current fetched state on the property row."""
+def _observed_list_price_event(previous: Any, fetched: dict, now: int) -> dict | None:
+    old_price = previous["list_price"]
+    new_price = fetched.get("list_price")
+    if old_price is None or new_price is None:
+        return None
+
+    old_price = int(old_price)
+    new_price = int(new_price)
+    if old_price == new_price:
+        return None
+
+    old_state = previous["listing_state"]
+    new_state = fetched.get("listing_state")
+    if old_state not in _ACTIVE_LISTING_STATES or new_state not in _ACTIVE_LISTING_STATES:
+        return None
+
+    old_listing_id = previous["listing_id"]
+    new_listing_id = fetched.get("listing_id") or old_listing_id
+    if old_listing_id and new_listing_id and old_listing_id != new_listing_id:
+        return None
+
+    delta = new_price - old_price
+    return {
+        "property_id": previous["id"],
+        "observed_at": now,
+        "date": _date_from_ms(now),
+        "event_name": "Price dropped" if delta < 0 else "Price increased",
+        "source": "observed",
+        "listing_state": new_state,
+        "listing_id": new_listing_id,
+        "old_price": old_price,
+        "new_price": new_price,
+        "price": new_price,
+        "delta": delta,
+        "pct": delta / old_price if old_price else None,
+    }
+
+
+def _insert_observed_event(conn: Any, event: dict) -> dict | None:
+    cur = conn.execute(
+        """INSERT OR IGNORE INTO observed_events
+           (property_id, observed_at, event_name, source, listing_state, listing_id,
+            old_price, new_price, price, delta, pct)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            event["property_id"],
+            event["observed_at"],
+            event["event_name"],
+            "refresh",
+            event.get("listing_state"),
+            event.get("listing_id"),
+            event.get("old_price"),
+            event.get("new_price"),
+            event["price"],
+            event.get("delta"),
+            event.get("pct"),
+        ),
+    )
+    return event if cur.rowcount else None
+
+
+def update_property_meta(property_id: int, fetched: dict) -> dict | None:
+    """Refresh metadata/current fetched state and record observed price changes."""
     now = _now()
+    observed_event = None
     with get_conn() as conn:
+        previous = conn.execute(
+            "SELECT id, listing_state, listing_id, list_price FROM properties WHERE id = ?",
+            (property_id,),
+        ).fetchone()
+        if previous and fetched.get("status", "matched") == "matched":
+            observed_event = _observed_list_price_event(previous, fetched, now)
+            if observed_event:
+                observed_event = _insert_observed_event(conn, observed_event)
+
         conn.execute(
             f"""UPDATE properties SET
                   canonical_address = COALESCE(?, canonical_address),
@@ -221,6 +309,7 @@ def update_property_meta(property_id: int, fetched: dict) -> None:
             ),
         )
     replace_schools(property_id, fetched.get("schools") or [])
+    return observed_event
 
 
 def replace_historical(property_id: int, records: list[dict]) -> int:
@@ -334,14 +423,41 @@ def list_historical(property_id: int) -> list[dict]:
 
 def list_events(property_id: int) -> list[dict]:
     with get_conn() as conn:
-        return [
-            {"date": r["date"], "event_name": r["event_name"], "price": r["price"]}
+        realtor_events = [
+            {
+                "date": r["date"],
+                "event_name": r["event_name"],
+                "price": r["price"],
+                "source": "realtor",
+            }
             for r in conn.execute(
-                "SELECT date, event_name, price FROM property_events "
-                "WHERE property_id = ? ORDER BY date ASC, event_name ASC, price ASC",
+                "SELECT date, event_name, price FROM property_events WHERE property_id = ?",
                 (property_id,),
             )
         ]
+        observed_events = [
+            {
+                "date": _date_from_ms(r["observed_at"]),
+                "event_name": r["event_name"],
+                "price": r["price"],
+                "source": "observed",
+                "observed_at": r["observed_at"],
+                "old_price": r["old_price"],
+                "new_price": r["new_price"],
+                "delta": r["delta"],
+                "pct": r["pct"],
+            }
+            for r in conn.execute(
+                """SELECT observed_at, event_name, price, old_price, new_price, delta, pct
+                   FROM observed_events
+                   WHERE property_id = ?""",
+                (property_id,),
+            )
+        ]
+    return sorted(
+        realtor_events + observed_events,
+        key=lambda e: (_event_sort_ms(e), e.get("event_name") or "", e.get("price") or 0),
+    )
 
 
 def replace_schools(property_id: int, records: list[dict]) -> int:

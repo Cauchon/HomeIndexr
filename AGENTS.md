@@ -63,12 +63,13 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
    `for_sale`, `pending`, `sold`, and `off_market`. Sold/closed records remain
    `sold` for `SOLD_TO_OFF_MARKET_DAYS` (currently 180 days) after the sale date,
    then become `off_market`.
-7. **Historical AVMs, Realtor market events, and tax history are separate from current state.**
+7. **Historical AVMs, Realtor market events, observed refresh events, and tax history are separate from current state.**
    Backfill writes `historical_estimates` for monthly AVM history and
    `property_events` for sparse market events such as `Listed`, `Sold`,
    `Price Changed`, `Relisted`, and `Listing removed`, plus `tax_history` for
-   yearly tax and county assessment records. Do not fold those into the current
-   property row just to make the frontend simpler.
+   yearly tax and county assessment records. Refresh writes `observed_events`
+   when the app itself sees a same-listing active list-price change. Do not fold
+   those into the current property row just to make the frontend simpler.
 8. **The Property timeline is event-shaped.**
    List/sale/price-change events should render as their own rows. Estimate
    rows should keep low/high range visually attached to the estimate value
@@ -104,6 +105,9 @@ properties(id, input_address, canonical_address, city, state, zip,
            created_at, updated_at)
 historical_estimates(property_id, source, date, estimate, fetched_at)
 property_events(property_id, date, event_name, price, fetched_at)
+observed_events(id, property_id, observed_at, event_name, source,
+                listing_state, listing_id, old_price, new_price,
+                price, delta, pct)
 tax_history(property_id, year, assessed_year, tax,
             assessment_building, assessment_land, assessment_total,
             market_building, market_land, market_total,

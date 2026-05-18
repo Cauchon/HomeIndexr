@@ -4,7 +4,8 @@ Local-first dashboard for tracking home prices over time. Scrapes property
 data directly from Realtor.com's `frontdoor/graphql` endpoint server-side and
 stores the latest fetched state on each tracked property in SQLite. The
 Property view can also backfill Realtor historical AVMs, sparse market events,
-and tax assessment history.
+and tax assessment history. Refreshes record app-observed list-price changes
+for active listings.
 
 ## Stack
 
@@ -66,6 +67,8 @@ save.
   source, and date.
 - `property_events` — Realtor market events such as listed, sold, relisted,
   listing removed, and price changed.
+- `observed_events` — app-observed events detected during refresh, currently
+  list-price increases/drops on the same active listing.
 - `tax_history` — yearly Realtor tax bills and county assessment values.
 
 Archived properties stay in SQLite with their history intact, but the dashboard
@@ -108,6 +111,8 @@ The Property page is event-oriented:
 - The chart renders Cotality and Quantarium as continuous AVM lines.
 - Realtor listing/sale/price-change records render in the timeline and ownership
   history strip.
+- App-observed refresh events render in the timeline separately from Realtor
+  market history.
 - The ownership-history strip zooms out across recorded sales while the chart
   focuses on the denser AVM period.
 - The Timeline tab uses `Date`, `Event`, `Value`, and `Change` columns. Estimate
@@ -117,6 +122,11 @@ The Property page is event-oriented:
 Newly added properties populate `historical_estimates`, `property_events`, and
 `tax_history` before the add response returns. Use **Backfill history** on a
 Property page to retry or refresh those imported history rows later.
+
+Manual refreshes compare the previous stored list price with the newly fetched
+list price. If the property stays on the same active listing and the price
+changes, the app writes an `observed_events` row such as `Price dropped` or
+`Price increased`.
 
 ## Refresh jobs admin
 
