@@ -1402,7 +1402,7 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   height: 1px;
   background: var(--border-strong);
 }
-.lifetime-strip .window {
+.lifetime-strip .estimate-window {
   position: absolute;
   top: -6px;
   bottom: -6px;

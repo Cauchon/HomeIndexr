@@ -1195,8 +1195,44 @@ function AllEstimates({ estimates, fallback }) {
   );
 }
 
+const TAX_VALUE_SOURCES = [
+  { key: "assessment", label: "Assessed" },
+  { key: "market", label: "Market" },
+  { key: "value", label: "Value" },
+  { key: "appraisal", label: "Appraised" },
+];
+
+function taxValueSource(row, source) {
+  return {
+    ...source,
+    total: row[`${source.key}_total`] ?? null,
+    building: row[`${source.key}_building`] ?? null,
+    land: row[`${source.key}_land`] ?? null,
+  };
+}
+
+function hasTaxSplit(source) {
+  return source.building != null || source.land != null;
+}
+
+function preferredAssessmentSource(row) {
+  return TAX_VALUE_SOURCES
+    .map((source) => taxValueSource(row, source))
+    .find((source) => source.total != null) || null;
+}
+
 function preferredAssessment(row) {
-  return row.assessment_total ?? row.value_total ?? row.appraisal_total ?? row.market_total ?? null;
+  return preferredAssessmentSource(row)?.total ?? null;
+}
+
+function preferredTaxSplit(row) {
+  const sources = TAX_VALUE_SOURCES.map((source) => taxValueSource(row, source));
+  return (
+    sources.find((source) => source.total != null && hasTaxSplit(source)) ||
+    sources.find((source) => hasTaxSplit(source)) ||
+    sources.find((source) => source.total != null) ||
+    null
+  );
 }
 
 function TaxHistoryPanel({ rows = [] }) {
@@ -1228,7 +1264,7 @@ function TaxHistoryPanel({ rows = [] }) {
             <th style={{ width: 96 }}>Year</th>
             <th style={{ textAlign: "right", width: 150 }}>Tax</th>
             <th style={{ textAlign: "right", width: 180 }}>Assessed</th>
-            <th>Assessment split</th>
+            <th>Value split</th>
             <th style={{ textAlign: "right", width: 210 }}>Change</th>
           </tr>
         </thead>
@@ -1241,6 +1277,8 @@ function TaxHistoryPanel({ rows = [] }) {
 }
 
 function TaxHistoryRow({ row }) {
+  const split = preferredTaxSplit(row);
+  const splitHasValues = split && hasTaxSplit(split);
   return (
     <tr style={{ cursor: "default" }}>
       <td className="date-cell">
@@ -1256,12 +1294,18 @@ function TaxHistoryRow({ row }) {
         <div className="delta-sub">county value</div>
       </td>
       <td className="value-cell">
-        <div className="main">{fmt.usd(row.assessment_total)}</div>
-        <div className="sub">
-          <span>Building {fmt.usd(row.assessment_building, { compact: true })}</span>
-          <span style={{ color: "var(--text-faint)" }}>·</span>
-          <span>Land {fmt.usd(row.assessment_land, { compact: true })}</span>
+        <div className="main">
+          {split ? `${split.label} ${fmt.usd(split.total)}` : "—"}
         </div>
+        {splitHasValues ? (
+          <div className="sub">
+            <span>Building {fmt.usd(split.building, { compact: true })}</span>
+            <span style={{ color: "var(--text-faint)" }}>·</span>
+            <span>Land {fmt.usd(split.land, { compact: true })}</span>
+          </div>
+        ) : (
+          <div className="sub">No building/land split</div>
+        )}
       </td>
       <td className="change-cell">
         <TaxDelta value={row.taxDelta} pct={row.taxDeltaPct} label="tax vs prior year" />
@@ -1769,7 +1813,7 @@ function LifetimeStrip({ current = null, historical = [], events = [] }) {
       <div className="axis">
         <div className="baseline" />
         {estimateStart != null && estimateEnd != null && (
-          <div className="window" style={{ left: `${pct(estimateStart)}%`, width: `${Math.max(1, pct(estimateEnd) - pct(estimateStart))}%` }} />
+          <div className="estimate-window" style={{ left: `${pct(estimateStart)}%`, width: `${Math.max(1, pct(estimateEnd) - pct(estimateStart))}%` }} />
         )}
         {years.map(({ y, t }) => (
           <React.Fragment key={y}>

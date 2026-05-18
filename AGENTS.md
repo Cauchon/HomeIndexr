@@ -18,6 +18,7 @@ backend/app/
   store.py       SQLite reads/writes (current property state + history/events/taxes)
   db.py          schema + connection helper (data/app.db)
   models.py      pydantic types (currently unused by routes)
+backend/test_*.py unittest coverage for scraper state logic and API/store flows
 frontend/
   index.html     loads /static/* via UMD React + Babel
   styles.css     all visual tokens; from the design bundle
@@ -70,20 +71,23 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
    yearly tax and county assessment records. Refresh writes `observed_events`
    when the app itself sees a same-listing active list-price change. Do not fold
    those into the current property row just to make the frontend simpler.
-8. **The Property timeline is event-shaped.**
+8. **School detail rows are current-detail data, not historical series.**
+   Current Realtor school records are normalized into `property_schools` and
+   replaced on add/refresh. `GET /api/properties/{id}` returns them as `schools`.
+9. **The Property timeline is event-shaped.**
    List/sale/price-change events should render as their own rows. Estimate
    rows should keep low/high range visually attached to the estimate value
    instead of spreading it across disconnected columns.
-9. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
+10. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
    If you add a file, register it in `index.html` with `type="text/babel"` and
    expose any new component on `window` so other files can use it.
-10. **Scheduled refreshes stay outside FastAPI.** The Refresh jobs page can run
+11. **Scheduled refreshes stay outside FastAPI.** The Refresh jobs page can run
    `POST /api/properties/refresh-all`, show latest issue status, and persist
    the selected cadence in localStorage. There is no scheduler script checked
    into this repo right now. If real scheduling is added, wire cron/launchd or
    another external runner to the API endpoint instead of adding cron/looping
    work inside the FastAPI process.
-11. **Archived properties are soft-hidden, not deleted.** `properties.active = 0`
+12. **Archived properties are soft-hidden, not deleted.** `properties.active = 0`
     removes a row from the default dashboard and refresh-all sweeps while
     preserving current state, raw JSON, historical AVMs, events, and taxes.
     `DELETE /api/properties/{id}` is the permanent removal path.
@@ -101,8 +105,19 @@ properties(id, input_address, canonical_address, city, state, zip,
            estimate_low, estimate_high, estimate_date,
            list_price, sold_price, last_sold_price,
            beds, baths, sqft, lot_sqft, year_built,
-           latitude, longitude, raw_json, error, last_fetched_at,
+           latitude, longitude,
+           list_date, days_on_market,
+           last_price_change_amount, last_price_change_date,
+           hoa_fee, property_type, property_sub_type,
+           stories, garage, garage_type,
+           pool, cooling, heating, fireplace,
+           is_new_listing, is_price_reduced, is_foreclosure,
+           flood_factor_score, flood_factor_severity,
+           raw_json, error, last_fetched_at,
            created_at, updated_at)
+property_schools(property_id, school_id, name, rating, grades,
+                 education_levels, funding_type, distance_in_miles,
+                 student_count, fetched_at)
 historical_estimates(property_id, source, date, estimate, fetched_at)
 property_events(property_id, date, event_name, price, fetched_at)
 observed_events(id, property_id, observed_at, event_name, source,
@@ -123,16 +138,16 @@ tax_history(property_id, year, assessed_year, tax,
 sold/closed records are considered `off_market` for dashboard filtering.
 
 Timestamps (`created_at`, `updated_at`, `last_fetched_at`, and history/event/tax
-`fetched_at`) are **milliseconds since epoch** — the frontend treats them as JS
-`Date`-compatible numbers. Don't switch to seconds without updating the
-frontend formatters.
+and school `fetched_at`) are **milliseconds since epoch** — the frontend treats
+them as JS `Date`-compatible numbers. Don't switch to seconds without updating
+the frontend formatters.
 
 ## API contract
 
 | Method | Path                              | Body / Notes                                    |
 |-------:|-----------------------------------|-------------------------------------------------|
 | GET    | `/api/properties`                 | List properties with current state              |
-| GET    | `/api/properties/{id}`            | Full property + historical + events + taxes     |
+| GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
 | PATCH  | `/api/properties/{id}`            | Edit `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |
 | POST   | `/api/properties/{id}/archive`    | Sets `active = 0`                                |
@@ -177,7 +192,13 @@ If you're tempted to add any of these, confirm with the user first.
 
 ## Testing
 
-There's no test suite yet. Smoke-test manually:
+Run the unittest suite from the repo root:
+
+```bash
+PYTHONPATH=backend .venv312/bin/python -m unittest discover -s backend -p 'test_*.py'
+```
+
+Smoke-test manually when touching live Realtor fetch behavior:
 
 ```bash
 ./run.sh &

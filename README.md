@@ -43,7 +43,7 @@ Then open <http://127.0.0.1:5173>.
 | Method | Path                                  | Purpose                                |
 |-------:|---------------------------------------|----------------------------------------|
 | GET    | `/api/properties`                     | List properties with current state     |
-| GET    | `/api/properties/{id}`                | Property + history + events + taxes    |
+| GET    | `/api/properties/{id}`                | Property + history + events + taxes + schools |
 | POST   | `/api/properties`                     | Add property, refresh current state, and backfill history |
 | PATCH  | `/api/properties/{id}`                | Edit address/display fields and active state |
 | POST   | `/api/properties/{id}/archive`        | Hide from default dashboard and refresh-all |
@@ -62,7 +62,10 @@ save.
 ## Data model
 
 - `properties` — one row per tracked address, including the latest normalized
-  AVM, list/sale prices, property facts, match status, and raw Realtor JSON.
+  AVM, list/sale prices, listing state, property facts/features, risk flags,
+  match status, and raw Realtor JSON.
+- `property_schools` — the current Realtor school list for a property, replaced
+  on add/refresh and returned as `schools` in the detail API response.
 - `historical_estimates` — monthly historical AVM series keyed by property,
   source, and date.
 - `property_events` — Realtor market events such as listed, sold, relisted,
@@ -127,6 +130,24 @@ Manual refreshes compare the previous stored list price with the newly fetched
 list price. If the property stays on the same active listing and the price
 changes, the app writes an `observed_events` row such as `Price dropped` or
 `Price increased`.
+
+## Tests
+
+Run the backend unittest suite from the repo root:
+
+```bash
+PYTHONPATH=backend .venv312/bin/python -m unittest discover -s backend -p 'test_*.py'
+```
+
+Use the manual smoke flow when touching live Realtor fetch behavior:
+
+```bash
+./run.sh &
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"address":"5907 Cape Hatteras Dr, Houston, TX 77041"}' \
+  http://127.0.0.1:5173/api/properties
+curl -s http://127.0.0.1:5173/api/properties
+```
 
 ## Refresh jobs admin
 
