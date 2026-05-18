@@ -1070,7 +1070,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           <div className="card" style={{ marginBottom: 12 }}>
             <div className="card-header"><div className="card-title">Property facts</div></div>
             <div className="card-body flush">
-              <div className="facts-stack">
+              <div className="facts-stack property-facts">
                 <div className="fact-row"><span className="k">Beds</span><span className="v">{current.beds ?? "—"}</span></div>
                 <div className="fact-row"><span className="k">Baths</span><span className="v">{current.baths != null ? fmt.baths(current.baths) : "—"}</span></div>
                 <div className="fact-row"><span className="k">Living area</span><span className="v">{current.sqft != null ? `${fmt.num(current.sqft)} sqft` : "—"}</span></div>

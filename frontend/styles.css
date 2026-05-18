@@ -932,6 +932,27 @@ table.data tbody tr.archived-row td {
 .fact-row:last-child { border-bottom: none; }
 .fact-row .k { color: var(--text-muted); }
 .fact-row .v { font-weight: 500; font-variant-numeric: tabular-nums; }
+.property-facts {
+  gap: 0;
+}
+.property-facts .fact-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.85fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-height: 42px;
+  padding: 9px 14px;
+  line-height: 1.25;
+}
+.property-facts .v {
+  justify-self: end;
+  max-width: 100%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.property-facts .mono {
+  font-size: 11px;
+}
 
 /* ---------- Range pill ---------- */
 .range-pill {
