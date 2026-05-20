@@ -1034,6 +1034,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <div className={`tab ${tab === "history" ? "active" : ""}`} onClick={() => setTab("history")}>
               Timeline
             </div>
+            <div className={`tab ${tab === "estimates" ? "active" : ""}`} onClick={() => setTab("estimates")}>
+              Estimates
+            </div>
             <div className={`tab ${tab === "taxes" ? "active" : ""}`} onClick={() => setTab("taxes")}>
               Taxes
             </div>
@@ -1042,7 +1045,8 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             </div>
           </div>
 
-          {tab === "history" && <ActivityTimeline current={property} historical={property.historical || []} events={property.events || []} />}
+          {tab === "history" && <MarketTimeline current={property} historical={property.historical || []} events={property.events || []} />}
+          {tab === "estimates" && <EstimateHistoryPanel current={property} historical={property.historical || []} />}
           {tab === "taxes" && <TaxHistoryPanel rows={property.tax_history || []} />}
           {tab === "json" && (
             <div className="card">
@@ -1392,17 +1396,10 @@ function eventBadgeClass(name) {
   return "neutral";
 }
 
-const TIMELINE_FILTERS = [
-  { key: "all", label: "All", match: () => true },
-  { key: "estimate", label: "Estimates", match: (e) => e.kind === "estimate" },
-  { key: "market", label: "Market events", match: (e) => e.kind === "market" },
-  { key: "issue", label: "Issues", match: (e) => e.kind === "issue" },
-];
 const TIMELINE_PAGE_SIZE = 10;
 const TIMELINE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-function buildActivityEvents(current = null, historical = [], marketEvents = []) {
-  const rows = [];
+function buildEstimateEvents(current = null, historical = []) {
   const estimateRowsByKey = new Map();
   const addEstimateRow = (row) => {
     if (!row.date || row.estimate == null || !row.source) return;
@@ -1415,16 +1412,6 @@ function buildActivityEvents(current = null, historical = [], marketEvents = [])
 
   if (current) {
     const baseDate = current.estimate_date || (current.last_fetched_at ? new Date(current.last_fetched_at).toISOString().slice(0, 10) : null);
-    const note = current.error || (current.status === "candidate_mismatch" && current.matched_address ? `Matched ${splitAddress(current.matched_address).line1}` : "");
-    if (current.status === "error" || current.status === "candidate_mismatch") {
-      rows.push({
-        id: `${current.id || current.last_fetched_at}-issue`,
-        kind: "issue",
-        ts: current.last_fetched_at || parseEstimateDate(baseDate),
-        label: current.status === "error" ? "Error" : "Mismatch",
-        note: note || "Current fetch did not return a clean match.",
-      });
-    }
     if (Array.isArray(current.all_estimates) && current.all_estimates.length) {
       for (const e of current.all_estimates) {
         addEstimateRow({
@@ -1437,7 +1424,6 @@ function buildActivityEvents(current = null, historical = [], marketEvents = [])
           estimate: e.estimate,
           low: e.low,
           high: e.high,
-          note,
         });
       }
     } else {
@@ -1451,7 +1437,6 @@ function buildActivityEvents(current = null, historical = [], marketEvents = [])
         estimate: current.best_current_estimate,
         low: current.estimate_low,
         high: current.estimate_high,
-        note,
       });
     }
   }
@@ -1467,7 +1452,6 @@ function buildActivityEvents(current = null, historical = [], marketEvents = [])
       estimate: h.estimate,
       low: null,
       high: null,
-      note: "Historical AVM",
     });
   }
 
@@ -1479,8 +1463,14 @@ function buildActivityEvents(current = null, historical = [], marketEvents = [])
     row.vsPriorPct = prev && prev.estimate ? row.vsPrior / prev.estimate : null;
     bySource.set(row.source, row);
   }
-  rows.push(...estimates);
+  return estimates.sort((a, b) => {
+    if (b.ts !== a.ts) return b.ts - a.ts;
+    return String(a.source || "").localeCompare(String(b.source || ""));
+  });
+}
 
+function buildMarketEvents(current = null, historical = [], marketEvents = []) {
+  const estimates = buildEstimateEvents(current, historical);
   const sortedEstimates = [...estimates].sort((a, b) => a.ts - b.ts);
   const sortedMarket = (marketEvents || [])
     .filter((e) => e.date && e.event_name && e.price != null)
@@ -1518,66 +1508,37 @@ function buildActivityEvents(current = null, historical = [], marketEvents = [])
     }
     if (row.price != null) prevMarketPrice = row.price;
   }
-  rows.push(...sortedMarket);
 
-  return rows.sort((a, b) => {
+  return sortedMarket.sort((a, b) => {
     if (b.ts !== a.ts) return b.ts - a.ts;
-    if (a.kind !== b.kind) return a.kind === "market" ? -1 : 1;
-    return String(a.source || a.name || "").localeCompare(String(b.source || b.name || ""));
+    return String(a.name || "").localeCompare(String(b.name || ""));
   });
 }
 
-function ActivityTimeline({ current, historical = [], events = [] }) {
-  const [filter, setFilter] = useState_p("all");
+function MarketTimeline({ current, historical = [], events = [] }) {
   const [page, setPage] = useState_p(1);
   const [pageSize, setPageSize] = useState_p(TIMELINE_PAGE_SIZE);
-  const rows = useMemo_p(() => buildActivityEvents(current, historical, events), [current, historical, events]);
-  const active = TIMELINE_FILTERS.find((f) => f.key === filter) || TIMELINE_FILTERS[0];
-  const filtered = rows.filter(active.match);
-  const counts = useMemo_p(() => {
-    const out = {};
-    for (const f of TIMELINE_FILTERS) out[f.key] = rows.filter(f.match).length;
-    return out;
-  }, [rows]);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const rows = useMemo_p(() => buildMarketEvents(current, historical, events), [current, historical, events]);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * pageSize;
-  const pageRows = filtered.slice(pageStart, pageStart + pageSize);
-  const rangeFrom = filtered.length === 0 ? 0 : pageStart + 1;
-  const rangeTo = Math.min(pageStart + pageSize, filtered.length);
+  const pageRows = rows.slice(pageStart, pageStart + pageSize);
+  const rangeFrom = rows.length === 0 ? 0 : pageStart + 1;
+  const rangeTo = Math.min(pageStart + pageSize, rows.length);
 
   useEffect_p(() => {
     setPage(1);
-  }, [filter, rows]);
+  }, [rows]);
 
-  function chooseFilter(key) {
-    setFilter(key);
-    setPage(1);
-  }
   function choosePageSize(size) {
     const firstVisibleIndex = pageStart;
     setPageSize(size);
     setPage(Math.floor(firstVisibleIndex / size) + 1);
   }
 
-  if (!rows.length) return <div className="empty">No timeline data yet.</div>;
+  if (!rows.length) return <div className="empty">No market events yet.</div>;
   return (
     <div>
-      <div className="activity-filters">
-        {TIMELINE_FILTERS.map((f) => (
-          <button
-            key={f.key}
-            className={`chip ${filter === f.key ? "active" : ""}`}
-            onClick={() => chooseFilter(f.key)}
-          >
-            {f.label}
-            <span className="count">{counts[f.key]}</span>
-          </button>
-        ))}
-        <span className="spacer" />
-        <span className="activity-count">{filtered.length} {filtered.length === 1 ? "event" : "events"}</span>
-      </div>
-
       <div className="table-wrap">
         <table className="data timeline">
           <thead>
@@ -1590,23 +1551,73 @@ function ActivityTimeline({ current, historical = [], events = [] }) {
           </thead>
           <tbody>
             {pageRows.map((r) => <ActivityRow key={r.id} row={r} />)}
-            {filtered.length === 0 && (
-              <tr><td colSpan={4}><div className="empty" style={{ padding: 28 }}>No events match this filter.</div></td></tr>
-            )}
           </tbody>
         </table>
-        {filtered.length > 0 && (
+        {rows.length > 0 && (
           <TimelinePager
             page={currentPage}
             pageCount={pageCount}
             pageSize={pageSize}
             rangeFrom={rangeFrom}
             rangeTo={rangeTo}
-            total={filtered.length}
+            total={rows.length}
             onPage={setPage}
             onPageSize={choosePageSize}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+function EstimateHistoryPanel({ current, historical = [] }) {
+  const [page, setPage] = useState_p(1);
+  const [pageSize, setPageSize] = useState_p(TIMELINE_PAGE_SIZE);
+  const rows = useMemo_p(() => buildEstimateEvents(current, historical), [current, historical]);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const pageRows = rows.slice(pageStart, pageStart + pageSize);
+  const rangeFrom = rows.length === 0 ? 0 : pageStart + 1;
+  const rangeTo = Math.min(pageStart + pageSize, rows.length);
+
+  useEffect_p(() => {
+    setPage(1);
+  }, [rows]);
+
+  function choosePageSize(size) {
+    const firstVisibleIndex = pageStart;
+    setPageSize(size);
+    setPage(Math.floor(firstVisibleIndex / size) + 1);
+  }
+
+  if (!rows.length) return <div className="empty">No estimate history yet.</div>;
+  return (
+    <div>
+      <div className="table-wrap">
+        <table className="data timeline">
+          <thead>
+            <tr>
+              <th style={{ width: 132 }}>Date</th>
+              <th style={{ width: 140 }}>Source</th>
+              <th>Estimate</th>
+              <th style={{ textAlign: "right", width: 210 }}>Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((r) => <EstimateRow key={r.id} row={r} />)}
+          </tbody>
+        </table>
+        <TimelinePager
+          page={currentPage}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          rangeFrom={rangeFrom}
+          rangeTo={rangeTo}
+          total={rows.length}
+          onPage={setPage}
+          onPageSize={choosePageSize}
+        />
       </div>
     </div>
   );
@@ -1682,37 +1693,36 @@ function ActivityRow({ row }) {
   );
 }
 
-function TimelineBadge({ row }) {
-  if (row.kind === "issue") return <span className={`event-pill ${row.label === "Error" ? "err" : "warn"}`}>{row.label}</span>;
-  if (row.kind === "estimate") return <span className="event-pill neutral">Estimate</span>;
-  return <span className={`event-pill ${eventBadgeClass(row.name)}`}>{row.name}</span>;
-}
-
-function TimelineValue({ row }) {
-  if (row.kind === "estimate") {
-    return (
-      <div>
+function EstimateRow({ row }) {
+  return (
+    <tr className={row.origin === "historical" ? "historical-bg" : ""} style={{ cursor: "default" }}>
+      <td className="date-cell">
+        <div>{fmt.date(row.ts)}</div>
+        <div className="rel">{row.origin === "current" ? "Current data" : "Historical AVM"}</div>
+      </td>
+      <td><span className="event-pill neutral">{row.source || "Estimate"}</span></td>
+      <td className="value-cell">
         <div className="main">{fmt.usd(row.estimate)}</div>
         <div className="sub">
           <InlineRange low={row.low} mid={row.estimate} high={row.high} />
           {row.low != null && row.high != null && <span style={{ color: "var(--text-faint)" }}>·</span>}
-          <span>{row.source || "—"}</span>
+          <span>{row.origin === "current" ? "Latest fetched value" : "Monthly history"}</span>
         </div>
-      </div>
-    );
-  }
-  if (row.kind === "market") {
-    return (
-      <div>
-        <div className="main">{fmt.usd(row.price)}</div>
-        <div className="sub">{row.eventSource === "observed" ? "Observed during refresh" : "Realtor market event"}</div>
-      </div>
-    );
-  }
+      </td>
+      <td className="change-cell"><TimelineChange row={row} /></td>
+    </tr>
+  );
+}
+
+function TimelineBadge({ row }) {
+  return <span className={`event-pill ${eventBadgeClass(row.name)}`}>{row.name}</span>;
+}
+
+function TimelineValue({ row }) {
   return (
     <div>
-      <div className="main" style={{ color: row.label === "Error" ? "var(--neg)" : "var(--warn)" }}>{row.label}</div>
-      <div className="sub">{row.note}</div>
+      <div className="main">{fmt.usd(row.price)}</div>
+      <div className="sub">{row.eventSource === "observed" ? "Observed during refresh" : "Realtor market event"}</div>
     </div>
   );
 }
