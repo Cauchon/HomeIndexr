@@ -1314,6 +1314,8 @@ table.data.timeline .value-cell .sub {
   gap: 6px;
   flex-wrap: wrap;
 }
+table.data.timeline .value-cell .sub .pos { color: var(--pos); }
+table.data.timeline .value-cell .sub .neg { color: var(--neg); }
 table.data.timeline .change-cell {
   text-align: right;
   font-variant-numeric: tabular-nums;

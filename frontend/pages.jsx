@@ -1469,6 +1469,54 @@ function buildEstimateEvents(current = null, historical = []) {
   });
 }
 
+function estimateSourceKey(source) {
+  const s = String(source || "").toLowerCase();
+  if (s.includes("quantarium")) return "Quantarium";
+  if (s.includes("cotality")) return "Cotality";
+  return source || "Other";
+}
+
+function buildMonthlyEstimateRows(current = null, historical = []) {
+  const estimates = buildEstimateEvents(current, historical);
+  const rowsByMonth = new Map();
+
+  for (const row of estimates) {
+    if (!row.date || row.ts == null) continue;
+    const month = row.date.slice(0, 7);
+    const sourceKey = estimateSourceKey(row.source);
+    const grouped = rowsByMonth.get(month) || {
+      id: `estimate-month-${month}`,
+      kind: "estimate-month",
+      month,
+      ts: parseEstimateDate(`${month}-01`),
+      sources: {},
+    };
+    const sourceRows = grouped.sources[sourceKey]?.rows || [];
+    sourceRows.push(row);
+    sourceRows.sort((a, b) => b.ts - a.ts);
+    grouped.sources[sourceKey] = {
+      ...sourceRows[0],
+      rows: sourceRows,
+    };
+    rowsByMonth.set(month, grouped);
+  }
+
+  const rows = Array.from(rowsByMonth.values()).sort((a, b) => a.ts - b.ts);
+  const prevBySource = new Map();
+  for (const monthRow of rows) {
+    for (const source of ESTIMATE_SOURCES) {
+      const currentEstimate = monthRow.sources[source];
+      if (!currentEstimate) continue;
+      const prev = prevBySource.get(source);
+      currentEstimate.vsPrior = prev ? currentEstimate.estimate - prev.estimate : null;
+      currentEstimate.vsPriorPct = prev && prev.estimate ? currentEstimate.vsPrior / prev.estimate : null;
+      prevBySource.set(source, currentEstimate);
+    }
+  }
+
+  return rows.sort((a, b) => b.ts - a.ts);
+}
+
 function buildMarketEvents(current = null, historical = [], marketEvents = []) {
   const estimates = buildEstimateEvents(current, historical);
   const sortedEstimates = [...estimates].sort((a, b) => a.ts - b.ts);
@@ -1573,7 +1621,7 @@ function MarketTimeline({ current, historical = [], events = [] }) {
 function EstimateHistoryPanel({ current, historical = [] }) {
   const [page, setPage] = useState_p(1);
   const [pageSize, setPageSize] = useState_p(TIMELINE_PAGE_SIZE);
-  const rows = useMemo_p(() => buildEstimateEvents(current, historical), [current, historical]);
+  const rows = useMemo_p(() => buildMonthlyEstimateRows(current, historical), [current, historical]);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * pageSize;
@@ -1598,14 +1646,14 @@ function EstimateHistoryPanel({ current, historical = [] }) {
         <table className="data timeline">
           <thead>
             <tr>
-              <th style={{ width: 132 }}>Date</th>
-              <th style={{ width: 140 }}>Source</th>
-              <th>Estimate</th>
-              <th style={{ textAlign: "right", width: 210 }}>Change</th>
+              <th style={{ width: 132 }}>Month</th>
+              <th>Quantarium</th>
+              <th>Cotality</th>
+              <th style={{ textAlign: "right", width: 180 }}>Spread</th>
             </tr>
           </thead>
           <tbody>
-            {pageRows.map((r) => <EstimateRow key={r.id} row={r} />)}
+            {pageRows.map((r) => <MonthlyEstimateRow key={r.id} row={r} />)}
           </tbody>
         </table>
         <TimelinePager
@@ -1693,36 +1741,92 @@ function ActivityRow({ row }) {
   );
 }
 
-function EstimateRow({ row }) {
+function MonthlyEstimateRow({ row }) {
+  const quantarium = row.sources.Quantarium || null;
+  const cotality = row.sources.Cotality || null;
+  const spread = quantarium && cotality ? quantarium.estimate - cotality.estimate : null;
+  const spreadPct = spread != null && cotality.estimate ? spread / cotality.estimate : null;
   return (
-    <tr className={row.origin === "historical" ? "historical-bg" : ""} style={{ cursor: "default" }}>
+    <tr className={quantarium?.origin === "current" || cotality?.origin === "current" ? "" : "historical-bg"} style={{ cursor: "default" }}>
       <td className="date-cell">
-        <div>{fmt.date(row.ts)}</div>
-        <div className="rel">{row.origin === "current" ? "Current data" : "Historical AVM"}</div>
+        <div>{formatMonthYear(row.ts)}</div>
+        <div className="rel">Monthly AVM</div>
       </td>
-      <td><span className="event-pill neutral">{row.source || "Estimate"}</span></td>
-      <td className="value-cell">
-        <div className="main">{fmt.usd(row.estimate)}</div>
-        <div className="sub">
-          <InlineRange low={row.low} mid={row.estimate} high={row.high} />
-          {row.low != null && row.high != null && <span style={{ color: "var(--text-faint)" }}>·</span>}
-          <span>{row.origin === "current" ? "Latest fetched value" : "Monthly history"}</span>
-        </div>
+      <td className="value-cell"><EstimateSourceCell row={quantarium} /></td>
+      <td className="value-cell"><EstimateSourceCell row={cotality} /></td>
+      <td className="change-cell">
+        {spread == null ? (
+          <span className="delta-sub">needs both sources</span>
+        ) : (
+          <div>
+            <div className={`delta-num ${spread > 0 ? "pos" : (spread < 0 ? "neg" : "")}`}>
+              {fmt.delta(spread)} <span>({fmt.pct(spreadPct)})</span>
+            </div>
+            <div className="delta-sub">Quantarium vs Cotality</div>
+          </div>
+        )}
       </td>
-      <td className="change-cell"><TimelineChange row={row} /></td>
     </tr>
   );
 }
 
+function EstimateSourceCell({ row }) {
+  if (!row) return <span className="faint">—</span>;
+  return (
+    <div>
+      <div className="main">{fmt.usd(row.estimate)}</div>
+      <div className="sub">
+        <span>{fmt.shortDate(row.ts)}</span>
+        {row.rows.length > 1 && (
+          <>
+            <span style={{ color: "var(--text-faint)" }}>·</span>
+            <span>latest of {row.rows.length}</span>
+          </>
+        )}
+        {row.vsPrior != null && (
+          <>
+            <span style={{ color: "var(--text-faint)" }}>·</span>
+            <span className={row.vsPrior > 0 ? "pos" : (row.vsPrior < 0 ? "neg" : "")}>
+              {fmt.delta(row.vsPrior)}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TimelineBadge({ row }) {
+  if (row.kind === "issue") return <span className={`event-pill ${row.label === "Error" ? "err" : "warn"}`}>{row.label}</span>;
+  if (row.kind === "estimate") return <span className="event-pill neutral">Estimate</span>;
   return <span className={`event-pill ${eventBadgeClass(row.name)}`}>{row.name}</span>;
 }
 
 function TimelineValue({ row }) {
+  if (row.kind === "estimate") {
+    return (
+      <div>
+        <div className="main">{fmt.usd(row.estimate)}</div>
+        <div className="sub">
+          <InlineRange low={row.low} mid={row.estimate} high={row.high} />
+          {row.low != null && row.high != null && <span style={{ color: "var(--text-faint)" }}>·</span>}
+          <span>{row.source || "—"}</span>
+        </div>
+      </div>
+    );
+  }
+  if (row.kind === "market") {
+    return (
+      <div>
+        <div className="main">{fmt.usd(row.price)}</div>
+        <div className="sub">{row.eventSource === "observed" ? "Observed during refresh" : "Realtor market event"}</div>
+      </div>
+    );
+  }
   return (
     <div>
-      <div className="main">{fmt.usd(row.price)}</div>
-      <div className="sub">{row.eventSource === "observed" ? "Observed during refresh" : "Realtor market event"}</div>
+      <div className="main" style={{ color: row.label === "Error" ? "var(--neg)" : "var(--warn)" }}>{row.label}</div>
+      <div className="sub">{row.note}</div>
     </div>
   );
 }
