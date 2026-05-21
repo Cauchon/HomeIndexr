@@ -168,30 +168,30 @@ class ObservedPriceEventTests(unittest.TestCase):
         self.assertEqual(store.list_events(prop["id"]), [])
 
 
-class FavoritePropertyTests(unittest.TestCase):
+class PinnedPropertyTests(unittest.TestCase):
     def setUp(self):
         _reset_db()
 
-    def test_default_not_favorited(self):
+    def test_default_not_pinned(self):
         prop = store.create_property("123 Main St", _fetched())
-        self.assertFalse(prop["favorited"])
+        self.assertFalse(prop["pinned"])
 
-    def test_update_favorite_status(self):
+    def test_update_pinned_status(self):
         prop = store.create_property("123 Main St", _fetched())
-        updated = store.update_property(prop["id"], {"favorited": True})
-        self.assertTrue(updated["favorited"])
+        updated = store.update_property(prop["id"], {"pinned": True})
+        self.assertTrue(updated["pinned"])
 
         # Verify persistence
         fetched_again = store.get_property(prop["id"])
-        self.assertTrue(fetched_again["favorited"])
+        self.assertTrue(fetched_again["pinned"])
 
         # Toggle back to False
-        updated2 = store.update_property(prop["id"], {"favorited": False})
-        self.assertFalse(updated2["favorited"])
+        updated2 = store.update_property(prop["id"], {"pinned": False})
+        self.assertFalse(updated2["pinned"])
 
         # Verify persistence
         fetched_again2 = store.get_property(prop["id"])
-        self.assertFalse(fetched_again2["favorited"])
+        self.assertFalse(fetched_again2["pinned"])
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ PROPERTY_COLS = (
     "pool cooling heating fireplace "
     "is_new_listing is_price_reduced is_foreclosure "
     "flood_factor_score flood_factor_severity "
-    "raw_json error last_fetched_at favorited created_at updated_at"
+    "raw_json error last_fetched_at pinned created_at updated_at"
 ).split()
 
 CURRENT_FIELDS = (
@@ -50,7 +50,7 @@ def _norm(addr: str | None) -> str:
 def _row_to_property(row: Any) -> dict:
     p = {k: row[k] for k in PROPERTY_COLS}
     p["active"] = bool(p["active"])
-    p["favorited"] = bool(p["favorited"])
+    p["pinned"] = bool(p["pinned"])
     if p.get("raw_json"):
         try:
             p["raw_json"] = json.loads(p["raw_json"])
@@ -159,7 +159,7 @@ def create_property(input_address: str, fetched: dict) -> dict:
 
 def update_property(property_id: int, changes: dict) -> dict | None:
     """Update user-managed property fields and return the updated row."""
-    allowed = {"input_address", "canonical_address", "city", "state", "zip", "active", "favorited"}
+    allowed = {"input_address", "canonical_address", "city", "state", "zip", "active", "pinned"}
     updates = {k: v for k, v in changes.items() if k in allowed}
     if not updates:
         return get_property(property_id)
@@ -178,7 +178,7 @@ def update_property(property_id: int, changes: dict) -> dict | None:
                 raise ValueError("input_address is required")
         if key == "active":
             value = 1 if bool(value) else 0
-        if key == "favorited":
+        if key == "pinned":
             value = 1 if bool(value) else 0
         assignments.append(f"{key} = ?")
         values.append(value)

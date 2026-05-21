@@ -1980,36 +1980,40 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   .sidebar { width: 240px; }
 }
 
-/* ---------- Star Button ---------- */
-.star-btn {
+/* ---------- Pin Button ---------- */
+.pin-btn {
   background: none;
   border: none;
-  padding: 6px;
+  padding: 2px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--text-faint);
-  border-radius: 6px;
+  border-radius: 4px;
   transition: all 0.2s ease;
   vertical-align: middle;
-  margin-right: 6px;
+  margin-right: 3px;
 }
-.star-btn:hover {
+.pin-btn:hover {
   background: var(--bg-hover);
-  color: var(--warn);
+  color: var(--accent);
 }
-.star-btn svg {
-  transition: transform 0.2s ease, fill 0.2s ease, stroke 0.2s ease;
+.pin-btn svg {
+  transition: transform 0.2s ease, color 0.2s ease;
+  transform: rotate(45deg);
 }
-.star-btn:hover svg {
-  transform: scale(1.15);
+.pin-btn:hover svg {
+  transform: rotate(45deg) scale(1.12);
 }
-.star-btn.is-favorited {
-  color: var(--warn);
+.pin-btn.is-pinned {
+  color: var(--accent);
 }
-.star-btn.is-favorited:hover svg {
-  transform: scale(0.9);
+.pin-btn.is-pinned svg {
+  transform: rotate(0deg);
+}
+.pin-btn.is-pinned:hover svg {
+  transform: rotate(0deg) scale(0.9);
 }
 
 .address-cell {

@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS properties (
     raw_json TEXT,
     error TEXT,
     last_fetched_at INTEGER,
-    favorited INTEGER NOT NULL DEFAULT 0,
+    pinned INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     UNIQUE(canonical_address)
@@ -212,7 +212,7 @@ PROPERTY_CURRENT_COLUMNS = {
     "raw_json": "TEXT",
     "error": "TEXT",
     "last_fetched_at": "INTEGER",
-    "favorited": "INTEGER NOT NULL DEFAULT 0",
+    "pinned": "INTEGER NOT NULL DEFAULT 0",
 }
 
 
@@ -230,6 +230,10 @@ def _property_columns(conn: sqlite3.Connection) -> set[str]:
 
 def _migrate_properties_current_state(conn: sqlite3.Connection) -> None:
     existing_cols = _property_columns(conn)
+    if "pinned" not in existing_cols and "favorited" in existing_cols:
+        conn.execute("ALTER TABLE properties ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE properties SET pinned = favorited")
+        existing_cols.add("pinned")
     for name, sql_type in PROPERTY_CURRENT_COLUMNS.items():
         if name not in existing_cols:
             conn.execute(f"ALTER TABLE properties ADD COLUMN {name} {sql_type}")

@@ -48,7 +48,7 @@ class UpdatePropertyBody(BaseModel):
     state: str | None = None
     zip: str | None = None
     active: bool | None = None
-    favorited: bool | None = None
+    pinned: bool | None = None
 
 
 @app.get("/api/properties")

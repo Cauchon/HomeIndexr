@@ -159,18 +159,18 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
   const [filterPanelOpen, setFilterPanelOpen] = useState_p(false);
   const toast = useToast();
 
-  async function handleToggleFavorite(e, prop) {
+  async function handleTogglePin(e, prop) {
     e.stopPropagation();
     try {
-      const nextFav = !prop.favorited;
-      await API.updateProperty(prop.id, { favorited: nextFav });
+      const nextPinned = !prop.pinned;
+      await API.updateProperty(prop.id, { pinned: nextPinned });
       toast.push({
         kind: "ok",
-        text: nextFav ? `Starred ${splitAddress(displayAddress(prop)).line1}` : `Unstarred ${splitAddress(displayAddress(prop)).line1}`
+        text: nextPinned ? `Pinned ${splitAddress(displayAddress(prop)).line1}` : `Unpinned ${splitAddress(displayAddress(prop)).line1}`
       });
       onChanged?.();
     } catch (err) {
-      toast.push({ kind: "err", text: err.message || "Failed to toggle star" });
+      toast.push({ kind: "err", text: err.message || "Failed to toggle pin" });
     }
   }
 
@@ -215,8 +215,8 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
     if (tracking === "archived") arr = arr.filter((r) => r.active === false);
 
     arr.sort((a, b) => {
-      if (a.favorited !== b.favorited) {
-        return a.favorited ? -1 : 1;
+      if (a.pinned !== b.pinned) {
+        return a.pinned ? -1 : 1;
       }
       const k = sort.key;
       const av = a[k], bv = b[k];
@@ -352,14 +352,14 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                 <tr key={r.id} className={r.active === false ? "archived-row" : ""} onClick={() => navigate("detail", r.id)}>
                   <td className="address-cell">
                     <button
-                      className={`star-btn ${r.favorited ? "is-favorited" : ""}`}
-                      onClick={(e) => handleToggleFavorite(e, r)}
-                      title={r.favorited ? "Unfavorite" : "Favorite"}
+                      className={`pin-btn ${r.pinned ? "is-pinned" : ""}`}
+                      onClick={(e) => handleTogglePin(e, r)}
+                      title={r.pinned ? "Unpin property" : "Pin property"}
                     >
                       <Icon
-                        name="star"
-                        fill={r.favorited ? "var(--warn)" : "none"}
-                        stroke={r.favorited ? "var(--warn)" : "var(--text-faint)"}
+                        name="pin"
+                        fill={r.pinned ? "currentColor" : "none"}
+                        stroke="currentColor"
                         size={14}
                       />
                     </button>
@@ -426,15 +426,15 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                   <span className="sub">{sp.line2}</span>
                 </div>
                 <button
-                  className={`star-btn ${r.favorited ? "is-favorited" : ""}`}
+                  className={`pin-btn ${r.pinned ? "is-pinned" : ""}`}
                   style={{ padding: 2, margin: 0, alignSelf: "flex-start" }}
-                  onClick={(e) => handleToggleFavorite(e, r)}
-                  title={r.favorited ? "Unfavorite" : "Favorite"}
+                  onClick={(e) => handleTogglePin(e, r)}
+                  title={r.pinned ? "Unpin property" : "Pin property"}
                 >
                   <Icon
-                    name="star"
-                    fill={r.favorited ? "var(--warn)" : "none"}
-                    stroke={r.favorited ? "var(--warn)" : "var(--text-faint)"}
+                    name="pin"
+                    fill={r.pinned ? "currentColor" : "none"}
+                    stroke="currentColor"
                     size={16}
                   />
                 </button>
@@ -843,19 +843,19 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
     }
   }
 
-  async function toggleFavorite() {
+  async function togglePin() {
     setSavingManagement(true);
     try {
-      const nextFav = !property.favorited;
-      const updated = await API.updateProperty(propertyId, { favorited: nextFav });
+      const nextPinned = !property.pinned;
+      const updated = await API.updateProperty(propertyId, { pinned: nextPinned });
       setProperty(updated);
       onChanged?.();
       toast.push({
         kind: "ok",
-        text: nextFav ? "Property favorited" : "Property unfavorited"
+        text: nextPinned ? "Property pinned" : "Property unpinned"
       });
     } catch (e) {
-      toast.push({ kind: "err", text: e.message || "Failed to update favorite status" });
+      toast.push({ kind: "err", text: e.message || "Failed to update pin status" });
     } finally {
       setSavingManagement(false);
     }
@@ -927,13 +927,18 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
         </div>
         <div className="detail-actions">
-          <button className="btn" onClick={toggleFavorite} disabled={savingManagement}>
+          <button
+            className="btn"
+            onClick={togglePin}
+            disabled={savingManagement}
+            title={property.pinned ? "Unpin property" : "Pin property"}
+          >
             <Icon
-              name="star"
-              fill={property.favorited ? "var(--warn)" : "none"}
-              stroke={property.favorited ? "var(--warn)" : "currentColor"}
+              name="pin"
+              fill={property.pinned ? "currentColor" : "none"}
+              stroke="currentColor"
             />
-            {property.favorited ? "Favorited" : "Favorite"}
+            {property.pinned ? "Pinned" : "Pin"}
           </button>
           <button className="btn" onClick={openEdit} disabled={savingManagement}>
             <Icon name="edit" /> Edit
