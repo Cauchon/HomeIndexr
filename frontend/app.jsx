@@ -94,6 +94,7 @@ function App() {
       navigate={navigate}
       onRefreshAll={handleRefreshAll}
       refreshingAll={refreshingAll}
+      onChanged={reload}
     />;
   } else if (route.page === "add") {
     pageEl = <AddPropertyPage navigate={navigate} onAdded={reload} />;

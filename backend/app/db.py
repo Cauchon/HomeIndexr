@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS properties (
     raw_json TEXT,
     error TEXT,
     last_fetched_at INTEGER,
+    favorited INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     UNIQUE(canonical_address)
@@ -211,6 +212,7 @@ PROPERTY_CURRENT_COLUMNS = {
     "raw_json": "TEXT",
     "error": "TEXT",
     "last_fetched_at": "INTEGER",
+    "favorited": "INTEGER NOT NULL DEFAULT 0",
 }
 
 

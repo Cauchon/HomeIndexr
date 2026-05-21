@@ -1979,3 +1979,48 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   /* Sidebar brand tighter */
   .sidebar { width: 240px; }
 }
+
+/* ---------- Star Button ---------- */
+.star-btn {
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.star-btn:hover {
+  background: var(--bg-hover);
+  color: var(--warn);
+}
+.star-btn svg {
+  transition: transform 0.2s ease, fill 0.2s ease, stroke 0.2s ease;
+}
+.star-btn:hover svg {
+  transform: scale(1.15);
+}
+.star-btn.is-favorited {
+  color: var(--warn);
+}
+.star-btn.is-favorited:hover svg {
+  transform: scale(0.9);
+}
+
+.address-cell {
+  display: flex;
+  align-items: center;
+}
+.address-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

@@ -149,7 +149,7 @@ function MobileFilters({
 }
 
 // ---------- Dashboard ----------
-function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
+function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshingAll, onChanged }) {
   const [q, setQ] = useState_p("");
   const [city, setCity] = useState_p("all");
   const [state, setState] = useState_p("all");
@@ -157,6 +157,22 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
   const [tracking, setTracking] = useState_p("active");
   const [sort, setSort] = useState_p({ key: "updated_at", dir: "desc" });
   const [filterPanelOpen, setFilterPanelOpen] = useState_p(false);
+  const toast = useToast();
+
+  async function handleToggleFavorite(e, prop) {
+    e.stopPropagation();
+    try {
+      const nextFav = !prop.favorited;
+      await API.updateProperty(prop.id, { favorited: nextFav });
+      toast.push({
+        kind: "ok",
+        text: nextFav ? `Starred ${splitAddress(displayAddress(prop)).line1}` : `Unstarred ${splitAddress(displayAddress(prop)).line1}`
+      });
+      onChanged?.();
+    } catch (err) {
+      toast.push({ kind: "err", text: err.message || "Failed to toggle star" });
+    }
+  }
 
   const activeFilterCount = [state, city, listingState].filter((v) => v !== "all").length;
 
@@ -199,6 +215,9 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
     if (tracking === "archived") arr = arr.filter((r) => r.active === false);
 
     arr.sort((a, b) => {
+      if (a.favorited !== b.favorited) {
+        return a.favorited ? -1 : 1;
+      }
       const k = sort.key;
       const av = a[k], bv = b[k];
       if (av == null && bv == null) return 0;
@@ -332,7 +351,21 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               return (
                 <tr key={r.id} className={r.active === false ? "archived-row" : ""} onClick={() => navigate("detail", r.id)}>
                   <td className="address-cell">
-                    {sp.line1} <span className="sub">· {sp.line2}</span>
+                    <button
+                      className={`star-btn ${r.favorited ? "is-favorited" : ""}`}
+                      onClick={(e) => handleToggleFavorite(e, r)}
+                      title={r.favorited ? "Unfavorite" : "Favorite"}
+                    >
+                      <Icon
+                        name="star"
+                        fill={r.favorited ? "var(--warn)" : "none"}
+                        stroke={r.favorited ? "var(--warn)" : "var(--text-faint)"}
+                        size={14}
+                      />
+                    </button>
+                    <span className="address-text">
+                      {sp.line1} <span className="sub">· {sp.line2}</span>
+                    </span>
                     {r.active === false && <span className="badge neutral archived-inline">Archived</span>}
                   </td>
                   <td><ListingBadge state={r.listing_state} /></td>
@@ -388,9 +421,23 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               onClick={() => navigate("detail", r.id)}
             >
               <div className="head">
-                <div className="addr">
-                  {sp.line1}
-                  <span className="sub">{sp.line2}</span>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 4, minWidth: 0, flex: 1 }}>
+                  <button
+                    className={`star-btn ${r.favorited ? "is-favorited" : ""}`}
+                    style={{ padding: 2, margin: 0 }}
+                    onClick={(e) => handleToggleFavorite(e, r)}
+                  >
+                    <Icon
+                      name="star"
+                      fill={r.favorited ? "var(--warn)" : "none"}
+                      stroke={r.favorited ? "var(--warn)" : "var(--text-faint)"}
+                      size={16}
+                    />
+                  </button>
+                  <div className="addr">
+                    {sp.line1}
+                    <span className="sub">{sp.line2}</span>
+                  </div>
                 </div>
                 <div className="head-right">
                   <ListingBadge state={r.listing_state} />
@@ -797,6 +844,24 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
     }
   }
 
+  async function toggleFavorite() {
+    setSavingManagement(true);
+    try {
+      const nextFav = !property.favorited;
+      const updated = await API.updateProperty(propertyId, { favorited: nextFav });
+      setProperty(updated);
+      onChanged?.();
+      toast.push({
+        kind: "ok",
+        text: nextFav ? "Property favorited" : "Property unfavorited"
+      });
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "Failed to update favorite status" });
+    } finally {
+      setSavingManagement(false);
+    }
+  }
+
   async function doDelete() {
     setSavingManagement(true);
     try {
@@ -863,6 +928,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
         </div>
         <div className="detail-actions">
+          <button className="btn" onClick={toggleFavorite} disabled={savingManagement}>
+            <Icon
+              name="star"
+              fill={property.favorited ? "var(--warn)" : "none"}
+              stroke={property.favorited ? "var(--warn)" : "currentColor"}
+            />
+            {property.favorited ? "Favorited" : "Favorite"}
+          </button>
           <button className="btn" onClick={openEdit} disabled={savingManagement}>
             <Icon name="edit" /> Edit
           </button>
