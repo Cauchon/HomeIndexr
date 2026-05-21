@@ -36,7 +36,7 @@ const Icon = ({ name, size = 14, ...rest }) => {
     bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10 21a2 2 0 0 0 4 0" /></>,
     play: <path d="M6 4l14 8-14 8z" />,
     menu: <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>,
-    pin: <><line x1="12" y1="17" x2="12" y2="22" /><path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.48A2 2 0 0 1 15 9.28V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.28c0 .38-.11.75-.32 1.06L5.9 14a2 2 0 0 0-.4 1.2V17z" /></>,
+    pin: <><path d="M12 17v5" /><path d="M8 3h8" /><path d="M10 3v5.2c0 .7-.25 1.38-.72 1.9L6.4 13.3A2 2 0 0 0 5.88 15H18.12a2 2 0 0 0-.52-1.7l-2.88-3.2A2.8 2.8 0 0 1 14 8.2V3" /><path d="M7 17h10" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
