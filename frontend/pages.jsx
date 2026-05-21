@@ -421,24 +421,23 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               onClick={() => navigate("detail", r.id)}
             >
               <div className="head">
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 4, minWidth: 0, flex: 1 }}>
-                  <button
-                    className={`star-btn ${r.favorited ? "is-favorited" : ""}`}
-                    style={{ padding: 2, margin: 0 }}
-                    onClick={(e) => handleToggleFavorite(e, r)}
-                  >
-                    <Icon
-                      name="star"
-                      fill={r.favorited ? "var(--warn)" : "none"}
-                      stroke={r.favorited ? "var(--warn)" : "var(--text-faint)"}
-                      size={16}
-                    />
-                  </button>
-                  <div className="addr">
-                    {sp.line1}
-                    <span className="sub">{sp.line2}</span>
-                  </div>
+                <div className="addr" style={{ flex: 1, minWidth: 0 }}>
+                  {sp.line1}
+                  <span className="sub">{sp.line2}</span>
                 </div>
+                <button
+                  className={`star-btn ${r.favorited ? "is-favorited" : ""}`}
+                  style={{ padding: 2, margin: 0, alignSelf: "flex-start" }}
+                  onClick={(e) => handleToggleFavorite(e, r)}
+                  title={r.favorited ? "Unfavorite" : "Favorite"}
+                >
+                  <Icon
+                    name="star"
+                    fill={r.favorited ? "var(--warn)" : "none"}
+                    stroke={r.favorited ? "var(--warn)" : "var(--text-faint)"}
+                    size={16}
+                  />
+                </button>
                 <div className="head-right">
                   <ListingBadge state={r.listing_state} />
                 </div>
