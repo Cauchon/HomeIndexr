@@ -743,17 +743,42 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [managementMode, setManagementMode] = useState_p(null); // edit | delete
   const [editForm, setEditForm] = useState_p(null);
   const [savingManagement, setSavingManagement] = useState_p(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState_p(false);
+  const actionMenuRef = React.useRef(null);
   const toast = useToast();
 
   useEffect_p(() => {
     let cancelled = false;
     setLoading(true);
+    setActionMenuOpen(false);
     API.getProperty(propertyId)
       .then((p) => { if (!cancelled) setProperty(p); })
       .catch((e) => { if (!cancelled) toast.push({ kind: "err", text: e.message }); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [propertyId]);
+
+  useEffect_p(() => {
+    if (!actionMenuOpen) return;
+
+    function handleOutsidePress(e) {
+      if (!actionMenuRef.current || actionMenuRef.current.contains(e.target)) return;
+      setActionMenuOpen(false);
+    }
+
+    function handleKeyDown(e) {
+      if (e.key === "Escape") setActionMenuOpen(false);
+    }
+
+    document.addEventListener("mousedown", handleOutsidePress);
+    document.addEventListener("touchstart", handleOutsidePress);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsidePress);
+      document.removeEventListener("touchstart", handleOutsidePress);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionMenuOpen]);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -879,6 +904,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
   const current = property || {};
   const sp = splitAddress(displayAddress(property));
+  const isArchived = property.active === false;
 
   const saleBasis = current.sold_price ?? current.last_sold_price;
   const estimateSinceSale =
@@ -926,37 +952,93 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             )}
           </div>
         </div>
-        <div className="detail-actions">
-          <button
-            className="btn"
-            onClick={togglePin}
-            disabled={savingManagement}
-            title={property.pinned ? "Unpin property" : "Pin property"}
-          >
-            <Icon
-              name="pin"
-              fill={property.pinned ? "currentColor" : "none"}
-              stroke="currentColor"
-            />
-            {property.pinned ? "Pinned" : "Pin"}
-          </button>
-          <button className="btn" onClick={openEdit} disabled={savingManagement}>
-            <Icon name="edit" /> Edit
-          </button>
-          <button className="btn" onClick={() => setArchived(property.active !== false)} disabled={savingManagement}>
-            <Icon name="archive" /> {property.active === false ? "Restore" : "Archive"}
-          </button>
-          <button className="btn" onClick={doBackfill} disabled={backfilling || refreshing} title="Fetch full historical AVM series from realtor.com">
-            <Icon name="refresh" />
-            {backfilling ? "Backfilling…" : "Backfill history"}
-          </button>
-          <button className="btn" onClick={doRefresh} disabled={refreshing || backfilling}>
-            <Icon name="refresh" />
-            {refreshing ? "Refreshing…" : "Refresh"}
-          </button>
-          <button className="btn btn-danger" onClick={() => setManagementMode("delete")} disabled={savingManagement}>
-            <Icon name="trash" /> Delete
-          </button>
+        <div className="detail-actionbar">
+          {isArchived ? (
+            <button className="btn btn-primary" onClick={() => setArchived(false)} disabled={savingManagement}>
+              <Icon name="archive" /> Restore
+            </button>
+          ) : (
+            <button className="btn btn-primary detail-refresh-action" onClick={doRefresh} disabled={refreshing || backfilling}>
+              <Icon name="refresh" />
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          )}
+          <div className="detail-menu-wrap" ref={actionMenuRef}>
+            <button
+              className={`btn detail-more-btn ${actionMenuOpen ? "on" : ""}`}
+              onClick={() => setActionMenuOpen(!actionMenuOpen)}
+              aria-haspopup="menu"
+              aria-expanded={actionMenuOpen}
+            >
+              <Icon name="menu" /> More
+            </button>
+            {actionMenuOpen && (
+              <div className="detail-menu" role="menu">
+                <button
+                  className="detail-menu-item"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    togglePin();
+                  }}
+                  disabled={savingManagement}
+                  role="menuitem"
+                >
+                  <Icon
+                    name="pin"
+                    fill={property.pinned ? "currentColor" : "none"}
+                    stroke="currentColor"
+                  />
+                  {property.pinned ? "Unpin" : "Pin"}
+                </button>
+                <button
+                  className="detail-menu-item"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    openEdit();
+                  }}
+                  disabled={savingManagement}
+                  role="menuitem"
+                >
+                  <Icon name="edit" /> Edit
+                </button>
+                <button
+                  className="detail-menu-item"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    setArchived(!isArchived);
+                  }}
+                  disabled={savingManagement}
+                  role="menuitem"
+                >
+                  <Icon name="archive" /> {isArchived ? "Restore" : "Archive"}
+                </button>
+                <button
+                  className="detail-menu-item"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    doBackfill();
+                  }}
+                  disabled={backfilling || refreshing}
+                  title="Fetch full historical AVM series from realtor.com"
+                  role="menuitem"
+                >
+                  <Icon name="refresh" />
+                  {backfilling ? "Backfilling…" : "Backfill history"}
+                </button>
+                <button
+                  className="detail-menu-item danger"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    setManagementMode("delete");
+                  }}
+                  disabled={savingManagement}
+                  role="menuitem"
+                >
+                  <Icon name="trash" /> Delete
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
