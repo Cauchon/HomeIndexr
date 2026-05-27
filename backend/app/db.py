@@ -171,6 +171,12 @@ CREATE TABLE IF NOT EXISTS tax_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tax_history_property ON tax_history(property_id, year);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at INTEGER NOT NULL
+);
 """
 
 
@@ -306,4 +312,5 @@ def _migrate_properties_current_state(conn: sqlite3.Connection) -> None:
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        conn.execute("DELETE FROM app_settings WHERE key = 'deepseek_api_key'")
         _migrate_properties_current_state(conn)

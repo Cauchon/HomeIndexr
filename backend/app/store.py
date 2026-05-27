@@ -6,13 +6,15 @@ property row. Adding the same address never creates a duplicate property.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from . import scraper
-from .db import get_conn
+from .db import ROOT, get_conn
 
 PROPERTY_COLS = (
     "id property_name input_address canonical_address city state zip property_id listing_id property_url "
@@ -65,6 +67,35 @@ def _row_to_property(row: Any) -> dict:
 def _raw_json_for_db(fetched: dict) -> str | None:
     raw = fetched.get("raw_json")
     return json.dumps(raw, default=str) if raw is not None else None
+
+
+def _dotenv_path() -> Path:
+    return Path(os.environ.get("HOMEINDEXR_DOTENV_PATH") or ROOT / ".env")
+
+
+def _dotenv_value(name: str) -> str | None:
+    try:
+        lines = _dotenv_path().read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        if key.strip() != name:
+            continue
+        value = value.strip().strip("\"'")
+        return value or None
+    return None
+
+
+def _deepseek_key_source() -> str | None:
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "environment"
+    if _dotenv_value("DEEPSEEK_API_KEY"):
+        return "dotenv"
+    return None
 
 
 def _date_from_ms(ms: int | None) -> str | None:
@@ -121,6 +152,39 @@ def list_properties() -> list[dict]:
                 "SELECT * FROM properties ORDER BY updated_at DESC"
             )
         ]
+
+
+def get_ai_settings() -> dict:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT key, value FROM app_settings WHERE key = 'ai_enabled'"
+        ).fetchall()
+    values = {row["key"]: row["value"] for row in rows}
+    key_source = _deepseek_key_source()
+    return {
+        "enabled": values.get("ai_enabled") == "1",
+        "provider": "deepseek",
+        "has_deepseek_api_key": key_source is not None,
+        "deepseek_api_key_source": key_source,
+        "deepseek_api_key_env_var": "DEEPSEEK_API_KEY",
+    }
+
+
+def save_ai_settings(
+    *,
+    enabled: bool | None = None,
+) -> dict:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute("DELETE FROM app_settings WHERE key = 'deepseek_api_key'")
+        if enabled is not None:
+            conn.execute(
+                """INSERT INTO app_settings (key, value, updated_at)
+                   VALUES ('ai_enabled', ?, ?)
+                   ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
+                ("1" if enabled else "0", now),
+            )
+    return get_ai_settings()
 
 
 def create_property(input_address: str, fetched: dict) -> dict:

@@ -52,9 +52,24 @@ class UpdatePropertyBody(BaseModel):
     pinned: bool | None = None
 
 
+class AISettingsBody(BaseModel):
+    enabled: bool | None = None
+
+
 @app.get("/api/properties")
 def get_properties():
     return store.list_properties()
+
+
+@app.get("/api/admin/ai-settings")
+def get_ai_settings():
+    return store.get_ai_settings()
+
+
+@app.patch("/api/admin/ai-settings")
+def update_ai_settings(body: AISettingsBody):
+    changes = body.model_dump(exclude_unset=True)
+    return store.save_ai_settings(**changes)
 
 
 def _property_with_related(pid: int) -> dict | None:

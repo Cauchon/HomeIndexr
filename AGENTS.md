@@ -40,6 +40,9 @@ PORT=5180 ./run.sh      # alt port
 
 Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
 
+Optional AI features use DeepSeek. Put `DEEPSEEK_API_KEY` in the process
+environment or local `.env`; never hardcode it or store it in SQLite.
+
 ## Architectural rules
 
 1. **Realtor scraping runs server-side only.** The frontend never hits
@@ -91,6 +94,10 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
     removes a row from the default dashboard and refresh-all sweeps while
     preserving current state, raw JSON, historical AVMs, events, and taxes.
     `DELETE /api/properties/{id}` is the permanent removal path.
+13. **AI secrets stay out of app data.** `app_settings` may store non-secret
+    flags such as `ai_enabled`, but DeepSeek API keys must come from
+    `DEEPSEEK_API_KEY` in the server environment or ignored local `.env`. API
+    responses may report key presence/source, never the key value.
 
 ## Data model
 
@@ -123,6 +130,7 @@ property_events(property_id, date, event_name, price, fetched_at)
 observed_events(id, property_id, observed_at, event_name, source,
                 listing_state, listing_id, old_price, new_price,
                 price, delta, pct)
+app_settings(key, value, updated_at)
 tax_history(property_id, year, assessed_year, tax,
             assessment_building, assessment_land, assessment_total,
             market_building, market_land, market_total,
@@ -147,6 +155,8 @@ the frontend formatters.
 | Method | Path                              | Body / Notes                                    |
 |-------:|-----------------------------------|-------------------------------------------------|
 | GET    | `/api/properties`                 | List properties with current state              |
+| GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
+| PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
 | PATCH  | `/api/properties/{id}`            | Edit `property_name`, `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |

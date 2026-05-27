@@ -2201,9 +2201,20 @@ function nextCadenceTarget(cadence, now = new Date()) {
 }
 
 function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
+  const [adminSection, setAdminSection] = useState_p("refresh");
   const [jobs, setJobs] = useState_p(loadAdminJobs);
   const [cadence, setCadence] = useState_p(() => localStorage.getItem(CADENCE_STORAGE_KEY) || "biweekly");
   const [progress, setProgress] = useState_p(0);
+  const [aiSettings, setAISettings] = useState_p({
+    enabled: false,
+    provider: "deepseek",
+    has_deepseek_api_key: false,
+    deepseek_api_key_source: null,
+    deepseek_api_key_env_var: "DEEPSEEK_API_KEY",
+  });
+  const [aiEnabled, setAIEnabled] = useState_p(false);
+  const [aiLoading, setAILoading] = useState_p(true);
+  const [aiSaving, setAISaving] = useState_p(false);
   const toast = useToast();
 
   useEffect_p(() => {
@@ -2216,6 +2227,24 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect_p(() => {
+    let cancelled = false;
+    setAILoading(true);
+    API.getAISettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setAISettings(settings);
+        setAIEnabled(Boolean(settings.enabled));
+      })
+      .catch((e) => {
+        if (!cancelled) toast.push({ kind: "err", text: e.message || "Could not load AI settings" });
+      })
+      .finally(() => {
+        if (!cancelled) setAILoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const activeProperties = useMemo_p(
@@ -2285,6 +2314,20 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
     }
   }
 
+  async function saveAISettings() {
+    setAISaving(true);
+    try {
+      const settings = await API.updateAISettings({ enabled: aiEnabled });
+      setAISettings(settings);
+      setAIEnabled(Boolean(settings.enabled));
+      toast.push({ kind: "ok", text: "AI settings saved" });
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "Could not save AI settings" });
+    } finally {
+      setAISaving(false);
+    }
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -2298,11 +2341,26 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
 
       <div className="admin-shell">
         <aside className="admin-function-rail">
-          <button className="admin-function active" type="button">
+          <button
+            className={`admin-function ${adminSection === "refresh" ? "active" : ""}`}
+            type="button"
+            onClick={() => setAdminSection("refresh")}
+          >
             <Icon name="refresh" />
             <span>
               <strong>Refresh jobs</strong>
               <em>Scrape health and manual refresh runs</em>
+            </span>
+          </button>
+          <button
+            className={`admin-function ${adminSection === "ai" ? "active" : ""}`}
+            type="button"
+            onClick={() => setAdminSection("ai")}
+          >
+            <Icon name="settings" />
+            <span>
+              <strong>AI settings</strong>
+              <em>DeepSeek and property research controls</em>
             </span>
           </button>
           <div className="admin-function muted">
@@ -2315,6 +2373,8 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
         </aside>
 
         <section className="admin-function-panel">
+          {adminSection === "refresh" ? (
+            <>
           <div className="admin-function-header">
             <div>
               <h2>Refresh jobs</h2>
@@ -2465,7 +2525,77 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
 
             <CadencePanel cadence={cadence} setCadence={setCadence} latestJob={latestJob} />
           </div>
+            </>
+          ) : (
+            <>
+              <div className="admin-function-header">
+                <div>
+                  <h2>AI settings</h2>
+                  <p>Optional DeepSeek-powered property research controls</p>
+                </div>
+              </div>
+
+              <div className="admin-settings-grid">
+                <AISettingsPanel
+                  settings={aiSettings}
+                  enabled={aiEnabled}
+                  setEnabled={setAIEnabled}
+                  loading={aiLoading}
+                  saving={aiSaving}
+                  onSave={saveAISettings}
+                />
+              </div>
+            </>
+          )}
         </section>
+      </div>
+    </div>
+  );
+}
+
+function AISettingsPanel({
+  settings,
+  enabled,
+  setEnabled,
+  loading,
+  saving,
+  onSave,
+}) {
+  const hasKey = Boolean(settings?.has_deepseek_api_key);
+  const source = settings?.deepseek_api_key_source === "dotenv" ? ".env" : "environment";
+  const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
+  return (
+    <div className="card">
+      <div className="card-header"><div className="card-title">AI features</div></div>
+      <div className="card-body">
+        <label className="ai-toggle-row">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            disabled={loading || saving}
+          />
+          <span>
+            <strong>Enable AI research</strong>
+            <em>{enabled ? "Property detail Q&A will be available when implemented." : "AI surfaces stay hidden."}</em>
+          </span>
+        </label>
+
+        <div className="schedule-note">
+          <div className="admin-label">Provider</div>
+          <div className="schedule-note-main">DeepSeek</div>
+          <div className="schedule-note-sub">
+            {hasKey
+              ? `API key detected from ${source}. The key is never stored in SQLite or returned by the API.`
+              : `Add ${envVar} to .env or the server environment before using AI research.`}
+          </div>
+        </div>
+
+        <div className="admin-ai-actions">
+          <button className="btn btn-primary" onClick={onSave} disabled={loading || saving}>
+            {saving ? "Saving..." : "Save AI settings"}
+          </button>
+        </div>
       </div>
     </div>
   );

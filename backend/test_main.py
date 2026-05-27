@@ -7,11 +7,16 @@ from unittest.mock import patch
 _tmp = tempfile.TemporaryDirectory()
 atexit.register(_tmp.cleanup)
 os.environ["HOMEINDEXR_DB_PATH"] = os.path.join(_tmp.name, "test.db")
+os.environ["HOMEINDEXR_DOTENV_PATH"] = os.path.join(_tmp.name, ".env")
 
 from app import db, main, store  # noqa: E402
 
 
 def _reset_db() -> None:
+    os.environ.pop("DEEPSEEK_API_KEY", None)
+    dotenv_path = os.environ["HOMEINDEXR_DOTENV_PATH"]
+    if os.path.exists(dotenv_path):
+        os.unlink(dotenv_path)
     for suffix in ("", "-wal", "-shm"):
         path = db.DB_PATH.with_name(db.DB_PATH.name + suffix)
         if path.exists():
@@ -100,6 +105,58 @@ class AddPropertyBackfillTests(unittest.TestCase):
         self.assertEqual(len(res["property"]["historical"]), 2)
         fetch.assert_called_once()
         fetch_history_bundle.assert_called_once_with("12345")
+
+
+class AISettingsTests(unittest.TestCase):
+    def setUp(self):
+        _reset_db()
+
+    def test_ai_settings_default_to_disabled_without_key(self):
+        settings = main.get_ai_settings()
+
+        self.assertFalse(settings["enabled"])
+        self.assertEqual(settings["provider"], "deepseek")
+        self.assertFalse(settings["has_deepseek_api_key"])
+        self.assertIsNone(settings["deepseek_api_key_source"])
+        self.assertEqual(settings["deepseek_api_key_env_var"], "DEEPSEEK_API_KEY")
+
+    def test_ai_settings_detect_deepseek_key_from_environment(self):
+        os.environ["DEEPSEEK_API_KEY"] = "sk-test-secret-1234"
+
+        settings = main.update_ai_settings(main.AISettingsBody(enabled=True))
+
+        self.assertTrue(settings["enabled"])
+        self.assertTrue(settings["has_deepseek_api_key"])
+        self.assertEqual(settings["deepseek_api_key_source"], "environment")
+        self.assertNotIn("sk-test-secret-1234", settings.values())
+
+        fetched_again = main.get_ai_settings()
+        self.assertTrue(fetched_again["enabled"])
+        self.assertEqual(fetched_again["deepseek_api_key_source"], "environment")
+
+    def test_ai_settings_detect_deepseek_key_from_dotenv(self):
+        with open(os.environ["HOMEINDEXR_DOTENV_PATH"], "w") as f:
+            f.write("DEEPSEEK_API_KEY=sk-dotenv-secret-1234\n")
+
+        settings = main.get_ai_settings()
+
+        self.assertTrue(settings["has_deepseek_api_key"])
+        self.assertEqual(settings["deepseek_api_key_source"], "dotenv")
+        self.assertNotIn("sk-dotenv-secret-1234", settings.values())
+
+    def test_ai_settings_delete_legacy_db_secret(self):
+        with db.get_conn() as conn:
+            conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES ('deepseek_api_key', 'sk-legacy-secret', 1)"
+            )
+
+        settings = main.update_ai_settings(main.AISettingsBody(enabled=True))
+
+        self.assertTrue(settings["enabled"])
+        self.assertFalse(settings["has_deepseek_api_key"])
+        with db.get_conn() as conn:
+            row = conn.execute("SELECT value FROM app_settings WHERE key = 'deepseek_api_key'").fetchone()
+        self.assertIsNone(row)
 
 
 class ObservedPriceEventTests(unittest.TestCase):
