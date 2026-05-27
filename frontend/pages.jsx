@@ -8,17 +8,36 @@ const { useState: useState_p, useMemo: useMemo_p, useEffect: useEffect_p } = Rea
 // state, plus a tag for context. `base` is the value to diff the estimate
 // against; historical fallbacks have base=null so they don't drive a
 // misleading delta.
-function _saleYear(p) {
+const SALE_DATE_KEYS = ["last_sold_date", "sold_date", "close_date", "closing_date", "last_status_change_date"];
+
+function _saleDateTs(p) {
   const raw = p.raw_json;
   if (!raw || typeof raw !== "object") return null;
-  for (const k of ["last_sold_date", "sold_date", "close_date", "closing_date", "last_status_change_date"]) {
+  for (const k of SALE_DATE_KEYS) {
     const v = raw[k];
     if (!v) continue;
     const s = String(v);
-    const m = s.match(/(\d{4})/);
-    if (m) return Number(m[1]);
+    const m = s.match(/(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3] || 1)).getTime();
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.getTime();
   }
   return null;
+}
+
+function _saleYear(p) {
+  const ts = _saleDateTs(p);
+  return ts == null ? null : new Date(ts).getFullYear();
+}
+
+function _saleMonthYear(p, events = []) {
+  const rawTs = _saleDateTs(p);
+  if (rawTs != null) return formatMonthYear(rawTs);
+  const soldEventTs = (events || [])
+    .filter((e) => e.date && /sold/i.test(e.event_name || ""))
+    .map((e) => parseEstimateDate(e.date))
+    .filter((ts) => ts != null);
+  return soldEventTs.length ? formatMonthYear(Math.max(...soldEventTs)) : null;
 }
 
 function priceFor(p) {
@@ -928,6 +947,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
     saleBasis && current.best_current_estimate != null
       ? (current.best_current_estimate - saleBasis) / saleBasis
       : null;
+  const saleMonthYear = _saleMonthYear(current, property.events || []);
   const hasCurrentListPrice =
     ["for_sale", "pending"].includes(current.listing_state) && current.list_price != null;
   const avmChartRangeLabel = (() => {
@@ -1179,7 +1199,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
               ? <span style={{ color: current.best_current_estimate >= current.sold_price ? "var(--pos)" : "var(--neg)" }}>
                   Est. {fmt.delta(current.best_current_estimate - current.sold_price)} vs sale
                 </span>
-              : current.last_sold_price ? "Historic" : "—"}
+              : saleBasis != null ? (saleMonthYear || "—") : "—"}
           </div>
         </div>
         <div className="fact">
