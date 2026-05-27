@@ -42,6 +42,7 @@ class AddBody(BaseModel):
 
 
 class UpdatePropertyBody(BaseModel):
+    property_name: str | None = None
     input_address: str | None = None
     canonical_address: str | None = None
     city: str | None = None

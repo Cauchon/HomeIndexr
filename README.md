@@ -61,9 +61,9 @@ save.
 
 ## Data model
 
-- `properties` — one row per tracked address, including the latest normalized
-  AVM, list/sale prices, listing state, property facts/features, risk flags,
-  match status, and raw Realtor JSON.
+- `properties` — one row per tracked address, including optional user-defined
+  display name, the latest normalized AVM, list/sale prices, listing state,
+  property facts/features, risk flags, match status, and raw Realtor JSON.
 - `property_schools` — the current Realtor school list for a property, replaced
   on add/refresh and returned as `schools` in the detail API response.
 - `historical_estimates` — monthly historical AVM series keyed by property,

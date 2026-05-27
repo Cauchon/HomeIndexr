@@ -36,6 +36,7 @@ def get_conn():
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS properties (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    property_name TEXT,
     input_address TEXT NOT NULL,
     canonical_address TEXT,
     city TEXT,
@@ -174,6 +175,7 @@ CREATE INDEX IF NOT EXISTS idx_tax_history_property ON tax_history(property_id, 
 
 
 PROPERTY_CURRENT_COLUMNS = {
+    "property_name": "TEXT",
     "matched_address": "TEXT",
     "best_current_estimate": "INTEGER",
     "estimate_source": "TEXT",

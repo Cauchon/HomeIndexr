@@ -15,7 +15,7 @@ from . import scraper
 from .db import get_conn
 
 PROPERTY_COLS = (
-    "id input_address canonical_address city state zip property_id listing_id property_url "
+    "id property_name input_address canonical_address city state zip property_id listing_id property_url "
     "listing_state active status matched_address best_current_estimate estimate_source "
     "estimate_low estimate_high estimate_date list_price sold_price last_sold_price "
     "beds baths sqft lot_sqft year_built latitude longitude "
@@ -159,7 +159,7 @@ def create_property(input_address: str, fetched: dict) -> dict:
 
 def update_property(property_id: int, changes: dict) -> dict | None:
     """Update user-managed property fields and return the updated row."""
-    allowed = {"input_address", "canonical_address", "city", "state", "zip", "active", "pinned"}
+    allowed = {"property_name", "input_address", "canonical_address", "city", "state", "zip", "active", "pinned"}
     updates = {k: v for k, v in changes.items() if k in allowed}
     if not updates:
         return get_property(property_id)
@@ -168,7 +168,7 @@ def update_property(property_id: int, changes: dict) -> dict | None:
     assignments = []
     values = []
     for key, value in updates.items():
-        if key in {"input_address", "canonical_address", "city", "state", "zip"}:
+        if key in {"property_name", "input_address", "canonical_address", "city", "state", "zip"}:
             value = " ".join(str(value).split()) if value is not None else None
             if value == "":
                 value = None

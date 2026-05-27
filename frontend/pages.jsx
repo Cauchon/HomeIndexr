@@ -811,6 +811,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
   function openEdit() {
     setEditForm({
+      property_name: property.property_name || "",
       input_address: property.input_address || "",
       canonical_address: property.canonical_address || "",
       city: property.city || "",
@@ -830,6 +831,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
     setSavingManagement(true);
     try {
       const updated = await API.updateProperty(propertyId, {
+        property_name: editForm.property_name,
         input_address: editForm.input_address,
         canonical_address: editForm.canonical_address,
         city: editForm.city,
@@ -901,6 +903,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
   const current = property || {};
   const sp = splitAddress(displayAddress(property));
+  const propertyName = (property.property_name || "").trim();
+  const headerTitle = propertyName || sp.line1;
+  const headerAddress = propertyName ? [sp.line1, sp.line2].filter(Boolean).join(", ") : sp.line2;
   const isArchived = property.active === false;
 
   const saleBasis = current.sold_price ?? current.last_sold_price;
@@ -936,10 +941,10 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
       <div className="detail-header">
         <div>
-          <h1>{sp.line1}</h1>
+          <h1>{headerTitle}</h1>
           <div className="meta">
-            <span>{sp.line2}</span>
-            <span style={{ color: "var(--text-faint)" }}>·</span>
+            {headerAddress && <span>{headerAddress}</span>}
+            {headerAddress && <span style={{ color: "var(--text-faint)" }}>·</span>}
             <ListingBadge state={property.listing_state} />
             {property.active === false && <span className="badge neutral">Archived</span>}
             {property.property_url && (
@@ -1046,6 +1051,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             <button className="icon-btn" title="Close" onClick={() => setManagementMode(null)}><Icon name="x" /></button>
           </div>
           <form className="card-body management-form" onSubmit={saveEdit}>
+            <label>
+              <span>Name</span>
+              <input
+                value={editForm.property_name}
+                placeholder="Optional"
+                onChange={(e) => setEditForm({ ...editForm, property_name: e.target.value })}
+              />
+            </label>
             <label>
               <span>Input address</span>
               <input

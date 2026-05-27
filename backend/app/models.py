@@ -12,6 +12,7 @@ class AddPropertyRequest(BaseModel):
 
 class Property(BaseModel):
     id: int
+    property_name: str | None = None
     input_address: str
     canonical_address: str | None = None
     city: str | None = None

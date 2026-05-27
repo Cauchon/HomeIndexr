@@ -194,5 +194,27 @@ class PinnedPropertyTests(unittest.TestCase):
         self.assertFalse(fetched_again2["pinned"])
 
 
+class PropertyNameTests(unittest.TestCase):
+    def setUp(self):
+        _reset_db()
+
+    def test_update_optional_property_name(self):
+        prop = store.create_property("123 Main St", _fetched())
+
+        updated = store.update_property(prop["id"], {"property_name": "  Mom and Dad's house  "})
+
+        self.assertEqual(updated["property_name"], "Mom and Dad's house")
+        fetched_again = store.get_property(prop["id"])
+        self.assertEqual(fetched_again["property_name"], "Mom and Dad's house")
+
+    def test_blank_property_name_clears_value(self):
+        prop = store.create_property("123 Main St", _fetched())
+        store.update_property(prop["id"], {"property_name": "Lake house"})
+
+        updated = store.update_property(prop["id"], {"property_name": "   "})
+
+        self.assertIsNone(updated["property_name"])
+
+
 if __name__ == "__main__":
     unittest.main()

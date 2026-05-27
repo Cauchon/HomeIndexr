@@ -98,7 +98,7 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
 Realtor.com state.
 
 ```
-properties(id, input_address, canonical_address, city, state, zip,
+properties(id, property_name, input_address, canonical_address, city, state, zip,
            property_id, listing_id, property_url, listing_state,
            active, status, matched_address,
            best_current_estimate, estimate_source,
@@ -149,7 +149,7 @@ the frontend formatters.
 | GET    | `/api/properties`                 | List properties with current state              |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
-| PATCH  | `/api/properties/{id}`            | Edit `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |
+| PATCH  | `/api/properties/{id}`            | Edit `property_name`, `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |
 | POST   | `/api/properties/{id}/archive`    | Sets `active = 0`                                |
 | POST   | `/api/properties/{id}/restore`    | Sets `active = 1`                                |
 | DELETE | `/api/properties/{id}`            | Permanently deletes property + related rows      |
