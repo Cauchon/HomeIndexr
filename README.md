@@ -61,6 +61,7 @@ ignored local `.env` file, and never returns the key through the API.
 | GET    | `/api/admin/ai-settings`              | AI enabled/key-present status          |
 | PATCH  | `/api/admin/ai-settings`              | Update non-secret AI settings          |
 | GET    | `/api/properties/{id}`                | Property + history + events + taxes + schools |
+| POST   | `/api/properties/{id}/ai/ask`         | Ask an AI question about a property using local context |
 | POST   | `/api/properties`                     | Add property, refresh current state, and backfill history |
 | PATCH  | `/api/properties/{id}`                | Edit address/display fields and active state |
 | POST   | `/api/properties/{id}/archive`        | Hide from default dashboard and refresh-all |

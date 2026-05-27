@@ -158,6 +158,7 @@ the frontend formatters.
 | GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
 | PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools |
+| POST   | `/api/properties/{id}/ai/ask`     | `{question}` — server-side DeepSeek answer grounded in local property context |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
 | PATCH  | `/api/properties/{id}`            | Edit `property_name`, `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |
 | POST   | `/api/properties/{id}/archive`    | Sets `active = 0`                                |

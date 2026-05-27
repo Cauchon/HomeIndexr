@@ -159,6 +159,42 @@ class AISettingsTests(unittest.TestCase):
         self.assertIsNone(row)
 
 
+class PropertyAIQuestionTests(unittest.TestCase):
+    def setUp(self):
+        _reset_db()
+        self.prop = store.create_property("123 Main St", _fetched())
+
+    def test_ask_property_ai_requires_enabled_feature(self):
+        os.environ["DEEPSEEK_API_KEY"] = "sk-test-secret-1234"
+
+        with self.assertRaises(main.HTTPException) as ctx:
+            main.ask_property_ai(self.prop["id"], main.AIQuestionBody(question="Why did value drop?"))
+
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    def test_ask_property_ai_requires_key(self):
+        store.save_ai_settings(enabled=True)
+
+        with self.assertRaises(main.HTTPException) as ctx:
+            main.ask_property_ai(self.prop["id"], main.AIQuestionBody(question="Why did value drop?"))
+
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    @patch.object(main.ai, "answer_property_question", return_value={"answer": "Likely list price pressure.", "model": "deepseek-v4-flash", "usage": {}})
+    def test_ask_property_ai_uses_related_property_context(self, answer_property_question):
+        os.environ["DEEPSEEK_API_KEY"] = "sk-test-secret-1234"
+        store.save_ai_settings(enabled=True)
+        store.replace_events(self.prop["id"], [{"date": "2026-05-20", "event_name": "Price Changed", "price": 405000}])
+
+        res = main.ask_property_ai(self.prop["id"], main.AIQuestionBody(question="Why did value drop on May 20?"))
+
+        self.assertEqual(res["answer"], "Likely list price pressure.")
+        called_prop, called_question = answer_property_question.call_args.args
+        self.assertEqual(called_prop["id"], self.prop["id"])
+        self.assertEqual(len(called_prop["events"]), 1)
+        self.assertEqual(called_question, "Why did value drop on May 20?")
+
+
 class ObservedPriceEventTests(unittest.TestCase):
     def setUp(self):
         _reset_db()

@@ -34,6 +34,11 @@
         method: "PATCH",
         body: JSON.stringify(changes),
       }),
+    askPropertyAI: (id, question) =>
+      req(`/api/properties/${id}/ai/ask`, {
+        method: "POST",
+        body: JSON.stringify({ question }),
+      }),
     backfill: (id) =>
       req(`/api/properties/${id}/backfill`, { method: "POST" }),
     updateProperty: (id, changes) =>

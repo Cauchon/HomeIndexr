@@ -98,6 +98,18 @@ def _deepseek_key_source() -> str | None:
     return None
 
 
+def get_deepseek_api_key() -> str | None:
+    return os.environ.get("DEEPSEEK_API_KEY") or _dotenv_value("DEEPSEEK_API_KEY")
+
+
+def get_deepseek_model() -> str:
+    return os.environ.get("DEEPSEEK_MODEL") or _dotenv_value("DEEPSEEK_MODEL") or "deepseek-v4-flash"
+
+
+def get_deepseek_api_base() -> str:
+    return (os.environ.get("DEEPSEEK_API_BASE") or _dotenv_value("DEEPSEEK_API_BASE") or "https://api.deepseek.com").rstrip("/")
+
+
 def _date_from_ms(ms: int | None) -> str | None:
     if ms is None:
         return None

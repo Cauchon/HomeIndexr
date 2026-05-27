@@ -766,12 +766,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [loading, setLoading] = useState_p(true);
   const [refreshing, setRefreshing] = useState_p(false);
   const [backfilling, setBackfilling] = useState_p(false);
+  const [aiSettings, setAISettings] = useState_p(null);
   const [tab, setTab] = useState_p("history");
   const [managementMode, setManagementMode] = useState_p(null); // edit | delete
   const [editForm, setEditForm] = useState_p(null);
   const [savingManagement, setSavingManagement] = useState_p(false);
   const [actionMenuOpen, setActionMenuOpen] = useState_p(false);
   const actionMenuRef = React.useRef(null);
+  const aiPanelRef = React.useRef(null);
   const toast = useToast();
 
   useEffect_p(() => {
@@ -784,6 +786,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [propertyId]);
+
+  useEffect_p(() => {
+    let cancelled = false;
+    API.getAISettings()
+      .then((settings) => { if (!cancelled) setAISettings(settings); })
+      .catch(() => { if (!cancelled) setAISettings({ enabled: false, has_deepseek_api_key: false, deepseek_api_key_env_var: "DEEPSEEK_API_KEY" }); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect_p(() => {
     if (!actionMenuOpen) return;
@@ -928,6 +938,13 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
     }
   }
 
+  function focusAIResearch() {
+    aiPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      aiPanelRef.current?.querySelector("textarea")?.focus();
+    }, 250);
+  }
+
   if (loading) return <div className="empty">Loading property…</div>;
   if (!property) return <div className="empty"><div className="title">Property not found</div></div>;
 
@@ -986,6 +1003,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
         </div>
         <div className="detail-actionbar">
+          <button className="btn" onClick={focusAIResearch}>
+            <Icon name="sparkles" /> Ask AI
+          </button>
           {isArchived ? (
             <button className="btn btn-primary" onClick={() => setArchived(false)} disabled={savingManagement}>
               <Icon name="archive" /> Restore
@@ -1215,6 +1235,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
         </div>
       </div>
 
+      <AIResearchPanel
+        refEl={aiPanelRef}
+        propertyId={propertyId}
+        settings={aiSettings}
+        navigate={navigate}
+        toast={toast}
+      />
+
       <div className="detail-grid">
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
@@ -1322,6 +1350,134 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
           <SchoolsCard schools={property.schools || []} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+const AI_PROMPTS = [
+  "Why did the value change recently?",
+  "Explain the biggest estimate drop.",
+  "What changed since the last refresh?",
+  "Summarize valuation risks for this property.",
+];
+
+function AIResearchPanel({ refEl, propertyId, settings, navigate, toast }) {
+  const [question, setQuestion] = useState_p("");
+  const [answer, setAnswer] = useState_p("");
+  const [model, setModel] = useState_p("");
+  const [usage, setUsage] = useState_p(null);
+  const [asking, setAsking] = useState_p(false);
+  const [askedQuestion, setAskedQuestion] = useState_p("");
+  const enabled = Boolean(settings?.enabled);
+  const hasKey = Boolean(settings?.has_deepseek_api_key);
+  const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
+  const canAsk = enabled && hasKey;
+
+  async function ask(text = question) {
+    const q = String(text || "").trim();
+    if (!q) {
+      toast.push({ kind: "err", text: "Ask a question first" });
+      return;
+    }
+    setQuestion(q);
+    setAskedQuestion(q);
+    setAsking(true);
+    setAnswer("");
+    setModel("");
+    setUsage(null);
+    try {
+      const res = await API.askPropertyAI(propertyId, q);
+      setAnswer(res.answer || "");
+      setModel(res.model || "");
+      setUsage(res.usage || null);
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "AI request failed" });
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <div ref={refEl} className="card ai-research-panel">
+      <div className="card-header">
+        <div>
+          <div className="card-title"><Icon name="sparkles" /> AI Research</div>
+          <div className="ai-status-line">
+            {canAsk
+              ? "DeepSeek is ready for property questions"
+              : enabled
+                ? `Add ${envVar} in .env to ask questions`
+                : "Enable AI in Admin to ask property questions"}
+          </div>
+        </div>
+        <span className={`badge ${canAsk ? "ok" : "neutral"}`}>
+          <span className="dot" />
+          {canAsk ? "Ready" : "Setup needed"}
+        </span>
+      </div>
+      <div className="card-body">
+        <div className="ai-ask-row">
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Ask about valuation changes, timeline events, taxes, schools, listing movement..."
+            disabled={!canAsk || asking}
+            rows="3"
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") ask();
+            }}
+          />
+          <button className="btn btn-primary" onClick={() => ask()} disabled={!canAsk || asking}>
+            <Icon name="sparkles" />
+            {asking ? "Researching..." : "Ask"}
+          </button>
+        </div>
+
+        <div className="ai-suggestions">
+          {AI_PROMPTS.map((prompt) => (
+            <button key={prompt} type="button" onClick={() => ask(prompt)} disabled={!canAsk || asking}>
+              {prompt}
+            </button>
+          ))}
+        </div>
+
+        {!canAsk && (
+          <div className="ai-setup-note">
+            <div className="title">AI research is not ready yet</div>
+            <div>
+              {enabled
+                ? `Set ${envVar} in your local .env file or server environment, then restart the backend.`
+                : "Turn on AI features in Admin, and make sure the backend detects your DeepSeek key."}
+            </div>
+            <button className="btn btn-sm" onClick={() => navigate("admin")}>
+              <Icon name="settings" /> Open Admin
+            </button>
+          </div>
+        )}
+
+        {(asking || answer) && (
+          <div className="ai-answer">
+            <div className="ai-answer-head">
+              <div>
+                <div className="admin-label">Question</div>
+                <div>{askedQuestion}</div>
+              </div>
+              {model && <span className="badge info">{model}</span>}
+            </div>
+            {asking ? (
+              <div className="ai-thinking">
+                <span />
+                Reading estimates, events, taxes, and current listing data...
+              </div>
+            ) : (
+              <div className="ai-answer-text">{answer}</div>
+            )}
+            {usage?.total_tokens != null && (
+              <div className="ai-usage">Tokens used: {fmt.num(usage.total_tokens)}</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
