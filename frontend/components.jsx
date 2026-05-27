@@ -113,6 +113,14 @@ function displayAddress(property) {
   return (property && (property.canonical_address || property.input_address)) || "";
 }
 
+function displayName(property) {
+  return (property && (property.property_name || "").trim()) || "";
+}
+
+function displayPropertyLabel(property) {
+  return displayName(property) || displayAddress(property);
+}
+
 // ---------- Status badge ----------
 const LISTING_META = {
   for_sale:   { label: "For sale",   cls: "info" },
@@ -252,7 +260,7 @@ function bestEstimate(rawOrCurrent) {
 
 // expose
 Object.assign(window, {
-  Icon, fmt, splitAddress, displayAddress,
+  Icon, fmt, splitAddress, displayAddress, displayName, displayPropertyLabel,
   ListingBadge, DeltaCell, RangePill, SortHeader,
   ToastProvider, useToast, JsonViewer, Sparkline, bestEstimate,
   LISTING_META,

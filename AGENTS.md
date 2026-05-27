@@ -173,6 +173,9 @@ the frontend formatters.
   outgrow SQL strings.
 - Frontend uses `window.X = X` exports because there's no module system. New
   files must expose anything other modules need on `window`.
+- When `property_name` is set, use it as the primary property display label on
+  dashboard/detail surfaces while keeping the full address visible as supporting
+  context and searchable for filtering.
 - All currency display goes through `fmt.usd` / `fmt.delta` / `fmt.pct` in
   [components.jsx](frontend/components.jsx) — don't recompute formatting inline.
 - CSS lives entirely in [styles.css](frontend/styles.css), driven by `--*`

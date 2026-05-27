@@ -86,7 +86,7 @@ function MobileFilters({
       <div className="mfilters-row">
         <div className="field grow">
           <Icon name="search" />
-          <input placeholder="Search address" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input placeholder="Search property or address" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <button className={`btn ${open ? "on" : ""}`} onClick={() => setOpen(!open)} aria-expanded={open}>
           <Icon name="filter" />
@@ -188,9 +188,13 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
   const rows = useMemo_p(() => {
     let arr = properties.map((p) => {
       const price = priceFor(p);
+      const address = displayAddress(p);
+      const name = displayName(p);
       return {
         ...p,
-        display_address: displayAddress(p),
+        display_address: address,
+        display_name: name,
+        display_label: name || address,
         estimate: p.best_current_estimate,
         price,
         priceValue: price ? price.value : null,
@@ -204,6 +208,8 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
     const ql = q.trim().toLowerCase();
     if (ql) {
       arr = arr.filter((r) => (
+        (r.display_name || "").toLowerCase().includes(ql) ||
+        (r.display_label || "").toLowerCase().includes(ql) ||
         (r.display_address || "").toLowerCase().includes(ql) ||
         (r.input_address || "").toLowerCase().includes(ql)
       ));
@@ -275,7 +281,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
       <div className="filterbar">
         <div className="field grow">
           <Icon name="search" />
-          <input placeholder="Search address" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input placeholder="Search property or address" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div className="field has-select">
           <select value={state} onChange={(e) => setState(e.target.value)}>
@@ -316,7 +322,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         <table className="data">
           <thead>
             <tr>
-              <SortHeader label="Address"      k="display_address" sort={sort} setSort={setSort} />
+              <SortHeader label="Property"     k="display_label"   sort={sort} setSort={setSort} />
               <SortHeader label="Listing"      k="listing_state" sort={sort} setSort={setSort} />
               <SortHeader label="Est. value"   k="estimate"      sort={sort} setSort={setSort} align="right" />
               <SortHeader label="Price"        k="priceValue"    sort={sort} setSort={setSort} align="right" />
@@ -343,6 +349,8 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
             )}
             {rows.map((r) => {
               const sp = splitAddress(r.display_address || "");
+              const hasName = Boolean(r.display_name);
+              const secondary = hasName ? [sp.line1, sp.line2].filter(Boolean).join(", ") : sp.line2;
               return (
                 <tr key={r.id} className={r.active === false ? "archived-row" : ""} onClick={() => navigate("detail", r.id)}>
                   <td className="address-cell">
@@ -359,8 +367,9 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
                           size={14}
                         />
                       </button>
-                      <span className="address-text">
-                        {sp.line1} <span className="sub">· {sp.line2}</span>
+                      <span className="address-text" title={hasName ? `${r.display_name} - ${secondary}` : r.display_address}>
+                        {hasName ? r.display_name : sp.line1}
+                        {secondary && <span className="sub"> · {secondary}</span>}
                       </span>
                       {r.active === false && <span className="badge neutral archived-inline">Archived</span>}
                     </div>
@@ -411,6 +420,8 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
         )}
         {rows.map((r) => {
           const sp = splitAddress(r.display_address || "");
+          const hasName = Boolean(r.display_name);
+          const secondary = hasName ? [sp.line1, sp.line2].filter(Boolean).join(", ") : sp.line2;
           return (
             <div
               key={r.id}
@@ -419,8 +430,8 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
             >
               <div className="head">
                 <div className="addr" style={{ flex: 1, minWidth: 0 }}>
-                  {sp.line1}
-                  <span className="sub">{sp.line2}</span>
+                  {hasName ? r.display_name : sp.line1}
+                  {secondary && <span className="sub">{secondary}</span>}
                 </div>
                 <button
                   className={`pin-btn ${r.pinned ? "is-pinned" : ""}`}
