@@ -229,11 +229,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
     return arr;
   }, [properties, q, city, state, listingState, tracking, sort]);
 
-  const lastSweep = properties.length
-    ? Math.max(...properties.map((p) => p.updated_at || 0))
-    : null;
   const activeCount = properties.filter((p) => p.active !== false).length;
-  const archivedCount = properties.length - activeCount;
 
   return (
     <div>
@@ -243,7 +239,7 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
           <div className="page-subtitle">
             {properties.length === 0
               ? "No properties yet — add one to start tracking."
-              : <>{activeCount} active · {archivedCount} archived · last sweep {fmt.relative(lastSweep)}</>}
+              : "Tracking active properties"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -259,9 +255,9 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
 
       <div className="scope-bar" role="tablist" aria-label="Tracking scope">
         {[
-          { v: "active",   label: "Active",   count: activeCount },
-          { v: "archived", label: "Archived", count: archivedCount },
-          { v: "all",      label: "All",      count: properties.length },
+          { v: "active",   label: "Active" },
+          { v: "archived", label: "Archived" },
+          { v: "all",      label: "All" },
         ].map((o) => (
           <button
             key={o.v}
@@ -272,7 +268,6 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
             onClick={() => setTracking(o.v)}
           >
             {o.label}
-            <span className="count">{o.count}</span>
           </button>
         ))}
       </div>

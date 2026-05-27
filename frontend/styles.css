@@ -492,20 +492,6 @@ table.data tbody tr.archived-row td {
   border-color: var(--border);
   box-shadow: var(--shadow-sm);
 }
-.scope-btn .count {
-  font-size: 10px;
-  background: var(--bg-active);
-  color: var(--text-muted);
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-}
-.scope-btn.active .count {
-  background: var(--accent-soft);
-  color: color-mix(in oklab, var(--accent) 75%, var(--text));
-}
-
 /* ---------- Status badge ---------- */
 .badge {
   display: inline-flex;
