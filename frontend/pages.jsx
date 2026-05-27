@@ -351,22 +351,24 @@ function DashboardPage({ properties, loading, navigate, onRefreshAll, refreshing
               return (
                 <tr key={r.id} className={r.active === false ? "archived-row" : ""} onClick={() => navigate("detail", r.id)}>
                   <td className="address-cell">
-                    <button
-                      className={`pin-btn ${r.pinned ? "is-pinned" : ""}`}
-                      onClick={(e) => handleTogglePin(e, r)}
-                      title={r.pinned ? "Unpin property" : "Pin property"}
-                    >
-                      <Icon
-                        name="pin"
-                        fill={r.pinned ? "currentColor" : "none"}
-                        stroke="currentColor"
-                        size={14}
-                      />
-                    </button>
-                    <span className="address-text">
-                      {sp.line1} <span className="sub">· {sp.line2}</span>
-                    </span>
-                    {r.active === false && <span className="badge neutral archived-inline">Archived</span>}
+                    <div className="address-cell-inner">
+                      <button
+                        className={`pin-btn ${r.pinned ? "is-pinned" : ""}`}
+                        onClick={(e) => handleTogglePin(e, r)}
+                        title={r.pinned ? "Unpin property" : "Pin property"}
+                      >
+                        <Icon
+                          name="pin"
+                          fill={r.pinned ? "currentColor" : "none"}
+                          stroke="currentColor"
+                          size={14}
+                        />
+                      </button>
+                      <span className="address-text">
+                        {sp.line1} <span className="sub">· {sp.line2}</span>
+                      </span>
+                      {r.active === false && <span className="badge neutral archived-inline">Archived</span>}
+                    </div>
                   </td>
                   <td><ListingBadge state={r.listing_state} /></td>
                   <td className="num">{fmt.usd(r.estimate)}</td>
