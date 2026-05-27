@@ -2114,7 +2114,7 @@ function LifetimeStrip({ current = null, historical = [], events = [] }) {
   );
 }
 
-// ---------- Admin / Refresh Jobs ----------
+// ---------- Admin ----------
 const ADMIN_JOB_STORAGE_KEY = "ht_admin_jobs";
 const CADENCE_STORAGE_KEY = "ht_refresh_cadence";
 const CADENCE_OPTIONS = [
@@ -2248,155 +2248,183 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Refresh jobs</h1>
+          <h1 className="page-title">Admin</h1>
           <div className="page-subtitle">
-            Current scrape health across active properties · cadence defaults to twice per month
+            Operational tools for local HomeIndexr maintenance
           </div>
         </div>
-        <div className="admin-actions">
-          <button
-            className="btn btn-primary"
-            onClick={startRefreshAll}
-            disabled={refreshingAll || loading || activeProperties.length === 0}
-          >
+      </div>
+
+      <div className="admin-shell">
+        <aside className="admin-function-rail">
+          <button className="admin-function active" type="button">
             <Icon name="refresh" />
-            {refreshingAll ? "Running…" : "Refresh active now"}
+            <span>
+              <strong>Refresh jobs</strong>
+              <em>Scrape health and manual refresh runs</em>
+            </span>
           </button>
-        </div>
-      </div>
-
-      <div className="facts" style={{ marginBottom: 16 }}>
-        <div className="fact">
-          <div className="label">Last sweep</div>
-          <div className="value sm">{lastSweep ? fmt.relative(lastSweep) : "—"}</div>
-          <div className="sub">{lastSweep ? fmt.datetime(lastSweep) : "No refreshes yet"}</div>
-        </div>
-        <div className="fact">
-          <div className="label">Active properties</div>
-          <div className="value">{activeProperties.length}</div>
-          <div className="sub">{properties.length} tracked total</div>
-        </div>
-        <div className="fact">
-          <div className="label">Issues</div>
-          <div className="value" style={{ color: issues.length ? "var(--warn)" : "var(--text)" }}>{issues.length}</div>
-          <div className="sub">
-            {issues.filter((p) => p.status === "error").length} errors · {issues.filter((p) => p.status === "candidate_mismatch").length} mismatches
+          <div className="admin-function muted">
+            <Icon name="settings" />
+            <span>
+              <strong>More tools later</strong>
+              <em>Backups, imports, and data utilities can live here</em>
+            </span>
           </div>
-        </div>
-        <div className="fact">
-          <div className="label">Cadence</div>
-          <div className="value sm">{CADENCE_LABEL[cadence] || CADENCE_LABEL.biweekly}</div>
-          <div className="sub">{nextCadenceTarget(cadence)}</div>
-        </div>
-      </div>
+        </aside>
 
-      {refreshingAll && (
-        <div className="card admin-progress">
-          <div className="card-body">
-            <div className="progress">
-              <div className="fill" style={{ width: `${progress}%` }} />
+        <section className="admin-function-panel">
+          <div className="admin-function-header">
+            <div>
+              <h2>Refresh jobs</h2>
+              <p>Current scrape health across active properties · cadence defaults to twice per month</p>
             </div>
-            <div className="tnum">
-              {Math.max(1, Math.round((progress / 100) * Math.max(activeProperties.length, 1)))} / {activeProperties.length || 1}
+            <div className="admin-actions">
+              <button
+                className="btn btn-primary"
+                onClick={startRefreshAll}
+                disabled={refreshingAll || loading || activeProperties.length === 0}
+              >
+                <Icon name="refresh" />
+                {refreshingAll ? "Running…" : "Refresh active now"}
+              </button>
             </div>
           </div>
-        </div>
-      )}
 
-      <div className="admin-grid">
-        <div>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="card-header">
-              <div className="card-title">Properties with issues · {issues.length}</div>
+          <div className="facts" style={{ marginBottom: 16 }}>
+            <div className="fact">
+              <div className="label">Last sweep</div>
+              <div className="value sm">{lastSweep ? fmt.relative(lastSweep) : "—"}</div>
+              <div className="sub">{lastSweep ? fmt.datetime(lastSweep) : "No refreshes yet"}</div>
             </div>
-            <div className="card-body flush">
-              {issues.length === 0 ? (
-                <div className="empty">
-                  <div className="title">All clear</div>
-                  <div>Every tracked property matched on its latest refresh.</div>
+            <div className="fact">
+              <div className="label">Active properties</div>
+              <div className="value">{activeProperties.length}</div>
+              <div className="sub">{properties.length} tracked total</div>
+            </div>
+            <div className="fact">
+              <div className="label">Issues</div>
+              <div className="value" style={{ color: issues.length ? "var(--warn)" : "var(--text)" }}>{issues.length}</div>
+              <div className="sub">
+                {issues.filter((p) => p.status === "error").length} errors · {issues.filter((p) => p.status === "candidate_mismatch").length} mismatches
+              </div>
+            </div>
+            <div className="fact">
+              <div className="label">Cadence</div>
+              <div className="value sm">{CADENCE_LABEL[cadence] || CADENCE_LABEL.biweekly}</div>
+              <div className="sub">{nextCadenceTarget(cadence)}</div>
+            </div>
+          </div>
+
+          {refreshingAll && (
+            <div className="card admin-progress">
+              <div className="card-body">
+                <div className="progress">
+                  <div className="fill" style={{ width: `${progress}%` }} />
                 </div>
-              ) : (
-                <div className="table-wrap admin-table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr><th>Address</th><th>Note</th><th>Last refresh</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      {issues.map((p) => {
-                        const sp = splitAddress(displayAddress(p));
-                        const note = p.error ||
-                          (p.status === "candidate_mismatch" ? `Matched ${p.matched_address || "candidate"}` : "No candidates returned");
-                        return (
-                          <tr key={p.id} onClick={() => navigate("detail", p.id)}>
-                            <td className="address-cell">{sp.line1} <span className="sub">· {sp.line2}</span></td>
-                            <td className="muted" style={{ fontSize: 11 }}>{note}</td>
-                            <td className="muted">{fmt.relative(p.last_fetched_at || p.updated_at)}</td>
-                            <td style={{ textAlign: "right" }}><Icon name="chevronRight" /></td>
+                <div className="tnum">
+                  {Math.max(1, Math.round((progress / 100) * Math.max(activeProperties.length, 1)))} / {activeProperties.length || 1}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="admin-grid">
+            <div>
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="card-header">
+                  <div className="card-title">Properties with issues · {issues.length}</div>
+                </div>
+                <div className="card-body flush">
+                  {issues.length === 0 ? (
+                    <div className="empty">
+                      <div className="title">All clear</div>
+                      <div>Every tracked property matched on its latest refresh.</div>
+                    </div>
+                  ) : (
+                    <div className="table-wrap admin-table-wrap">
+                      <table className="data">
+                        <thead>
+                          <tr><th>Address</th><th>Note</th><th>Last refresh</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                          {issues.map((p) => {
+                            const sp = splitAddress(displayAddress(p));
+                            const note = p.error ||
+                              (p.status === "candidate_mismatch" ? `Matched ${p.matched_address || "candidate"}` : "No candidates returned");
+                            return (
+                              <tr key={p.id} onClick={() => navigate("detail", p.id)}>
+                                <td className="address-cell">{sp.line1} <span className="sub">· {sp.line2}</span></td>
+                                <td className="muted" style={{ fontSize: 11 }}>{note}</td>
+                                <td className="muted">{fmt.relative(p.last_fetched_at || p.updated_at)}</td>
+                                <td style={{ textAlign: "right" }}><Icon name="chevronRight" /></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-header"><div className="card-title">Recent jobs</div></div>
+                <div className="card-body flush">
+                  {jobs.length === 0 ? (
+                    <div className="empty">
+                      <div className="title">No admin runs yet</div>
+                      <div>Manual refresh runs started here will appear in this log.</div>
+                    </div>
+                  ) : (
+                    <div className="table-wrap admin-table-wrap">
+                      <table className="data">
+                        <thead>
+                          <tr>
+                            <th>Started</th>
+                            <th>Kind</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: "right" }}>Properties</th>
+                            <th style={{ textAlign: "right" }}>Duration</th>
+                            <th style={{ textAlign: "right" }}>Issues</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {jobs.map((j) => (
+                            <tr key={j.id} style={{ cursor: "default" }}>
+                              <td>
+                                <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                                  <span>{fmt.datetime(j.started_at)}</span>
+                                  <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.relative(j.started_at)}</span>
+                                </div>
+                              </td>
+                              <td><span className="badge info">Manual</span></td>
+                              <td>
+                                <span className={`badge ${j.status === "completed" ? "ok" : "err"}`}>
+                                  <span className="dot" />
+                                  {j.status === "completed" ? "Completed" : "Error"}
+                                </span>
+                              </td>
+                              <td className="num">{j.ok}/{j.total}</td>
+                              <td className="num muted">{Math.max(1, Math.round((j.finished_at - j.started_at) / 1000))}s</td>
+                              <td className="num">
+                                {j.issues > 0
+                                  ? <span style={{ color: "var(--warn)", fontWeight: 500 }}>{j.issues}</span>
+                                  : <span className="faint">0</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-          </div>
 
-          <div className="card">
-            <div className="card-header"><div className="card-title">Recent jobs</div></div>
-            <div className="card-body flush">
-              {jobs.length === 0 ? (
-                <div className="empty">
-                  <div className="title">No admin runs yet</div>
-                  <div>Manual refresh runs started here will appear in this log.</div>
-                </div>
-              ) : (
-                <div className="table-wrap admin-table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>Started</th>
-                        <th>Kind</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: "right" }}>Properties</th>
-                        <th style={{ textAlign: "right" }}>Duration</th>
-                        <th style={{ textAlign: "right" }}>Issues</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {jobs.map((j) => (
-                        <tr key={j.id} style={{ cursor: "default" }}>
-                          <td>
-                            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-                              <span>{fmt.datetime(j.started_at)}</span>
-                              <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{fmt.relative(j.started_at)}</span>
-                            </div>
-                          </td>
-                          <td><span className="badge info">Manual</span></td>
-                          <td>
-                            <span className={`badge ${j.status === "completed" ? "ok" : "err"}`}>
-                              <span className="dot" />
-                              {j.status === "completed" ? "Completed" : "Error"}
-                            </span>
-                          </td>
-                          <td className="num">{j.ok}/{j.total}</td>
-                          <td className="num muted">{Math.max(1, Math.round((j.finished_at - j.started_at) / 1000))}s</td>
-                          <td className="num">
-                            {j.issues > 0
-                              ? <span style={{ color: "var(--warn)", fontWeight: 500 }}>{j.issues}</span>
-                              : <span className="faint">0</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+            <CadencePanel cadence={cadence} setCadence={setCadence} latestJob={latestJob} />
           </div>
-        </div>
-
-        <CadencePanel cadence={cadence} setCadence={setCadence} latestJob={latestJob} />
+        </section>
       </div>
     </div>
   );

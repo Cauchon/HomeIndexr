@@ -149,19 +149,20 @@ curl -s -X POST -H 'Content-Type: application/json' \
 curl -s http://127.0.0.1:5173/api/properties
 ```
 
-## Refresh jobs admin
+## Admin panel
 
-The gear icon in the top bar opens the Refresh jobs page (`#admin`). It shows:
+The gear icon in the top bar opens the Admin panel (`#admin`). The first admin
+function is **Refresh jobs**, which shows:
 
 - latest sweep and active-property counts
 - current properties with match/errors/no-candidate issues
 - a recent manual job log stored in `localStorage`
 - a cadence selector, defaulting to twice per month
 
-The **Refresh all now** button calls `POST /api/properties/refresh-all` and then
-reloads current property state. The cadence selector is stored in
-`localStorage` for the admin panel; it does not start background work inside
-FastAPI.
+The **Refresh active now** button calls `POST /api/properties/refresh-all` and
+then reloads current property state. The cadence selector is stored in
+`localStorage`; it does not start background work inside FastAPI. Additional
+admin functions can be added alongside Refresh jobs later.
 
 ## Scheduled refreshes
 

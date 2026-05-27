@@ -1044,11 +1044,81 @@ table.data tbody tr.archived-row td {
   transition: width 0.4s ease;
 }
 
-/* ---------- Admin / refresh jobs ---------- */
+/* ---------- Admin ---------- */
 .admin-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.admin-shell {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.admin-function-rail {
+  display: grid;
+  gap: 8px;
+}
+.admin-function {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  text-align: left;
+}
+.admin-function.active {
+  border-color: color-mix(in oklab, var(--accent) 36%, var(--border));
+  background: var(--accent-soft);
+}
+.admin-function.muted {
+  color: var(--text-muted);
+  background: var(--bg-sunken);
+}
+.admin-function > svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.admin-function strong,
+.admin-function em {
+  display: block;
+}
+.admin-function strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.admin-function em {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+.admin-function-panel {
+  min-width: 0;
+}
+.admin-function-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.admin-function-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.admin-function-header p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 .admin-progress {
   margin-bottom: 16px;

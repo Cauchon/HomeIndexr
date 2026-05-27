@@ -81,12 +81,12 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
 10. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
    If you add a file, register it in `index.html` with `type="text/babel"` and
    expose any new component on `window` so other files can use it.
-11. **Scheduled refreshes stay outside FastAPI.** The Refresh jobs page can run
-   `POST /api/properties/refresh-all`, show latest issue status, and persist
-   the selected cadence in localStorage. There is no scheduler script checked
-   into this repo right now. If real scheduling is added, wire cron/launchd or
-   another external runner to the API endpoint instead of adding cron/looping
-   work inside the FastAPI process.
+11. **Scheduled refreshes stay outside FastAPI.** The Admin panel's Refresh
+   jobs function can run `POST /api/properties/refresh-all`, show latest issue
+   status, and persist the selected cadence in localStorage. There is no
+   scheduler script checked into this repo right now. If real scheduling is
+   added, wire cron/launchd or another external runner to the API endpoint
+   instead of adding cron/looping work inside the FastAPI process.
 12. **Archived properties are soft-hidden, not deleted.** `properties.active = 0`
     removes a row from the default dashboard and refresh-all sweeps while
     preserving current state, raw JSON, historical AVMs, events, and taxes.

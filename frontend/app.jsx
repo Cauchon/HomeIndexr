@@ -78,7 +78,7 @@ function App() {
   const crumbs = useM(() => {
     if (route.page === "dashboard") return ["Properties"];
     if (route.page === "add") return ["Properties", "Add property"];
-    if (route.page === "admin") return ["Refresh jobs"];
+    if (route.page === "admin") return ["Admin"];
     if (route.page === "detail") {
       const p = properties.find((x) => x.id === route.arg);
       return ["Properties", p ? splitAddress(displayAddress(p)).line1 : "—"];
@@ -159,7 +159,7 @@ function App() {
           </div>
           <div className={`nav-item ${route.page === "admin" ? "active" : ""}`}
                onClick={() => navigate("admin")}>
-            <Icon name="settings" /> Refresh jobs
+            <Icon name="settings" /> Admin
           </div>
 
           <div className="nav-group-label">Filters</div>
@@ -194,7 +194,7 @@ function App() {
                       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
                 <Icon name={theme === "dark" ? "sun" : "moon"} size={15} />
               </button>
-              <button className="icon-btn" title="Refresh jobs"
+              <button className="icon-btn" title="Admin"
                       onClick={() => navigate("admin")}>
                 <Icon name="settings" size={15} />
               </button>
