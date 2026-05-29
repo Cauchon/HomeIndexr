@@ -941,7 +941,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   function focusAIResearch() {
     aiPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     window.setTimeout(() => {
-      aiPanelRef.current?.querySelector("textarea")?.focus();
+      aiPanelRef.current?.querySelector("input")?.focus();
     }, 250);
   }
 
@@ -1003,9 +1003,11 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
         </div>
         <div className="detail-actionbar">
-          <button className="btn" onClick={focusAIResearch}>
-            <Icon name="sparkles" /> Ask AI
-          </button>
+          {!isArchived && (
+            <button className="btn" onClick={focusAIResearch}>
+              <Icon name="sparkles" /> Ask AI
+            </button>
+          )}
           {isArchived ? (
             <button className="btn btn-primary" onClick={() => setArchived(false)} disabled={savingManagement}>
               <Icon name="archive" /> Restore
@@ -1235,14 +1237,6 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
         </div>
       </div>
 
-      <AIResearchPanel
-        refEl={aiPanelRef}
-        propertyId={propertyId}
-        settings={aiSettings}
-        navigate={navigate}
-        toast={toast}
-      />
-
       <div className="detail-grid">
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
@@ -1299,6 +1293,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
         </div>
 
         <div>
+          {!isArchived && (
+            <AskAboutHome
+              refEl={aiPanelRef}
+              propertyId={propertyId}
+              settings={aiSettings}
+              navigate={navigate}
+            />
+          )}
           <div className="card" style={{ marginBottom: 12 }}>
             <div className="card-header"><div className="card-title">Property facts</div></div>
             <div className="card-body flush">
@@ -1355,11 +1357,18 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   );
 }
 
-const AI_PROMPTS = [
-  "What neighborhood is this house in?",
-  "Why did the value change recently?",
-  "How does this compare to the local market?",
-  "Summarize valuation risks for this property.",
+// ---------- Ask about this home ----------
+// Sidebar AI card (design Option A). Compact, always-visible "Ask about this
+// home" panel pinned to the top of the detail right rail. Answers come from the
+// server-side assistant (`POST /api/properties/{id}/ai/ask`), grounded in this
+// property's tracked data, and may call web-search / geocoding tools — surfaced
+// as a "Looked up" row. Gated by Admin → AI: when AI (or its key) is off the
+// card shows a locked state pointing at the setting instead of disappearing.
+const ASK_SUGGESTIONS = [
+  "Is this priced fairly?",
+  "What's the neighborhood like?",
+  "How are the schools nearby?",
+  "How's this market trending?",
 ];
 
 const TOOL_LABELS = {
@@ -1368,137 +1377,129 @@ const TOOL_LABELS = {
   geocode_address: "Geocoding",
 };
 
-function AIResearchPanel({ refEl, propertyId, settings, navigate, toast }) {
-  const [question, setQuestion] = useState_p("");
+function AskAboutHome({ refEl, propertyId, settings, navigate }) {
+  const [activeQ, setActiveQ] = useState_p(null);
   const [answer, setAnswer] = useState_p("");
-  const [model, setModel] = useState_p("");
-  const [usage, setUsage] = useState_p(null);
   const [toolsUsed, setToolsUsed] = useState_p([]);
-  const [asking, setAsking] = useState_p(false);
-  const [askedQuestion, setAskedQuestion] = useState_p("");
+  const [loading, setLoading] = useState_p(false);
+  const [errored, setErrored] = useState_p(false);
+  const [draft, setDraft] = useState_p("");
+  const reqId = React.useRef(0);
+
   const enabled = Boolean(settings?.enabled);
   const hasKey = Boolean(settings?.has_deepseek_api_key);
-  const hasWebSearch = Boolean(settings?.has_brave_api_key);
   const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
   const canAsk = enabled && hasKey;
 
-  async function ask(text = question) {
+  async function ask(text) {
     const q = String(text || "").trim();
-    if (!q) {
-      toast.push({ kind: "err", text: "Ask a question first" });
-      return;
-    }
-    setQuestion(q);
-    setAskedQuestion(q);
-    setAsking(true);
+    if (!q || loading) return;
+    const id = ++reqId.current;
+    setActiveQ(q);
+    setDraft("");
     setAnswer("");
-    setModel("");
-    setUsage(null);
     setToolsUsed([]);
+    setErrored(false);
+    setLoading(true);
     try {
       const res = await API.askPropertyAI(propertyId, q);
-      setAnswer(res.answer || "");
-      setModel(res.model || "");
-      setUsage(res.usage || null);
+      if (id !== reqId.current) return; // a newer question superseded this one
+      setAnswer((res.answer || "").trim());
       setToolsUsed(Array.isArray(res.tools_used) ? res.tools_used : []);
     } catch (e) {
-      toast.push({ kind: "err", text: e.message || "AI request failed" });
+      if (id !== reqId.current) return;
+      setErrored(true);
     } finally {
-      setAsking(false);
+      if (id === reqId.current) setLoading(false);
     }
   }
 
+  function onSubmit(e) {
+    e.preventDefault();
+    ask(draft);
+  }
+
+  // Gated by Admin → AI. When AI (or the model key) is off, show a locked
+  // card that points to the setting rather than hiding the feature.
+  if (!canAsk) {
+    return (
+      <div ref={refEl} className="card ai-card ai-card-locked" style={{ marginBottom: 12 }}>
+        <div className="ai-card-head">
+          <span className="ai-spark muted"><Icon name="sparkles" size={14} /></span>
+          <div>
+            <div className="ai-card-title">Ask about this home</div>
+            <div className="ai-card-sub">
+              {enabled ? `Add ${envVar} in .env to ask questions` : "AI is turned off for this workspace"}
+            </div>
+          </div>
+        </div>
+        <button className="btn btn-sm" onClick={() => navigate("admin")}>
+          <Icon name="settings" size={13} /> Enable in Admin
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div ref={refEl} className="card ai-research-panel">
-      <div className="card-header">
+    <div ref={refEl} className="card ai-card" style={{ marginBottom: 12 }}>
+      <div className="ai-card-head">
+        <span className="ai-spark"><Icon name="sparkles" size={14} /></span>
         <div>
-          <div className="card-title"><Icon name="sparkles" /> AI Research</div>
-          <div className="ai-status-line">
-            {canAsk
-              ? hasWebSearch
-                ? "DeepSeek can research this property and the web"
-                : "DeepSeek is ready for property questions"
-              : enabled
-                ? `Add ${envVar} in .env to ask questions`
-                : "Enable AI in Admin to ask property questions"}
-          </div>
+          <div className="ai-card-title">Ask about this home</div>
+          <div className="ai-card-sub">Grounded in this property's tracked data</div>
         </div>
-        <span className={`badge ${canAsk ? "ok" : "neutral"}`}>
-          <span className="dot" />
-          {canAsk ? "Ready" : "Setup needed"}
-        </span>
       </div>
-      <div className="card-body">
-        <div className="ai-ask-row">
-          <textarea
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask about valuation changes, timeline events, taxes, schools, listing movement..."
-            disabled={!canAsk || asking}
-            rows="3"
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") ask();
-            }}
-          />
-          <button className="btn btn-primary" onClick={() => ask()} disabled={!canAsk || asking}>
-            <Icon name="sparkles" />
-            {asking ? "Researching..." : "Ask"}
-          </button>
-        </div>
 
-        <div className="ai-suggestions">
-          {AI_PROMPTS.map((prompt) => (
-            <button key={prompt} type="button" onClick={() => ask(prompt)} disabled={!canAsk || asking}>
-              {prompt}
-            </button>
-          ))}
-        </div>
-
-        {!canAsk && (
-          <div className="ai-setup-note">
-            <div className="title">AI research is not ready yet</div>
-            <div>
-              {enabled
-                ? `Set ${envVar} in your local .env file or server environment, then restart the backend.`
-                : "Turn on AI features in Admin, and make sure the backend detects your DeepSeek key."}
-            </div>
-            <button className="btn btn-sm" onClick={() => navigate("admin")}>
-              <Icon name="settings" /> Open Admin
-            </button>
-          </div>
-        )}
-
-        {(asking || answer) && (
-          <div className="ai-answer">
-            <div className="ai-answer-head">
-              <div>
-                <div className="admin-label">Question</div>
-                <div>{askedQuestion}</div>
-              </div>
-              {model && <span className="badge info">{model}</span>}
-            </div>
-            {asking ? (
-              <div className="ai-thinking">
-                <span />
-                Reading estimates, events, taxes, and researching the property...
-              </div>
-            ) : (
-              <div className="ai-answer-text">{answer}</div>
-            )}
-            {!asking && toolsUsed.length > 0 && (
-              <div className="ai-tools-used">
-                <span className="admin-label">Looked up</span>
-                {[...new Set(toolsUsed.map((t) => TOOL_LABELS[t] || t))].map((label) => (
-                  <span key={label} className="badge neutral"><span className="dot" />{label}</span>
-                ))}
-              </div>
-            )}
-            {usage?.total_tokens != null && (
-              <div className="ai-usage">Tokens used: {fmt.num(usage.total_tokens)}</div>
-            )}
-          </div>
-        )}
+      <div className="ai-suggests">
+        {ASK_SUGGESTIONS.map((q) => (
+          <button
+            key={q}
+            type="button"
+            className={`ai-chip ${activeQ === q ? "on" : ""}`}
+            onClick={() => ask(q)}
+            disabled={loading}
+          >{q}</button>
+        ))}
       </div>
+
+      {activeQ && (
+        <div className="ai-answer">
+          <div className="ai-answer-q">{activeQ}</div>
+          {loading ? (
+            <div className="ai-thinking"><span></span><span></span><span></span> Thinking…</div>
+          ) : errored ? (
+            <p className="ai-answer-err">
+              Couldn't reach the assistant just now. Check that AI is enabled in Admin, then try again.
+            </p>
+          ) : (
+            <>
+              <Markdown text={answer} className="ai-md" />
+              {toolsUsed.length > 0 && (
+                <div className="ai-tools-used">
+                  <span className="admin-label">Looked up</span>
+                  {[...new Set(toolsUsed.map((t) => TOOL_LABELS[t] || t))].map((label) => (
+                    <span key={label} className="badge neutral"><span className="dot" />{label}</span>
+                  ))}
+                </div>
+              )}
+              <div className="ai-disclaimer">AI can make mistakes — verify the details that matter.</div>
+            </>
+          )}
+        </div>
+      )}
+
+      <form className="ai-composer" onSubmit={onSubmit}>
+        <Icon name="sparkles" size={14} />
+        <input
+          placeholder="Ask anything…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          disabled={loading}
+        />
+        <button className="ai-send" type="submit" aria-label="Send" disabled={loading || !draft.trim()}>
+          <Icon name="arrowUpRight" size={14} />
+        </button>
+      </form>
     </div>
   );
 }

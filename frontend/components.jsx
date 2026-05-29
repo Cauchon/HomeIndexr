@@ -261,10 +261,70 @@ function bestEstimate(rawOrCurrent) {
   return null;
 }
 
+// ---------- Markdown ----------
+// Renders the subset of Markdown that the AI assistant emits (headings, bold,
+// lists, tables, links, code). `marked` parses to HTML; `DOMPurify` strips
+// anything unsafe before it reaches the DOM, since the text is model output.
+//
+// The two libraries are lazy-loaded the first time a Markdown component
+// mounts — i.e. only when an AI answer is actually shown — so they are NOT
+// fetched on page load, on pages without AI, or when AI is disabled. Until
+// they arrive (and as a permanent fallback if the CDN fails) the raw text is
+// shown pre-wrapped.
+let _mdLibsPromise = null;
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.crossOrigin = "anonymous";
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("failed to load " + src));
+    document.head.appendChild(s);
+  });
+}
+function ensureMarkdownLibs() {
+  if (window.marked && window.DOMPurify) return Promise.resolve();
+  if (!_mdLibsPromise) {
+    _mdLibsPromise = Promise.all([
+      window.marked ? null : _loadScript("https://unpkg.com/marked@12.0.2/marked.min.js"),
+      window.DOMPurify ? null : _loadScript("https://unpkg.com/dompurify@3.1.6/dist/purify.min.js"),
+    ]).catch((e) => { _mdLibsPromise = null; throw e; });
+  }
+  return _mdLibsPromise;
+}
+
+function Markdown({ text, className }) {
+  const [ready, setReady] = useState(Boolean(window.marked && window.DOMPurify));
+
+  useEffect(() => {
+    if (ready) return;
+    let active = true;
+    ensureMarkdownLibs().then(() => { if (active) setReady(true); }).catch(() => {});
+    return () => { active = false; };
+  }, [ready]);
+
+  const html = useMemo(() => {
+    const src = String(text || "");
+    if (!src.trim() || !window.marked || !window.DOMPurify) return null;
+    const raw = window.marked.parse(src, { breaks: true, gfm: true });
+    return window.DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+  }, [text, ready]);
+
+  if (html == null) {
+    return <div className={className} style={{ whiteSpace: "pre-wrap" }}>{text}</div>;
+  }
+  return (
+    <div
+      className={["md", className].filter(Boolean).join(" ")}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
 // expose
 Object.assign(window, {
   Icon, fmt, splitAddress, displayAddress, displayName, displayPropertyLabel,
   ListingBadge, DeltaCell, RangePill, SortHeader,
-  ToastProvider, useToast, JsonViewer, Sparkline, bestEstimate,
+  ToastProvider, useToast, JsonViewer, Sparkline, bestEstimate, Markdown,
   LISTING_META,
 });
