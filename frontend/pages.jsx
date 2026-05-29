@@ -766,12 +766,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [loading, setLoading] = useState_p(true);
   const [refreshing, setRefreshing] = useState_p(false);
   const [backfilling, setBackfilling] = useState_p(false);
+  const [aiSettings, setAISettings] = useState_p(null);
   const [tab, setTab] = useState_p("history");
   const [managementMode, setManagementMode] = useState_p(null); // edit | delete
   const [editForm, setEditForm] = useState_p(null);
   const [savingManagement, setSavingManagement] = useState_p(false);
   const [actionMenuOpen, setActionMenuOpen] = useState_p(false);
   const actionMenuRef = React.useRef(null);
+  const aiPanelRef = React.useRef(null);
   const toast = useToast();
 
   useEffect_p(() => {
@@ -784,6 +786,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [propertyId]);
+
+  useEffect_p(() => {
+    let cancelled = false;
+    API.getAISettings()
+      .then((settings) => { if (!cancelled) setAISettings(settings); })
+      .catch(() => { if (!cancelled) setAISettings({ enabled: false, has_deepseek_api_key: false, deepseek_api_key_env_var: "DEEPSEEK_API_KEY" }); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect_p(() => {
     if (!actionMenuOpen) return;
@@ -928,6 +938,13 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
     }
   }
 
+  function focusAIResearch() {
+    aiPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      aiPanelRef.current?.querySelector("textarea")?.focus();
+    }, 250);
+  }
+
   if (loading) return <div className="empty">Loading property…</div>;
   if (!property) return <div className="empty"><div className="title">Property not found</div></div>;
 
@@ -986,6 +1003,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
         </div>
         <div className="detail-actionbar">
+          <button className="btn" onClick={focusAIResearch}>
+            <Icon name="sparkles" /> Ask AI
+          </button>
           {isArchived ? (
             <button className="btn btn-primary" onClick={() => setArchived(false)} disabled={savingManagement}>
               <Icon name="archive" /> Restore
@@ -1215,6 +1235,14 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
         </div>
       </div>
 
+      <AIResearchPanel
+        refEl={aiPanelRef}
+        propertyId={propertyId}
+        settings={aiSettings}
+        navigate={navigate}
+        toast={toast}
+      />
+
       <div className="detail-grid">
         <div>
           <div className="card" style={{ marginBottom: 16 }}>
@@ -1322,6 +1350,154 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
           <SchoolsCard schools={property.schools || []} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+const AI_PROMPTS = [
+  "What neighborhood is this house in?",
+  "Why did the value change recently?",
+  "How does this compare to the local market?",
+  "Summarize valuation risks for this property.",
+];
+
+const TOOL_LABELS = {
+  web_search: "Web search",
+  reverse_geocode: "Geocoding",
+  geocode_address: "Geocoding",
+};
+
+function AIResearchPanel({ refEl, propertyId, settings, navigate, toast }) {
+  const [question, setQuestion] = useState_p("");
+  const [answer, setAnswer] = useState_p("");
+  const [model, setModel] = useState_p("");
+  const [usage, setUsage] = useState_p(null);
+  const [toolsUsed, setToolsUsed] = useState_p([]);
+  const [asking, setAsking] = useState_p(false);
+  const [askedQuestion, setAskedQuestion] = useState_p("");
+  const enabled = Boolean(settings?.enabled);
+  const hasKey = Boolean(settings?.has_deepseek_api_key);
+  const hasWebSearch = Boolean(settings?.has_brave_api_key);
+  const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
+  const canAsk = enabled && hasKey;
+
+  async function ask(text = question) {
+    const q = String(text || "").trim();
+    if (!q) {
+      toast.push({ kind: "err", text: "Ask a question first" });
+      return;
+    }
+    setQuestion(q);
+    setAskedQuestion(q);
+    setAsking(true);
+    setAnswer("");
+    setModel("");
+    setUsage(null);
+    setToolsUsed([]);
+    try {
+      const res = await API.askPropertyAI(propertyId, q);
+      setAnswer(res.answer || "");
+      setModel(res.model || "");
+      setUsage(res.usage || null);
+      setToolsUsed(Array.isArray(res.tools_used) ? res.tools_used : []);
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "AI request failed" });
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <div ref={refEl} className="card ai-research-panel">
+      <div className="card-header">
+        <div>
+          <div className="card-title"><Icon name="sparkles" /> AI Research</div>
+          <div className="ai-status-line">
+            {canAsk
+              ? hasWebSearch
+                ? "DeepSeek can research this property and the web"
+                : "DeepSeek is ready for property questions"
+              : enabled
+                ? `Add ${envVar} in .env to ask questions`
+                : "Enable AI in Admin to ask property questions"}
+          </div>
+        </div>
+        <span className={`badge ${canAsk ? "ok" : "neutral"}`}>
+          <span className="dot" />
+          {canAsk ? "Ready" : "Setup needed"}
+        </span>
+      </div>
+      <div className="card-body">
+        <div className="ai-ask-row">
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Ask about valuation changes, timeline events, taxes, schools, listing movement..."
+            disabled={!canAsk || asking}
+            rows="3"
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") ask();
+            }}
+          />
+          <button className="btn btn-primary" onClick={() => ask()} disabled={!canAsk || asking}>
+            <Icon name="sparkles" />
+            {asking ? "Researching..." : "Ask"}
+          </button>
+        </div>
+
+        <div className="ai-suggestions">
+          {AI_PROMPTS.map((prompt) => (
+            <button key={prompt} type="button" onClick={() => ask(prompt)} disabled={!canAsk || asking}>
+              {prompt}
+            </button>
+          ))}
+        </div>
+
+        {!canAsk && (
+          <div className="ai-setup-note">
+            <div className="title">AI research is not ready yet</div>
+            <div>
+              {enabled
+                ? `Set ${envVar} in your local .env file or server environment, then restart the backend.`
+                : "Turn on AI features in Admin, and make sure the backend detects your DeepSeek key."}
+            </div>
+            <button className="btn btn-sm" onClick={() => navigate("admin")}>
+              <Icon name="settings" /> Open Admin
+            </button>
+          </div>
+        )}
+
+        {(asking || answer) && (
+          <div className="ai-answer">
+            <div className="ai-answer-head">
+              <div>
+                <div className="admin-label">Question</div>
+                <div>{askedQuestion}</div>
+              </div>
+              {model && <span className="badge info">{model}</span>}
+            </div>
+            {asking ? (
+              <div className="ai-thinking">
+                <span />
+                Reading estimates, events, taxes, and researching the property...
+              </div>
+            ) : (
+              <div className="ai-answer-text">{answer}</div>
+            )}
+            {!asking && toolsUsed.length > 0 && (
+              <div className="ai-tools-used">
+                <span className="admin-label">Looked up</span>
+                {[...new Set(toolsUsed.map((t) => TOOL_LABELS[t] || t))].map((label) => (
+                  <span key={label} className="badge neutral"><span className="dot" />{label}</span>
+                ))}
+              </div>
+            )}
+            {usage?.total_tokens != null && (
+              <div className="ai-usage">Tokens used: {fmt.num(usage.total_tokens)}</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2201,9 +2377,20 @@ function nextCadenceTarget(cadence, now = new Date()) {
 }
 
 function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
+  const [adminSection, setAdminSection] = useState_p("refresh");
   const [jobs, setJobs] = useState_p(loadAdminJobs);
   const [cadence, setCadence] = useState_p(() => localStorage.getItem(CADENCE_STORAGE_KEY) || "biweekly");
   const [progress, setProgress] = useState_p(0);
+  const [aiSettings, setAISettings] = useState_p({
+    enabled: false,
+    provider: "deepseek",
+    has_deepseek_api_key: false,
+    deepseek_api_key_source: null,
+    deepseek_api_key_env_var: "DEEPSEEK_API_KEY",
+  });
+  const [aiEnabled, setAIEnabled] = useState_p(false);
+  const [aiLoading, setAILoading] = useState_p(true);
+  const [aiSaving, setAISaving] = useState_p(false);
   const toast = useToast();
 
   useEffect_p(() => {
@@ -2216,6 +2403,24 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect_p(() => {
+    let cancelled = false;
+    setAILoading(true);
+    API.getAISettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setAISettings(settings);
+        setAIEnabled(Boolean(settings.enabled));
+      })
+      .catch((e) => {
+        if (!cancelled) toast.push({ kind: "err", text: e.message || "Could not load AI settings" });
+      })
+      .finally(() => {
+        if (!cancelled) setAILoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const activeProperties = useMemo_p(
@@ -2285,6 +2490,20 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
     }
   }
 
+  async function saveAISettings() {
+    setAISaving(true);
+    try {
+      const settings = await API.updateAISettings({ enabled: aiEnabled });
+      setAISettings(settings);
+      setAIEnabled(Boolean(settings.enabled));
+      toast.push({ kind: "ok", text: "AI settings saved" });
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "Could not save AI settings" });
+    } finally {
+      setAISaving(false);
+    }
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -2298,11 +2517,26 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
 
       <div className="admin-shell">
         <aside className="admin-function-rail">
-          <button className="admin-function active" type="button">
+          <button
+            className={`admin-function ${adminSection === "refresh" ? "active" : ""}`}
+            type="button"
+            onClick={() => setAdminSection("refresh")}
+          >
             <Icon name="refresh" />
             <span>
               <strong>Refresh jobs</strong>
               <em>Scrape health and manual refresh runs</em>
+            </span>
+          </button>
+          <button
+            className={`admin-function ${adminSection === "ai" ? "active" : ""}`}
+            type="button"
+            onClick={() => setAdminSection("ai")}
+          >
+            <Icon name="settings" />
+            <span>
+              <strong>AI settings</strong>
+              <em>DeepSeek and property research controls</em>
             </span>
           </button>
           <div className="admin-function muted">
@@ -2315,6 +2549,8 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
         </aside>
 
         <section className="admin-function-panel">
+          {adminSection === "refresh" ? (
+            <>
           <div className="admin-function-header">
             <div>
               <h2>Refresh jobs</h2>
@@ -2465,7 +2701,90 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
 
             <CadencePanel cadence={cadence} setCadence={setCadence} latestJob={latestJob} />
           </div>
+            </>
+          ) : (
+            <>
+              <div className="admin-function-header">
+                <div>
+                  <h2>AI settings</h2>
+                  <p>Optional DeepSeek-powered property research controls</p>
+                </div>
+              </div>
+
+              <div className="admin-settings-grid">
+                <AISettingsPanel
+                  settings={aiSettings}
+                  enabled={aiEnabled}
+                  setEnabled={setAIEnabled}
+                  loading={aiLoading}
+                  saving={aiSaving}
+                  onSave={saveAISettings}
+                />
+              </div>
+            </>
+          )}
         </section>
+      </div>
+    </div>
+  );
+}
+
+function AISettingsPanel({
+  settings,
+  enabled,
+  setEnabled,
+  loading,
+  saving,
+  onSave,
+}) {
+  const hasKey = Boolean(settings?.has_deepseek_api_key);
+  const source = settings?.deepseek_api_key_source === "dotenv" ? ".env" : "environment";
+  const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
+  const hasWebSearch = Boolean(settings?.has_brave_api_key);
+  const braveSource = settings?.brave_api_key_source === "dotenv" ? ".env" : "environment";
+  const braveEnvVar = settings?.brave_api_key_env_var || "BRAVE_API_KEY";
+  return (
+    <div className="card">
+      <div className="card-header"><div className="card-title">AI features</div></div>
+      <div className="card-body">
+        <label className="ai-toggle-row">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            disabled={loading || saving}
+          />
+          <span>
+            <strong>Enable AI research</strong>
+            <em>{enabled ? "Property detail Q&A will be available when implemented." : "AI surfaces stay hidden."}</em>
+          </span>
+        </label>
+
+        <div className="schedule-note">
+          <div className="admin-label">Provider</div>
+          <div className="schedule-note-main">DeepSeek</div>
+          <div className="schedule-note-sub">
+            {hasKey
+              ? `API key detected from ${source}. The key is never stored in SQLite or returned by the API.`
+              : `Add ${envVar} to .env or the server environment before using AI research.`}
+          </div>
+        </div>
+
+        <div className="schedule-note">
+          <div className="admin-label">Web research</div>
+          <div className="schedule-note-main">{hasWebSearch ? "Web search enabled" : "Web search off"}</div>
+          <div className="schedule-note-sub">
+            {hasWebSearch
+              ? `Brave key detected from ${braveSource}. The AI can look up neighborhood, schools, and local market facts beyond the stored data. Geocoding needs no key.`
+              : `Add ${braveEnvVar} to .env to let the AI search the web for facts not in the stored data. Without it, the AI can still geocode coordinates to a neighborhood.`}
+          </div>
+        </div>
+
+        <div className="admin-ai-actions">
+          <button className="btn btn-primary" onClick={onSave} disabled={loading || saving}>
+            {saving ? "Saving..." : "Save AI settings"}
+          </button>
+        </div>
       </div>
     </div>
   );

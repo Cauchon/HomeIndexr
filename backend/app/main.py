@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.types import Scope
 
-from . import scraper, store
+from . import ai, scraper, store
 from .db import init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,9 +52,28 @@ class UpdatePropertyBody(BaseModel):
     pinned: bool | None = None
 
 
+class AISettingsBody(BaseModel):
+    enabled: bool | None = None
+
+
+class AIQuestionBody(BaseModel):
+    question: str
+
+
 @app.get("/api/properties")
 def get_properties():
     return store.list_properties()
+
+
+@app.get("/api/admin/ai-settings")
+def get_ai_settings():
+    return store.get_ai_settings()
+
+
+@app.patch("/api/admin/ai-settings")
+def update_ai_settings(body: AISettingsBody):
+    changes = body.model_dump(exclude_unset=True)
+    return store.save_ai_settings(**changes)
 
 
 def _property_with_related(pid: int) -> dict | None:
@@ -105,6 +124,25 @@ def get_property(pid: int):
     if not p:
         raise HTTPException(404, "property not found")
     return p
+
+
+@app.post("/api/properties/{pid}/ai/ask")
+def ask_property_ai(pid: int, body: AIQuestionBody):
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(400, "question is required")
+    settings = store.get_ai_settings()
+    if not settings["enabled"]:
+        raise HTTPException(403, "AI features are disabled")
+    if not settings["has_deepseek_api_key"]:
+        raise HTTPException(400, "DEEPSEEK_API_KEY is not configured")
+    prop = _property_with_related(pid)
+    if not prop:
+        raise HTTPException(404, "property not found")
+    try:
+        return ai.answer_property_question(prop, question)
+    except ai.AIError as e:
+        raise HTTPException(502, str(e)) from e
 
 
 @app.patch("/api/properties/{pid}")

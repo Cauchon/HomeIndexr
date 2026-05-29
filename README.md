@@ -38,12 +38,30 @@ python3.12 -m venv .venv312
 
 Then open <http://127.0.0.1:5173>.
 
+## Optional AI
+
+AI features are optional and use DeepSeek when enabled. Keep the API key out of
+SQLite and source control:
+
+```bash
+cp .env.example .env
+# edit .env and set:
+# DEEPSEEK_API_KEY=...
+```
+
+The Admin panel stores only the `ai_enabled` toggle in SQLite. The backend
+detects `DEEPSEEK_API_KEY` from the process environment first, then from the
+ignored local `.env` file, and never returns the key through the API.
+
 ## API
 
 | Method | Path                                  | Purpose                                |
 |-------:|---------------------------------------|----------------------------------------|
 | GET    | `/api/properties`                     | List properties with current state     |
+| GET    | `/api/admin/ai-settings`              | AI enabled/key-present status          |
+| PATCH  | `/api/admin/ai-settings`              | Update non-secret AI settings          |
 | GET    | `/api/properties/{id}`                | Property + history + events + taxes + schools |
+| POST   | `/api/properties/{id}/ai/ask`         | Ask an AI question about a property using local context |
 | POST   | `/api/properties`                     | Add property, refresh current state, and backfill history |
 | PATCH  | `/api/properties/{id}`                | Edit address/display fields and active state |
 | POST   | `/api/properties/{id}/archive`        | Hide from default dashboard and refresh-all |

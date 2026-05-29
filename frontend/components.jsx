@@ -37,6 +37,7 @@ const Icon = ({ name, size = 14, ...rest }) => {
     play: <path d="M6 4l14 8-14 8z" />,
     menu: <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>,
     pin: <><path d="M12 17v5" /><path d="M8 3h8" /><path d="M10 3v5.2c0 .7-.25 1.38-.72 1.9L6.4 13.3A2 2 0 0 0 5.88 15H18.12a2 2 0 0 0-.52-1.7l-2.88-3.2A2.8 2.8 0 0 1 14 8.2V3" /><path d="M7 17h10" /></>,
+    sparkles: <><path d="M12 3l1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9z" /><path d="M5 3v4" /><path d="M3 5h4" /><path d="M19 17v4" /><path d="M17 19h4" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"

@@ -28,6 +28,17 @@
       req(`/api/properties/${id}/refresh`, { method: "POST" }),
     refreshAll: () =>
       req("/api/properties/refresh-all", { method: "POST" }),
+    getAISettings: () => req("/api/admin/ai-settings"),
+    updateAISettings: (changes) =>
+      req("/api/admin/ai-settings", {
+        method: "PATCH",
+        body: JSON.stringify(changes),
+      }),
+    askPropertyAI: (id, question) =>
+      req(`/api/properties/${id}/ai/ask`, {
+        method: "POST",
+        body: JSON.stringify({ question }),
+      }),
     backfill: (id) =>
       req(`/api/properties/${id}/backfill`, { method: "POST" }),
     updateProperty: (id, changes) =>

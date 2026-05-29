@@ -1,6 +1,16 @@
+import atexit
+import os
+import tempfile
 import unittest
 
-from app import scraper
+# Redirect the database to a throwaway path BEFORE importing app modules so a
+# stray DB access can never touch the real data/app.db (see test_main.py).
+_tmp = tempfile.TemporaryDirectory()
+atexit.register(_tmp.cleanup)
+os.environ["HOMEINDEXR_DB_PATH"] = os.path.join(_tmp.name, "test.db")
+os.environ["HOMEINDEXR_DOTENV_PATH"] = os.path.join(_tmp.name, ".env")
+
+from app import scraper  # noqa: E402
 
 
 def ms(date: str) -> int:

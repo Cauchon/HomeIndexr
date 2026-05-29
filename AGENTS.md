@@ -40,6 +40,14 @@ PORT=5180 ./run.sh      # alt port
 
 Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
 
+Optional AI features use DeepSeek. Put `DEEPSEEK_API_KEY` in the process
+environment or local `.env`; never hardcode it or store it in SQLite.
+
+The AI research assistant can call tools to answer questions the stored data
+doesn't cover. `web_search` (Brave) is enabled when `BRAVE_API_KEY` is present;
+`geocode_address`/`reverse_geocode` (Nominatim) need no key. Treat `BRAVE_API_KEY`
+like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
+
 ## Architectural rules
 
 1. **Realtor scraping runs server-side only.** The frontend never hits
@@ -91,6 +99,11 @@ Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
     removes a row from the default dashboard and refresh-all sweeps while
     preserving current state, raw JSON, historical AVMs, events, and taxes.
     `DELETE /api/properties/{id}` is the permanent removal path.
+13. **AI secrets stay out of app data.** `app_settings` may store non-secret
+    flags such as `ai_enabled`, but API keys (`DEEPSEEK_API_KEY`, the optional
+    `BRAVE_API_KEY` for web search) must come from the server environment or
+    ignored local `.env`. API responses may report key presence/source, never
+    the key value.
 
 ## Data model
 
@@ -123,6 +136,7 @@ property_events(property_id, date, event_name, price, fetched_at)
 observed_events(id, property_id, observed_at, event_name, source,
                 listing_state, listing_id, old_price, new_price,
                 price, delta, pct)
+app_settings(key, value, updated_at)
 tax_history(property_id, year, assessed_year, tax,
             assessment_building, assessment_land, assessment_total,
             market_building, market_land, market_total,
@@ -147,7 +161,10 @@ the frontend formatters.
 | Method | Path                              | Body / Notes                                    |
 |-------:|-----------------------------------|-------------------------------------------------|
 | GET    | `/api/properties`                 | List properties with current state              |
+| GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
+| PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools |
+| POST   | `/api/properties/{id}/ai/ask`     | `{question}` — server-side DeepSeek answer grounded in local property context; may call web-search/geocoding tools. Returns `tools_used` |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
 | PATCH  | `/api/properties/{id}`            | Edit `property_name`, `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |
 | POST   | `/api/properties/{id}/archive`    | Sets `active = 0`                                |
@@ -200,6 +217,20 @@ Run the unittest suite from the repo root:
 ```bash
 PYTHONPATH=backend .venv312/bin/python -m unittest discover -s backend -p 'test_*.py'
 ```
+
+**Test DB isolation is mandatory — tests must never touch `data/app.db`.**
+This bit us once: a test module imported `app` (and therefore `app.db`) before
+redirecting the database, the path got bound to the real `data/app.db`, and a
+test reset wiped real user data. Two non-negotiable safeguards:
+
+1. `db.db_path()` resolves the SQLite path lazily on every connection — never
+   reintroduce an import-time `DB_PATH` constant that freezes it.
+2. Every test module that imports `app` must set `HOMEINDEXR_DB_PATH` (and
+   `HOMEINDEXR_DOTENV_PATH`) to a throwaway `tempfile` path *before* the
+   `from app import ...` line, exactly as `test_main.py` / `test_ai.py` /
+   `test_scraper.py` do. Any new `test_*.py` must copy that preamble.
+
+After running the suite, `data/app.db` must be unmodified (check its mtime).
 
 Smoke-test manually when touching live Realtor fetch behavior:
 
