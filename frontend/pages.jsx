@@ -2343,6 +2343,13 @@ const CADENCE_OPTIONS = [
 ];
 const CADENCE_LABEL = Object.fromEntries(CADENCE_OPTIONS.map((o) => [o.key, o.label]));
 
+// Admin section rail. Grows as more settings areas are added — one entry here
+// plus its render branch below.
+const ADMIN_SECTIONS = [
+  { key: "refresh", label: "Refresh jobs", icon: "activity" },
+  { key: "ai", label: "AI", icon: "sparkles" },
+];
+
 function loadAdminJobs() {
   try {
     const raw = localStorage.getItem(ADMIN_JOB_STORAGE_KEY);
@@ -2490,14 +2497,15 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
     }
   }
 
-  async function saveAISettings() {
+  async function handleToggleAI(next) {
+    setAIEnabled(next);
     setAISaving(true);
     try {
-      const settings = await API.updateAISettings({ enabled: aiEnabled });
+      const settings = await API.updateAISettings({ enabled: next });
       setAISettings(settings);
       setAIEnabled(Boolean(settings.enabled));
-      toast.push({ kind: "ok", text: "AI settings saved" });
     } catch (e) {
+      setAIEnabled(!next);
       toast.push({ kind: "err", text: e.message || "Could not save AI settings" });
     } finally {
       setAISaving(false);
@@ -2510,62 +2518,46 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
         <div>
           <h1 className="page-title">Admin</h1>
           <div className="page-subtitle">
-            Operational tools for local HomeIndexr maintenance
+            Workspace settings — refresh schedule, integrations, and more
           </div>
         </div>
       </div>
 
-      <div className="admin-shell">
-        <aside className="admin-function-rail">
-          <button
-            className={`admin-function ${adminSection === "refresh" ? "active" : ""}`}
-            type="button"
-            onClick={() => setAdminSection("refresh")}
-          >
-            <Icon name="refresh" />
-            <span>
-              <strong>Refresh jobs</strong>
-              <em>Scrape health and manual refresh runs</em>
-            </span>
-          </button>
-          <button
-            className={`admin-function ${adminSection === "ai" ? "active" : ""}`}
-            type="button"
-            onClick={() => setAdminSection("ai")}
-          >
-            <Icon name="settings" />
-            <span>
-              <strong>AI settings</strong>
-              <em>DeepSeek and property research controls</em>
-            </span>
-          </button>
-          <div className="admin-function muted">
-            <Icon name="settings" />
-            <span>
-              <strong>More tools later</strong>
-              <em>Backups, imports, and data utilities can live here</em>
-            </span>
-          </div>
-        </aside>
+      <div className="admin-layout">
+        <nav className="admin-rail">
+          <div className="admin-rail-label">Settings</div>
+          {ADMIN_SECTIONS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={`admin-rail-item ${adminSection === s.key ? "active" : ""}`}
+              onClick={() => setAdminSection(s.key)}
+            >
+              <Icon name={s.icon} size={15} />
+              {s.label}
+              {s.key === "refresh" && issues.length > 0 && (
+                <span className="count warn">{issues.length}</span>
+              )}
+            </button>
+          ))}
+        </nav>
 
-        <section className="admin-function-panel">
+        <div>
           {adminSection === "refresh" ? (
             <>
-          <div className="admin-function-header">
+          <div className="admin-section-head">
             <div>
               <h2>Refresh jobs</h2>
-              <p>Current scrape health across active properties · cadence defaults to twice per month</p>
+              <div className="sub">Scheduled fetches across all active properties</div>
             </div>
-            <div className="admin-actions">
-              <button
-                className="btn btn-primary"
-                onClick={startRefreshAll}
-                disabled={refreshingAll || loading || activeProperties.length === 0}
-              >
-                <Icon name="refresh" />
-                {refreshingAll ? "Running…" : "Refresh active now"}
-              </button>
-            </div>
+            <button
+              className="btn btn-primary"
+              onClick={startRefreshAll}
+              disabled={refreshingAll || loading || activeProperties.length === 0}
+            >
+              <Icon name="refresh" />
+              {refreshingAll ? "Running…" : "Refresh active now"}
+            </button>
           </div>
 
           <div className="facts" style={{ marginBottom: 16 }}>
@@ -2703,87 +2695,153 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
           </div>
             </>
           ) : (
-            <>
-              <div className="admin-function-header">
-                <div>
-                  <h2>AI settings</h2>
-                  <p>Optional DeepSeek-powered property research controls</p>
-                </div>
-              </div>
-
-              <div className="admin-settings-grid">
-                <AISettingsPanel
-                  settings={aiSettings}
-                  enabled={aiEnabled}
-                  setEnabled={setAIEnabled}
-                  loading={aiLoading}
-                  saving={aiSaving}
-                  onSave={saveAISettings}
-                />
-              </div>
-            </>
+            <AiSection
+              settings={aiSettings}
+              enabled={aiEnabled}
+              loading={aiLoading}
+              saving={aiSaving}
+              onToggle={handleToggleAI}
+            />
           )}
-        </section>
+        </div>
       </div>
     </div>
   );
 }
 
-function AISettingsPanel({
-  settings,
-  enabled,
-  setEnabled,
-  loading,
-  saving,
-  onSave,
-}) {
-  const hasKey = Boolean(settings?.has_deepseek_api_key);
-  const source = settings?.deepseek_api_key_source === "dotenv" ? ".env" : "environment";
-  const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
-  const hasWebSearch = Boolean(settings?.has_brave_api_key);
-  const braveSource = settings?.brave_api_key_source === "dotenv" ? ".env" : "environment";
-  const braveEnvVar = settings?.brave_api_key_env_var || "BRAVE_API_KEY";
+// ---------- Toggle switch ----------
+function Switch({ checked, onChange, disabled, label }) {
   return (
-    <div className="card">
-      <div className="card-header"><div className="card-title">AI features</div></div>
-      <div className="card-body">
-        <label className="ai-toggle-row">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-            disabled={loading || saving}
-          />
-          <span>
-            <strong>Enable AI research</strong>
-            <em>{enabled ? "Property detail Q&A will be available when implemented." : "AI surfaces stay hidden."}</em>
-          </span>
-        </label>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      className={`switch ${checked ? "on" : ""}`}
+      onClick={() => !disabled && onChange(!checked)}
+    >
+      <span className="knob" />
+    </button>
+  );
+}
 
-        <div className="schedule-note">
-          <div className="admin-label">Provider</div>
-          <div className="schedule-note-main">DeepSeek</div>
-          <div className="schedule-note-sub">
-            {hasKey
-              ? `API key detected from ${source}. The key is never stored in SQLite or returned by the API.`
-              : `Add ${envVar} to .env or the server environment before using AI research.`}
+// ---------- env-key detection chip ----------
+// Reflects whether a key was found in the server environment / .env at boot.
+// Detection is read-only here; the actual key never reaches the client.
+function EnvKey({ name, detected, source }) {
+  return (
+    <div>
+      <div className="envkey">
+        <code>{name}</code>
+        {detected ? (
+          <span className="badge ok"><Icon name="check" size={11} /> Detected in {source || ".env"}</span>
+        ) : (
+          <span className="badge warn"><Icon name="alert" size={11} /> Not found</span>
+        )}
+      </div>
+      {!detected && (
+        <div className="envkey-hint">
+          Add <code>{name}=…</code> to your <code>.env</code> file and restart to enable.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Admin · AI section ----------
+// An "Enable AI" master toggle gates two capabilities, each tied to a key the
+// server detects at boot: a model provider (DeepSeek) and web research (Brave).
+// The master toggle persists via the API; capability toggles are local and
+// disabled when their key is missing or AI is off — they mirror availability.
+function AiSection({ settings, enabled, loading, saving, onToggle }) {
+  const hasDeepseek = Boolean(settings?.has_deepseek_api_key);
+  const hasBrave = Boolean(settings?.has_brave_api_key);
+  const deepseekSource = settings?.deepseek_api_key_source === "dotenv" ? ".env" : "environment";
+  const braveSource = settings?.brave_api_key_source === "dotenv" ? ".env" : "environment";
+  const deepseekVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
+  const braveVar = settings?.brave_api_key_env_var || "BRAVE_API_KEY";
+
+  const [deepseekOn, setDeepseekOn] = useState_p(true);
+  const [braveOn, setBraveOn] = useState_p(true);
+
+  return (
+    <div>
+      <div className="admin-section-head">
+        <div>
+          <h2>AI</h2>
+          <div className="sub">Summaries, Q&amp;A, and research powered by external providers</div>
+        </div>
+      </div>
+
+      {/* Master toggle */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="master-row">
+          <div className="setting-ico" style={{ color: enabled ? "var(--accent)" : undefined }}>
+            <Icon name="sparkles" size={18} />
+          </div>
+          <div className="setting-main">
+            <div className="setting-name">Enable AI</div>
+            <div className="setting-desc">
+              Let HomeIndexr summarize activity, draft notes, and answer
+              questions about your tracked properties.
+            </div>
+          </div>
+          <div className="setting-control">
+            <Switch checked={enabled} onChange={onToggle} disabled={loading || saving} label="Enable AI" />
+          </div>
+        </div>
+      </div>
+
+      {/* Capabilities — gated by the master toggle */}
+      <div className={`gated ${enabled ? "" : "off"}`}>
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header"><div className="card-title">Model provider</div></div>
+          <div className="card-body flush">
+            <div className="setting-row">
+              <div className="setting-ico"><Icon name="cpu" size={18} /></div>
+              <div className="setting-main">
+                <div className="setting-name">DeepSeek</div>
+                <div className="setting-desc">
+                  Chat &amp; reasoning model used for property summaries and Q&amp;A.
+                </div>
+                <EnvKey name={deepseekVar} detected={hasDeepseek} source={deepseekSource} />
+              </div>
+              <div className="setting-control">
+                <Switch
+                  checked={deepseekOn && hasDeepseek}
+                  onChange={setDeepseekOn}
+                  disabled={!hasDeepseek || !enabled}
+                  label="Enable DeepSeek"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="schedule-note">
-          <div className="admin-label">Web research</div>
-          <div className="schedule-note-main">{hasWebSearch ? "Web search enabled" : "Web search off"}</div>
-          <div className="schedule-note-sub">
-            {hasWebSearch
-              ? `Brave key detected from ${braveSource}. The AI can look up neighborhood, schools, and local market facts beyond the stored data. Geocoding needs no key.`
-              : `Add ${braveEnvVar} to .env to let the AI search the web for facts not in the stored data. Without it, the AI can still geocode coordinates to a neighborhood.`}
+        <div className="card">
+          <div className="card-header"><div className="card-title">Web research</div></div>
+          <div className="card-body flush">
+            <div className="setting-row">
+              <div className="setting-ico"><Icon name="globe" size={18} /></div>
+              <div className="setting-main">
+                <div className="setting-name">Brave Search API</div>
+                <div className="setting-desc">
+                  Pulls comparable sales, neighborhood context, and recent news
+                  into AI answers. Geocoding needs no key.
+                </div>
+                <EnvKey name={braveVar} detected={hasBrave} source={braveSource} />
+              </div>
+              <div className="setting-control">
+                <Switch
+                  checked={braveOn && hasBrave}
+                  onChange={setBraveOn}
+                  disabled={!hasBrave || !enabled}
+                  label="Enable web research"
+                />
+              </div>
+            </div>
           </div>
-        </div>
-
-        <div className="admin-ai-actions">
-          <button className="btn btn-primary" onClick={onSave} disabled={loading || saving}>
-            {saving ? "Saving..." : "Save AI settings"}
-          </button>
         </div>
       </div>
     </div>
