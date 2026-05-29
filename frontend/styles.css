@@ -1389,6 +1389,13 @@ table.data tbody tr.archived-row td {
   padding: 12px;
   line-height: 1.55;
 }
+.ai-tools-used {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
 .ai-thinking {
   display: flex;
   align-items: center;

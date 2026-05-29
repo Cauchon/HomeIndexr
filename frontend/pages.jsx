@@ -1356,21 +1356,29 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 }
 
 const AI_PROMPTS = [
+  "What neighborhood is this house in?",
   "Why did the value change recently?",
-  "Explain the biggest estimate drop.",
-  "What changed since the last refresh?",
+  "How does this compare to the local market?",
   "Summarize valuation risks for this property.",
 ];
+
+const TOOL_LABELS = {
+  web_search: "Web search",
+  reverse_geocode: "Geocoding",
+  geocode_address: "Geocoding",
+};
 
 function AIResearchPanel({ refEl, propertyId, settings, navigate, toast }) {
   const [question, setQuestion] = useState_p("");
   const [answer, setAnswer] = useState_p("");
   const [model, setModel] = useState_p("");
   const [usage, setUsage] = useState_p(null);
+  const [toolsUsed, setToolsUsed] = useState_p([]);
   const [asking, setAsking] = useState_p(false);
   const [askedQuestion, setAskedQuestion] = useState_p("");
   const enabled = Boolean(settings?.enabled);
   const hasKey = Boolean(settings?.has_deepseek_api_key);
+  const hasWebSearch = Boolean(settings?.has_brave_api_key);
   const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
   const canAsk = enabled && hasKey;
 
@@ -1386,11 +1394,13 @@ function AIResearchPanel({ refEl, propertyId, settings, navigate, toast }) {
     setAnswer("");
     setModel("");
     setUsage(null);
+    setToolsUsed([]);
     try {
       const res = await API.askPropertyAI(propertyId, q);
       setAnswer(res.answer || "");
       setModel(res.model || "");
       setUsage(res.usage || null);
+      setToolsUsed(Array.isArray(res.tools_used) ? res.tools_used : []);
     } catch (e) {
       toast.push({ kind: "err", text: e.message || "AI request failed" });
     } finally {
@@ -1405,7 +1415,9 @@ function AIResearchPanel({ refEl, propertyId, settings, navigate, toast }) {
           <div className="card-title"><Icon name="sparkles" /> AI Research</div>
           <div className="ai-status-line">
             {canAsk
-              ? "DeepSeek is ready for property questions"
+              ? hasWebSearch
+                ? "DeepSeek can research this property and the web"
+                : "DeepSeek is ready for property questions"
               : enabled
                 ? `Add ${envVar} in .env to ask questions`
                 : "Enable AI in Admin to ask property questions"}
@@ -1468,10 +1480,18 @@ function AIResearchPanel({ refEl, propertyId, settings, navigate, toast }) {
             {asking ? (
               <div className="ai-thinking">
                 <span />
-                Reading estimates, events, taxes, and current listing data...
+                Reading estimates, events, taxes, and researching the property...
               </div>
             ) : (
               <div className="ai-answer-text">{answer}</div>
+            )}
+            {!asking && toolsUsed.length > 0 && (
+              <div className="ai-tools-used">
+                <span className="admin-label">Looked up</span>
+                {[...new Set(toolsUsed.map((t) => TOOL_LABELS[t] || t))].map((label) => (
+                  <span key={label} className="badge neutral"><span className="dot" />{label}</span>
+                ))}
+              </div>
             )}
             {usage?.total_tokens != null && (
               <div className="ai-usage">Tokens used: {fmt.num(usage.total_tokens)}</div>
@@ -2720,6 +2740,9 @@ function AISettingsPanel({
   const hasKey = Boolean(settings?.has_deepseek_api_key);
   const source = settings?.deepseek_api_key_source === "dotenv" ? ".env" : "environment";
   const envVar = settings?.deepseek_api_key_env_var || "DEEPSEEK_API_KEY";
+  const hasWebSearch = Boolean(settings?.has_brave_api_key);
+  const braveSource = settings?.brave_api_key_source === "dotenv" ? ".env" : "environment";
+  const braveEnvVar = settings?.brave_api_key_env_var || "BRAVE_API_KEY";
   return (
     <div className="card">
       <div className="card-header"><div className="card-title">AI features</div></div>
@@ -2744,6 +2767,16 @@ function AISettingsPanel({
             {hasKey
               ? `API key detected from ${source}. The key is never stored in SQLite or returned by the API.`
               : `Add ${envVar} to .env or the server environment before using AI research.`}
+          </div>
+        </div>
+
+        <div className="schedule-note">
+          <div className="admin-label">Web research</div>
+          <div className="schedule-note-main">{hasWebSearch ? "Web search enabled" : "Web search off"}</div>
+          <div className="schedule-note-sub">
+            {hasWebSearch
+              ? `Brave key detected from ${braveSource}. The AI can look up neighborhood, schools, and local market facts beyond the stored data. Geocoding needs no key.`
+              : `Add ${braveEnvVar} to .env to let the AI search the web for facts not in the stored data. Without it, the AI can still geocode coordinates to a neighborhood.`}
           </div>
         </div>
 

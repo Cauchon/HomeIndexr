@@ -17,8 +17,9 @@ def _reset_db() -> None:
     dotenv_path = os.environ["HOMEINDEXR_DOTENV_PATH"]
     if os.path.exists(dotenv_path):
         os.unlink(dotenv_path)
+    base = db.db_path()
     for suffix in ("", "-wal", "-shm"):
-        path = db.DB_PATH.with_name(db.DB_PATH.name + suffix)
+        path = base.with_name(base.name + suffix)
         if path.exists():
             path.unlink()
     db.init_db()

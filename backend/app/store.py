@@ -110,6 +110,44 @@ def get_deepseek_api_base() -> str:
     return (os.environ.get("DEEPSEEK_API_BASE") or _dotenv_value("DEEPSEEK_API_BASE") or "https://api.deepseek.com").rstrip("/")
 
 
+def _brave_key_source() -> str | None:
+    if os.environ.get("BRAVE_API_KEY"):
+        return "environment"
+    if _dotenv_value("BRAVE_API_KEY"):
+        return "dotenv"
+    return None
+
+
+def get_brave_api_key() -> str | None:
+    """Brave Search API key, used to give the AI a web_search tool. Optional."""
+    return os.environ.get("BRAVE_API_KEY") or _dotenv_value("BRAVE_API_KEY")
+
+
+def get_brave_api_base() -> str:
+    return (
+        os.environ.get("BRAVE_API_BASE")
+        or _dotenv_value("BRAVE_API_BASE")
+        or "https://api.search.brave.com/res/v1"
+    ).rstrip("/")
+
+
+def get_geocoder_base() -> str:
+    """Nominatim-compatible geocoding endpoint. No key required."""
+    return (
+        os.environ.get("GEOCODER_BASE")
+        or _dotenv_value("GEOCODER_BASE")
+        or "https://nominatim.openstreetmap.org"
+    ).rstrip("/")
+
+
+def get_geocoder_user_agent() -> str:
+    return (
+        os.environ.get("GEOCODER_USER_AGENT")
+        or _dotenv_value("GEOCODER_USER_AGENT")
+        or "HomeIndexr/1.0 (local property research)"
+    )
+
+
 def _date_from_ms(ms: int | None) -> str | None:
     if ms is None:
         return None
@@ -173,12 +211,18 @@ def get_ai_settings() -> dict:
         ).fetchall()
     values = {row["key"]: row["value"] for row in rows}
     key_source = _deepseek_key_source()
+    brave_source = _brave_key_source()
     return {
         "enabled": values.get("ai_enabled") == "1",
         "provider": "deepseek",
         "has_deepseek_api_key": key_source is not None,
         "deepseek_api_key_source": key_source,
         "deepseek_api_key_env_var": "DEEPSEEK_API_KEY",
+        # Optional web_search tool. Geocoding tools need no key, so they are
+        # always available whenever AI is enabled.
+        "has_brave_api_key": brave_source is not None,
+        "brave_api_key_source": brave_source,
+        "brave_api_key_env_var": "BRAVE_API_KEY",
     }
 
 

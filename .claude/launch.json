@@ -5,7 +5,8 @@
       "name": "house-price-tracker",
       "runtimeExecutable": "./run.sh",
       "runtimeArgs": [],
-      "port": 5180
+      "autoPort": true,
+      "port": 5173
     }
   ]
 }

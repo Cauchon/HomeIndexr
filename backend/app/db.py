@@ -6,17 +6,31 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
-DB_PATH = Path(
-    os.environ.get("HOMEINDEXR_DB_PATH")
-    or os.environ.get("HT_DB_PATH", DATA_DIR / "app.db")
-)
+
+
+def db_path() -> Path:
+    """Resolve the SQLite path at call time, NOT at import.
+
+    Resolving lazily means tests can redirect the database via
+    ``HOMEINDEXR_DB_PATH`` regardless of import order. Binding this at import
+    time once froze the path to the real ``data/app.db`` when a test module
+    imported this module before setting the env var, and a test reset then wiped
+    real user data. Never reintroduce an import-time ``DB_PATH`` constant.
+    """
+    return Path(
+        os.environ.get("HOMEINDEXR_DB_PATH")
+        or os.environ.get("HT_DB_PATH")
+        or (DATA_DIR / "app.db")
+    )
+
 
 _lock = threading.Lock()
 
 
 def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, isolation_level=None)
+    path = db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
