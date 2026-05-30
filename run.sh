@@ -9,4 +9,7 @@ if [ ! -x "$PYTHON" ]; then
 fi
 
 PORT="${PORT:-5173}"
-exec "$PYTHON" -m uvicorn backend.app.main:app --reload --port "$PORT" --host 127.0.0.1
+# Defaults to localhost-only. Set HOST=0.0.0.0 to reach the app from other
+# devices (e.g. an iPhone over Tailscale): HOST=0.0.0.0 ./run.sh
+HOST="${HOST:-127.0.0.1}"
+exec "$PYTHON" -m uvicorn backend.app.main:app --reload --port "$PORT" --host "$HOST"
