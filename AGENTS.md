@@ -104,6 +104,25 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
     `BRAVE_API_KEY` for web search) must come from the server environment or
     ignored local `.env`. API responses may report key presence/source, never
     the key value.
+14. **Area listings are a per-ZIP cache, written only by user-initiated
+    property refresh.** `scraper.fetch_area_listings` runs Realtor's
+    `home_search` (SRP) for one ZIP, single page, no pagination. Refresh writes
+    the result to `area_listings` keyed by ZIP; `refresh-all` dedupes so each
+    unique ZIP is fetched once, not once per property. `GET /api/properties/{id}/area`
+    serves this cache only and must never trigger a Realtor fetch — opening a
+    detail page adds no upstream traffic. The area fetch is best-effort
+    (`store.refresh_area_for_zip` swallows errors) so a block or hiccup never
+    fails the core property refresh; the last good cache row stays in place.
+15. **Comparables are derived at read time, not cached.** `comps.rank_comparables`
+    (pure, in `backend/app/comps.py`) gates the cached ZIP listings to strict
+    appraisal-style comps (same `property_type`, living area within ±25%, beds
+    ±1) and ranks survivors by a weighted similarity score (sqft, distance via
+    haversine, year, beds, baths, lot). It keeps the strictest rung that yields
+    any comp and only relaxes when a rung is empty (±40% sqft → drop beds gate →
+    nearest-by-score), reporting which rung via `relaxed`. The `/area` endpoint
+    runs this against the cache, so the same cached ZIP serves different comps
+    per subject and a subject's attributes can change on refresh without
+    re-fetching. Keep ranking in this one pure module — don't fork the scoring.
 
 ## Data model
 
@@ -137,6 +156,7 @@ observed_events(id, property_id, observed_at, event_name, source,
                 listing_state, listing_id, old_price, new_price,
                 price, delta, pct)
 app_settings(key, value, updated_at)
+area_listings(zip, listings_json, fetched_at)
 tax_history(property_id, year, assessed_year, tax,
             assessment_building, assessment_land, assessment_total,
             market_building, market_land, market_total,
@@ -164,6 +184,7 @@ the frontend formatters.
 | GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
 | PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools |
+| GET    | `/api/properties/{id}/area`       | Comparable for-sale homes in this property's ZIP (cache-only; excludes the subject; strict gating + similarity ranking). `{zip, fetched_at, comps, relaxed, limited, subject_price_per_sqft}` |
 | POST   | `/api/properties/{id}/ai/ask`     | `{question}` — server-side DeepSeek answer grounded in local property context; may call web-search/geocoding tools. Returns `tools_used` |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
 | PATCH  | `/api/properties/{id}`            | Edit `property_name`, `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |
