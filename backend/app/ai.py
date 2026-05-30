@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 import requests
@@ -19,6 +20,17 @@ MAX_TOOL_STEPS = 4
 WEB_SEARCH_TIMEOUT = 20
 GEOCODE_TIMEOUT = 20
 CHAT_TIMEOUT = 45
+
+# Hard ceiling on Brave web_search calls per question. A tool round can contain
+# several web_search calls, so MAX_TOOL_STEPS alone does not bound Brave usage —
+# this does. Tuned for the Brave free tier (~2,000 queries/month): at 3/question
+# that's ~650 AI questions/month before exhausting the quota.
+MAX_WEB_SEARCHES = 3
+# Brave's free tier rate-limits to ~1 query/second, and the model often fires
+# searches back-to-back. Retry once after a short wait on a 429 rather than
+# handing the model a failed search it would waste another round retrying.
+WEB_SEARCH_MAX_RETRIES = 1
+WEB_SEARCH_RETRY_WAIT = 1.2
 
 # When we cut the model off at the tool-call limit, we must force a prose answer.
 # DeepSeek reasoning models (e.g. deepseek-v4-flash) that still "want" to call a
@@ -196,15 +208,19 @@ def _web_search(query: str, count: int = 5) -> dict:
     if not key:
         return {"error": "web search is not configured"}
     count = max(1, min(int(count or 5), 10))
-    try:
-        res = requests.get(
-            f"{store.get_brave_api_base()}/web/search",
-            headers={"Accept": "application/json", "X-Subscription-Token": key},
-            params={"q": query, "count": count},
-            timeout=WEB_SEARCH_TIMEOUT,
-        )
-    except requests.RequestException as e:
-        return {"error": f"web search request failed: {e}"}
+    url = f"{store.get_brave_api_base()}/web/search"
+    headers = {"Accept": "application/json", "X-Subscription-Token": key}
+    params = {"q": query, "count": count}
+    for attempt in range(WEB_SEARCH_MAX_RETRIES + 1):
+        try:
+            res = requests.get(url, headers=headers, params=params, timeout=WEB_SEARCH_TIMEOUT)
+        except requests.RequestException as e:
+            return {"error": f"web search request failed: {e}"}
+        # Back off and retry once on a rate-limit response (free tier: 1 query/s).
+        if res.status_code == 429 and attempt < WEB_SEARCH_MAX_RETRIES:
+            time.sleep(WEB_SEARCH_RETRY_WAIT)
+            continue
+        break
     if not res.ok:
         return {"error": f"web search HTTP {res.status_code}", "detail": res.text[:200]}
     data = res.json() if res.content else {}
@@ -328,7 +344,8 @@ def answer_property_question(prop: dict, question: str) -> dict:
         tool_lines.insert(
             0,
             "- web_search: look up public facts that aren't in the data (neighborhood, "
-            "schools, local market, amenities, news).",
+            "schools, local market, amenities, news). Limited to "
+            f"{MAX_WEB_SEARCHES} searches per question, so make each query count.",
         )
 
     system = (
@@ -357,6 +374,7 @@ def answer_property_question(prop: dict, question: str) -> dict:
 
     usage_total: dict = {}
     tools_used: list[str] = []
+    web_searches_used = 0
 
     for step in range(MAX_TOOL_STEPS + 1):
         offering_tools = bool(tools) and step < MAX_TOOL_STEPS
@@ -417,7 +435,18 @@ def answer_property_question(prop: dict, question: str) -> dict:
                 args = json.loads(fn.get("arguments") or "{}")
             except (TypeError, ValueError):
                 args = {}
-            result = _dispatch_tool(prop, name, args)
+            # Enforce the per-question Brave budget without hitting the API.
+            if name == "web_search" and web_searches_used >= MAX_WEB_SEARCHES:
+                result = {
+                    "error": (
+                        f"web search budget reached ({MAX_WEB_SEARCHES} per question); "
+                        "answer using the results you already have"
+                    )
+                }
+            else:
+                result = _dispatch_tool(prop, name, args)
+                if name == "web_search":
+                    web_searches_used += 1
             if name and name not in tools_used:
                 tools_used.append(name)
             messages.append(

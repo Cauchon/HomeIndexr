@@ -146,6 +146,48 @@ class ToolLoopTests(unittest.TestCase):
 
     @patch.object(store, "get_brave_api_key", return_value="brave-test")
     @patch.object(store, "get_deepseek_api_key", return_value="sk-test")
+    def test_web_search_budget_caps_brave_calls(self, *_):
+        # One round fires more web_search calls than the per-question budget.
+        many = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {"id": f"c{i}", "type": "function",
+                 "function": {"name": "web_search", "arguments": '{"query": "q"}'}}
+                for i in range(ai.MAX_WEB_SEARCHES + 2)
+            ],
+        }
+        chats = [_chat(many), _chat({"role": "assistant", "content": "Answer."})]
+        search = _resp(json_data={"web": {"results": [
+            {"title": "t", "url": "https://example.com", "description": "d"}
+        ]}})
+        with patch.object(ai.requests, "post", side_effect=chats) as post, \
+                patch.object(ai.requests, "get", return_value=search) as get:
+            ai.answer_property_question(self.prop, "What's the neighborhood like?")
+
+        # Brave is hit only up to the budget; the rest are short-circuited.
+        self.assertEqual(get.call_count, ai.MAX_WEB_SEARCHES)
+        tool_results = [m for m in post.call_args_list[1].kwargs["json"]["messages"]
+                        if m.get("role") == "tool"]
+        over = [m for m in tool_results if "budget reached" in m["content"]]
+        self.assertEqual(len(over), 2)
+
+    @patch.object(store, "get_brave_api_key", return_value="brave-test")
+    def test_web_search_retries_once_on_429(self, *_):
+        limited = _resp(ok=False, status=429, text="rate limited")
+        good = _resp(json_data={"web": {"results": [
+            {"title": "t", "url": "https://example.com", "description": "d"}
+        ]}})
+        with patch.object(ai.requests, "get", side_effect=[limited, good]) as get, \
+                patch.object(ai.time, "sleep") as sleep:
+            res = ai._web_search("query", 3)
+
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once()
+        self.assertEqual(len(res["results"]), 1)
+
+    @patch.object(store, "get_brave_api_key", return_value="brave-test")
+    @patch.object(store, "get_deepseek_api_key", return_value="sk-test")
     def test_leaked_tool_markup_is_not_surfaced(self, *_):
         leaked = '<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name="web_search">'
         chats = [_chat({"role": "assistant", "content": leaked})]
