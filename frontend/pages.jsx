@@ -3,6 +3,23 @@
 
 const { useState: useState_p, useMemo: useMemo_p, useEffect: useEffect_p } = React;
 
+// Live viewport check — true on phone-width screens, kept in sync via a
+// matchMedia listener so the comps module can swap to its two-up grid.
+function useIsMobile(maxWidth = 480) {
+  const query = `(max-width: ${maxWidth}px)`;
+  const [isMobile, setIsMobile] = useState_p(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches
+  );
+  useEffect_p(() => {
+    const mql = window.matchMedia(query);
+    const onChange = (e) => setIsMobile(e.matches);
+    mql.addEventListener("change", onChange);
+    setIsMobile(mql.matches);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+  return isMobile;
+}
+
 // ---------- Contextual price ----------
 // Returns whichever price is meaningful for this property's current listing
 // state, plus a tag for context. `base` is the value to diff the estimate
@@ -851,6 +868,82 @@ function CompCard({ comp }) {
   );
 }
 
+// Compact two-up card — the phone-width treatment of a comparable home. Denser
+// than CompCard: a 4:3 photo with the days-on-market badge, then price, address,
+// a single specs line, and a meta row pairing distance · days-on-market against
+// $/sqft. Keeps the same footer as the desktop card (full-width Track button +
+// open-listing link); only the "price reduced" flag is dropped to save room.
+function CompCardCompact({ comp }) {
+  const [tracked, setTracked] = useState_p(false);
+  const toast = useToast();
+  const addr = comp.line || comp.address || "—";
+
+  function toggleTrack() {
+    setTracked((v) => {
+      const next = !v;
+      toast.push(next
+        ? { kind: "ok", text: `Now tracking ${addr}` }
+        : { kind: "info", text: `Stopped tracking ${addr}` });
+      return next;
+    });
+  }
+
+  const metaLeft = [
+    comp.distance_mi != null ? `${comp.distance_mi} mi` : null,
+    comp.days_on_market != null ? `${comp.days_on_market}d` : null,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div className="cmpM-card">
+      <div className="cmp-photo">
+        {comp.days_on_market != null && <span className="cmp-dom">{comp.days_on_market}d</span>}
+        {comp.photo_url
+          ? <img
+              src={rdcResize(comp.photo_url, "x")}
+              srcSet={`${rdcResize(comp.photo_url, "x")} 1x, ${rdcResize(comp.photo_url, "od")} 2x`}
+              alt=""
+              loading="lazy"
+            />
+          : <span>listing photo</span>}
+      </div>
+      <div className="cmpM-body">
+        <div className="cmpM-priceline">
+          <span className="cmpM-price">{comp.list_price != null ? fmt.usd(comp.list_price) : "—"}</span>
+        </div>
+        <div className="cmpM-addr" title={addr}>{addr}</div>
+        <div className="cmpM-specs">
+          {comp.beds != null ? `${comp.beds} bd` : "— bd"} · {comp.baths != null ? `${fmt.baths(comp.baths)} ba` : "— ba"} · {comp.sqft != null ? `${fmt.num(comp.sqft)} sqft` : "— sqft"}
+        </div>
+        <div className="cmpM-metarow">
+          <span className="cmpM-dist">{metaLeft || "—"}</span>
+          {comp.price_per_sqft != null && <span className="cmpM-dist">{fmt.usd(comp.price_per_sqft)}/sf</span>}
+        </div>
+        <div className="cmpM-foot">
+          <button
+            className={"cmp-track" + (tracked ? " on" : "")}
+            onClick={toggleTrack}
+            title={tracked ? "Tracking — added to your properties" : "Add to HomeTracker"}
+          >
+            <Icon name={tracked ? "check" : "plus"} size={13} />
+            {tracked ? "Tracking" : "Track"}
+          </button>
+          {comp.property_url && (
+            <a
+              className="cmp-link"
+              href={comp.property_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open listing on Realtor.com"
+            >
+              <Icon name="arrowUpRight" size={13} />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Comparable homes for sale in this property's ZIP — Option A photo card grid,
 // sitting full-width below the activity timeline. Reads a server-side cache
 // (refreshed only when the user refreshes the property — this module never
@@ -861,6 +954,9 @@ function CompCard({ comp }) {
 // relaxed note shows when strict gating fell back to a looser comp set.
 function AreaListingsCard({ property }) {
   const [state, setState] = useState_p({ loading: true, error: null, data: null });
+  // Switch to the compact two-up grid at the same width the desktop card grid
+  // would otherwise collapse to a single column, so comps stay two-up on phones.
+  const isMobile = useIsMobile(560);
 
   useEffect_p(() => {
     let alive = true;
@@ -885,7 +981,7 @@ function AreaListingsCard({ property }) {
   const maxDist = dists.length ? Math.max(...dists) : null;
 
   return (
-    <div className="cmp-module" style={{ marginTop: 16 }}>
+    <div className="cmp-module">
       <div className="cmp-head">
         <div className="cmp-head-l">
           <h2 className="cmp-title">
@@ -926,8 +1022,10 @@ function AreaListingsCard({ property }) {
             : "Refresh this property to find comparable homes for sale in its ZIP."}
         </div>
       ) : (
-        <div className="cmpA-grid">
-          {comps.map((c) => <CompCard key={c.property_id} comp={c} />)}
+        <div className={isMobile ? "cmpM-grid" : "cmpA-grid"}>
+          {comps.map((c) => isMobile
+            ? <CompCardCompact key={c.property_id} comp={c} />
+            : <CompCard key={c.property_id} comp={c} />)}
         </div>
       )}
     </div>
@@ -1412,7 +1510,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       </div>
 
       <div className="detail-grid">
-        <div>
+        <div className="detail-main">
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <div className="card-title">Value over time</div>
@@ -1465,10 +1563,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             </div>
           )}
 
-          {!isArchived && <AreaListingsCard property={property} />}
         </div>
 
-        <div>
+        <div className="detail-side">
           {!isArchived && (
             <AskAboutHome
               refEl={aiPanelRef}
@@ -1528,6 +1625,8 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
           <SchoolsCard schools={property.schools || []} />
         </div>
+
+        {!isArchived && <AreaListingsCard property={property} />}
       </div>
     </div>
   );
