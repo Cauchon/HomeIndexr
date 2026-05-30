@@ -23,9 +23,10 @@ CHAT_TIMEOUT = 45
 
 # Hard ceiling on Brave web_search calls per question. A tool round can contain
 # several web_search calls, so MAX_TOOL_STEPS alone does not bound Brave usage —
-# this does. Tuned for the Brave free tier (~2,000 queries/month): at 3/question
-# that's ~650 AI questions/month before exhausting the quota.
-MAX_WEB_SEARCHES = 3
+# this does. Tuned for the Brave free tier (~2,000 queries/month): at 5/question
+# that's ~400 AI questions/month before exhausting the quota, ample for personal
+# use while giving broad, multi-part questions room to search.
+MAX_WEB_SEARCHES = 5
 # Brave's free tier rate-limits to ~1 query/second, and the model often fires
 # searches back-to-back. Retry once after a short wait on a 429 rather than
 # handing the model a failed search it would waste another round retrying.
