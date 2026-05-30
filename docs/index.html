@@ -110,15 +110,16 @@
           <span class="dot"></span>
           Open source &amp; self-hosted
         </span>
-        <h1>Track any home's price <span class="accent">over time.</span></h1>
+        <h1>Track any home's price <span class="accent">and keep the receipts.</span></h1>
         <p class="lede">
-          A personal Zillow that you own — with the receipts. HomeIndexr scrapes
-          property data on your machine and charts how prices, estimates, and market
-          events move across weeks and months. No ads, no accounts, no subscription.
+          A personal Zillow that you own. HomeIndexr tracks how a home's price,
+          estimate, and market events move across weeks and months — all on your
+          own machine, saved in a file that's yours. No ads, no accounts, no
+          subscription.
         </p>
         <div class="hero-cta">
-          <a class="btn btn-primary btn-lg" href="#quickstart">
-            Get Started
+          <a class="btn btn-primary btn-lg" href="#how">
+            See how it works
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
           <a class="btn btn-lg" href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">
@@ -197,7 +198,7 @@
                 </div>
                 <div class="sfoot">
                   <span class="dot"></span>
-                  HomeHarvest connected
+                  Stored locally · data/app.db
                 </div>
               </aside>
 
@@ -309,7 +310,7 @@
       <div class="container proof-inner">
         <span class="pi">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>
-          Records <b>every price change</b>
+          Logs <b>every price change</b> it sees
         </span>
         <span class="dotsep"></span>
         <span class="pi">
@@ -334,7 +335,7 @@
       <div class="container">
         <div class="section-head center">
           <span class="eyebrow">Features</span>
-          <h2 class="section-title">Everything a property nerd wants — and nothing you didn't ask for</h2>
+          <h2 class="section-title">Everything you'd actually watch on a home — and nothing you didn't ask for</h2>
           <p class="section-sub">No dashboards full of upsells. Just the data you'd actually watch, captured every time you refresh and kept on disk where you can query it.</p>
         </div>
 
@@ -351,8 +352,8 @@
             <div class="ficon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>
             </div>
-            <h3>AVM history</h3>
-            <p>Backfills Realtor's historical automated valuations, then charts the estimate with its low/high confidence band.</p>
+            <h3>Estimate history</h3>
+            <p>Backfills Realtor's historical automated valuations (AVMs), then charts the estimate with its low/high confidence band.</p>
           </article>
 
           <article class="feature-card">
@@ -403,7 +404,7 @@
           <article class="step">
             <div class="step-n">1</div>
             <h3>Add an address</h3>
-            <p>Paste any street address. HomeIndexr matches it to a Realtor.com listing and creates the record.</p>
+            <p>Paste any street address. HomeIndexr finds the matching listing and creates the record.</p>
             <div class="step-visual">
               <div class="sv-input">
                 <div class="box">
@@ -474,16 +475,17 @@
             <div class="terminal-body">
 <div class="line"><span class="cmt"># 1 · clone the repo</span></div>
 <div class="line"><span class="prompt">$ </span><span class="cmd">git clone https://github.com/Cauchon/HomeIndexr</span></div>
-<div class="line"><span class="prompt">$ </span><span class="cmd">cd homeindexr</span></div>
+<div class="line"><span class="prompt">$ </span><span class="cmd">cd HomeIndexr</span></div>
 <div class="line">&nbsp;</div>
-<div class="line"><span class="cmt"># 2 · create a virtualenv</span></div>
-<div class="line"><span class="prompt">$ </span><span class="cmd">python -m venv .venv <span class="flag">&amp;&amp;</span> source .venv/bin/activate</span></div>
+<div class="line"><span class="cmt"># 2 · create a Python 3 venv + install deps</span></div>
+<div class="line"><span class="prompt">$ </span><span class="cmd">python3 -m venv .venv312</span></div>
+<div class="line"><span class="prompt">$ </span><span class="cmd">.venv312/bin/pip install fastapi uvicorn <span class="flag">\</span></span></div>
+<div class="line"><span class="cmd">      requests pydantic</span></div>
 <div class="line">&nbsp;</div>
-<div class="line"><span class="cmt"># 3 · run it (installs deps, starts API + web)</span></div>
+<div class="line"><span class="cmt"># 3 · run it (one process: API + dashboard, no build)</span></div>
 <div class="line"><span class="prompt">$ </span><span class="cmd">./run.sh</span></div>
-<div class="line"><span class="out">  ✓ FastAPI  </span><span class="ok">→ http://localhost:8000</span></div>
-<div class="line"><span class="out">  ✓ Vite     </span><span class="ok">→ http://localhost:5173</span></div>
-<div class="line"><span class="out">  ✓ SQLite   </span><span class="out">→ ./homeindexr.db</span></div>
+<div class="line"><span class="out">  ✓ FastAPI + dashboard  </span><span class="ok">→ http://localhost:5173</span></div>
+<div class="line"><span class="out">  ✓ SQLite               </span><span class="out">→ ./data/app.db</span></div>
 <div class="line">&nbsp;</div>
 <div class="line"><span class="cmt"># 4 · open the dashboard</span></div>
 <div class="line"><span class="prompt">$ </span><span class="cmd">open </span><span class="url">http://localhost:5173</span><span class="caret-blink"></span></div>
@@ -493,7 +495,7 @@
           <div>
             <span class="eyebrow">Quickstart</span>
             <h2 class="section-title" style="margin-top:14px">Running in under a minute</h2>
-            <p class="section-sub">No Docker required, no cloud signup. If you have Python and Node, you're basically done.</p>
+            <p class="section-sub">No Docker, no cloud signup, no build step. If you have Python 3, you're basically done.</p>
             <ol class="qs-list">
               <li>
                 <span class="qn">1</span>
@@ -505,15 +507,15 @@
               <li>
                 <span class="qn">2</span>
                 <div>
-                  <div class="qt">Create a venv</div>
-                  <div class="qd">A standard Python <code>venv</code> keeps dependencies isolated.</div>
+                  <div class="qt">Create a venv &amp; install</div>
+                  <div class="qd">A Python 3 <code>venv</code>, then <code>pip install</code> four deps: FastAPI, Uvicorn, requests, Pydantic.</div>
                 </div>
               </li>
               <li>
                 <span class="qn">3</span>
                 <div>
                   <div class="qt">Run <code>./run.sh</code></div>
-                  <div class="qd">Boots the FastAPI backend and the React frontend together.</div>
+                  <div class="qd">Starts the API and serves the dashboard — one process, on one port, no build.</div>
                 </div>
               </li>
               <li>
@@ -603,12 +605,11 @@
                 GitHub
               </a>
               <a href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">Report an issue</a>
-              <a href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">License (MIT)</a>
+              <a href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">License</a>
             </div>
           </div>
         </div>
         <div class="footer-bottom">
-          <span class="mono">repo by Cauchon</span>
           <span>Not affiliated with Realtor.com or Zillow. For personal use.</span>
         </div>
       </div>
