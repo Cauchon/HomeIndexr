@@ -38,20 +38,31 @@ python3.12 -m venv .venv312
 
 Then open <http://127.0.0.1:5173>.
 
+`run.sh` reads `PORT` (default `5173`) and `HOST` (default `127.0.0.1`). Set
+`HOST=0.0.0.0` to reach the app from other devices on your network, e.g. an
+iPhone over Tailscale: `HOST=0.0.0.0 ./run.sh`.
+
 ## Optional AI
 
-AI features are optional and use DeepSeek when enabled. Keep the API key out of
+AI features are optional and use DeepSeek when enabled. Keep API keys out of
 SQLite and source control:
 
 ```bash
 cp .env.example .env
 # edit .env and set:
 # DEEPSEEK_API_KEY=...
+# BRAVE_API_KEY=...   # optional, enables web search (see below)
 ```
 
 The Admin panel stores only the `ai_enabled` toggle in SQLite. The backend
-detects `DEEPSEEK_API_KEY` from the process environment first, then from the
-ignored local `.env` file, and never returns the key through the API.
+detects keys from the process environment first, then from the ignored local
+`.env` file, and never returns them through the API.
+
+The AI ask endpoint answers primarily from each property's stored context
+(prices, AVMs, events, taxes, schools). If `BRAVE_API_KEY` is set, the assistant
+can also run web searches for facts not in the stored data (neighborhood, local
+market, etc.), capped per question. Without it, geocoding tools still work and
+the assistant falls back to local context only.
 
 ## API
 
@@ -61,7 +72,7 @@ ignored local `.env` file, and never returns the key through the API.
 | GET    | `/api/admin/ai-settings`              | AI enabled/key-present status          |
 | PATCH  | `/api/admin/ai-settings`              | Update non-secret AI settings          |
 | GET    | `/api/properties/{id}`                | Property + history + events + taxes + schools |
-| POST   | `/api/properties/{id}/ai/ask`         | Ask an AI question about a property using local context |
+| POST   | `/api/properties/{id}/ai/ask`         | Ask an AI question about a property (local context + optional web search) |
 | POST   | `/api/properties`                     | Add property, refresh current state, and backfill history |
 | PATCH  | `/api/properties/{id}`                | Edit address/display fields and active state |
 | POST   | `/api/properties/{id}/archive`        | Hide from default dashboard and refresh-all |
