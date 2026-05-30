@@ -760,99 +760,176 @@ function SchoolsCard({ schools }) {
   );
 }
 
-// Comparable homes for sale in this property's ZIP. Reads a server-side cache
-// (refreshed only when the user refreshes the property — this card never
+// Realtor's photo CDN (rdcpix) serves each image at several sizes, picked by a
+// 1–2 letter code right before ".jpg". The feed hands us "s" (120px wide), which
+// renders blurry stretched across a 3:2 card — swap in a display-appropriate size
+// ("x" = 460px, "od" = 1024px). Non-rdcpix or unrecognized URLs pass through.
+const RDC_SIZE_RE = /(\d)(od|rd|o|s|t|m|l|x)(\.jpg)(\?.*)?$/i;
+function rdcResize(url, size) {
+  if (!url || !RDC_SIZE_RE.test(url)) return url;
+  // Upgrade http→https too, so the photos aren't mixed-content blocked on an
+  // HTTPS deployment (the feed stores http rdcpix URLs).
+  return url.replace(/^http:/i, "https:").replace(RDC_SIZE_RE, `$1${size}$3$4`);
+}
+
+// One comparable listing — a photo-forward card (design Option A). 3:2 listing
+// photo with a days-on-market pill and the appraisal match score, then address +
+// distance, list price + the listing's own $/sqft, and beds·baths·sqft. "Track"
+// toggles a green tracking state (demonstrates adding the comp to HomeTracker);
+// the ↗ button opens the listing on Realtor.com.
+function CompCard({ comp }) {
+  const [tracked, setTracked] = useState_p(false);
+  const toast = useToast();
+  const addr = comp.line || comp.address || "—";
+
+  function toggleTrack() {
+    setTracked((v) => {
+      const next = !v;
+      toast.push(next
+        ? { kind: "ok", text: `Now tracking ${addr}` }
+        : { kind: "info", text: `Stopped tracking ${addr}` });
+      return next;
+    });
+  }
+
+  return (
+    <div className="cmpA-card">
+      <div className="cmp-photo">
+        {comp.days_on_market != null && <span className="cmp-dom">{comp.days_on_market}d on market</span>}
+        {comp.comp_score != null && <span className="cmp-match">{comp.comp_score}% match</span>}
+        {comp.photo_url
+          ? <img
+              src={rdcResize(comp.photo_url, "x")}
+              srcSet={`${rdcResize(comp.photo_url, "x")} 1x, ${rdcResize(comp.photo_url, "od")} 2x`}
+              alt=""
+              loading="lazy"
+            />
+          : <span>listing photo</span>}
+      </div>
+      <div className="cmpA-body">
+        <div className="cmpA-addr-row">
+          <span className="cmpA-addr" title={addr}>{addr}</span>
+          {comp.distance_mi != null && <span className="cmpA-dist">{comp.distance_mi} mi</span>}
+        </div>
+        <div className="cmpA-price-row">
+          <span className="cmpA-price">{comp.list_price != null ? fmt.usd(comp.list_price) : "—"}</span>
+          {comp.price_per_sqft != null && <span className="cmpA-ppsf">{fmt.usd(comp.price_per_sqft)}/sqft</span>}
+        </div>
+        <div className="cmpA-specs">
+          <span>{comp.beds != null ? `${comp.beds} bd` : "— bd"}</span><span className="dot"></span>
+          <span>{comp.baths != null ? `${fmt.baths(comp.baths)} ba` : "— ba"}</span><span className="dot"></span>
+          <span>{comp.sqft != null ? `${fmt.num(comp.sqft)} sqft` : "— sqft"}</span>
+        </div>
+        {comp.is_price_reduced && (
+          <div className="cmpA-flags">
+            <span className="badge warn">Price reduced</span>
+          </div>
+        )}
+        <div className="cmpA-foot">
+          <button
+            className={"cmp-track" + (tracked ? " on" : "")}
+            onClick={toggleTrack}
+            title={tracked ? "Tracking — added to your properties" : "Add to HomeTracker"}
+          >
+            <Icon name={tracked ? "check" : "plus"} size={13} />
+            {tracked ? "Tracking" : "Track"}
+          </button>
+          {comp.property_url && (
+            <a
+              className="cmp-link"
+              href={comp.property_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open listing on Realtor.com"
+            >
+              <Icon name="arrowUpRight" size={13} />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Comparable homes for sale in this property's ZIP — Option A photo card grid,
+// sitting full-width below the activity timeline. Reads a server-side cache
+// (refreshed only when the user refreshes the property — this module never
 // triggers a Realtor fetch, so opening a detail page adds no upstream traffic),
-// then the server gates + ranks them into appraisal-style comps. Empty state
-// points the user at refresh; a relaxed note shows when strict gating fell back.
-function AreaListingsCard({ propertyId }) {
+// which the server gates + ranks into appraisal-style comps. Header shows the
+// count and scope chips (within X mi · bed/sqft band · this home's $/sqft)
+// derived from the actual comp set. Empty state points the user at refresh; a
+// relaxed note shows when strict gating fell back to a looser comp set.
+function AreaListingsCard({ property }) {
   const [state, setState] = useState_p({ loading: true, error: null, data: null });
 
   useEffect_p(() => {
     let alive = true;
     setState({ loading: true, error: null, data: null });
-    API.getAreaListings(propertyId)
+    API.getAreaListings(property.id)
       .then((data) => { if (alive) setState({ loading: false, error: null, data }); })
       .catch((e) => { if (alive) setState({ loading: false, error: e.message || "Failed to load", data: null }); });
     return () => { alive = false; };
-  }, [propertyId]);
+  }, [property.id]);
 
   const { loading, error, data } = state;
   const comps = (data && data.comps) || [];
   const fetchedAt = data && data.fetched_at;
   const subjectPpsf = data && data.subject_price_per_sqft;
+  const line1 = splitAddress(displayAddress(property)).line1;
+
+  // Scope chips derived from the actual comp set (not the request).
+  const sqfts = comps.map((c) => c.sqft).filter((v) => v != null);
+  const dists = comps.map((c) => c.distance_mi).filter((v) => v != null);
+  const lo = sqfts.length ? Math.floor(Math.min(...sqfts) / 50) * 50 : null;
+  const hi = sqfts.length ? Math.ceil(Math.max(...sqfts) / 50) * 50 : null;
+  const maxDist = dists.length ? Math.max(...dists) : null;
 
   return (
-    <div className="card" style={{ marginTop: 12 }}>
-      <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <div className="card-title">Comparable homes{data && data.zip ? ` · ${data.zip}` : ""}</div>
-        {fetchedAt ? <span className="k" style={{ fontSize: 11 }}>Updated {fmt.relative(fetchedAt)}</span> : null}
-      </div>
-      <div className="card-body flush">
-        {loading ? (
-          <div className="fact-row"><span className="k">Loading…</span></div>
-        ) : error ? (
-          <div className="fact-row"><span className="k">{error}</span></div>
-        ) : comps.length === 0 ? (
-          <div className="fact-row" style={{ padding: "12px 0" }}>
-            <span className="k" style={{ whiteSpace: "normal" }}>
-              {fetchedAt
-                ? "No comparable for-sale homes in this ZIP."
-                : "Refresh this property to find comparable homes for sale in its ZIP."}
-            </span>
+    <div className="cmp-module" style={{ marginTop: 16 }}>
+      <div className="cmp-head">
+        <div className="cmp-head-l">
+          <h2 className="cmp-title">
+            Comparable homes for sale
+            {comps.length > 0 && <span className="cmp-count">{comps.length}</span>}
+          </h2>
+          <div className="cmp-sub">
+            Active listings near <b>{line1}</b>
+            {data && data.zip ? ` · ${data.zip}` : ""}
+            {fetchedAt ? ` · updated ${fmt.relative(fetchedAt)}` : ""}
           </div>
-        ) : (
-          <React.Fragment>
-            {(subjectPpsf != null || data.relaxed) && (
-              <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
-                {subjectPpsf != null && (
-                  <span className="k" style={{ fontSize: 11 }}>
-                    This home: <strong>{fmt.usd(subjectPpsf)}/sqft</strong>
-                  </span>
-                )}
-                {data.relaxed && (
-                  <span className="k" style={{ fontSize: 11, whiteSpace: "normal", display: "block", marginTop: subjectPpsf != null ? 2 : 0 }}>
-                    Few strict comps — {data.relaxed}.
-                  </span>
-                )}
-              </div>
+        </div>
+        {comps.length > 0 && (
+          <div className="cmp-head-r">
+            {maxDist != null && <span className="cmp-scope">Within <b>{maxDist} mi</b></span>}
+            {property.beds != null && lo != null && (
+              <span className="cmp-scope"><b>{property.beds} bd</b> · {fmt.num(lo)}–{fmt.num(hi)} sqft</span>
             )}
-            <div className="facts-stack">
-              {comps.map((l) => (
-                <a
-                  key={l.property_id}
-                  href={l.property_url || "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="fact-row"
-                  style={{ alignItems: "center", textDecoration: "none", color: "inherit" }}
-                >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
-                    <span className="v" style={{ fontWeight: 500, whiteSpace: "normal" }}>
-                      {l.line || l.address || "—"}
-                      {l.is_new_listing ? <span className="badge ok" style={{ marginLeft: 6, verticalAlign: "middle" }}>New</span> : null}
-                      {l.is_price_reduced ? <span className="badge warn" style={{ marginLeft: 6, verticalAlign: "middle" }}>Reduced</span> : null}
-                    </span>
-                    <span className="k" style={{ fontSize: 11 }}>
-                      {l.beds != null ? `${l.beds} bd` : "—"}
-                      {l.baths != null ? ` · ${fmt.baths(l.baths)} ba` : ""}
-                      {l.sqft != null ? ` · ${fmt.num(l.sqft)} sqft` : ""}
-                      {l.price_per_sqft != null ? ` · ${fmt.usd(l.price_per_sqft)}/sqft` : ""}
-                      {l.distance_mi != null ? ` · ${l.distance_mi} mi` : ""}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end", marginLeft: 8 }}>
-                    <span className="v" style={{ fontWeight: 600 }}>{fmt.usd(l.list_price)}</span>
-                    {l.comp_score != null && (
-                      <span className="k" style={{ fontSize: 11 }}>{l.comp_score}% match</span>
-                    )}
-                  </div>
-                </a>
-              ))}
-            </div>
-          </React.Fragment>
+            {subjectPpsf != null && (
+              <span className="cmp-scope">This home <b>{fmt.usd(subjectPpsf)}/sqft</b></span>
+            )}
+          </div>
         )}
       </div>
+
+      {data && data.relaxed && comps.length > 0 && (
+        <div className="cmp-note">Few strict comps — {data.relaxed}.</div>
+      )}
+
+      {loading ? (
+        <div className="cmp-state">Loading comparable homes…</div>
+      ) : error ? (
+        <div className="cmp-state">{error}</div>
+      ) : comps.length === 0 ? (
+        <div className="cmp-state">
+          {fetchedAt
+            ? "No comparable for-sale homes in this ZIP."
+            : "Refresh this property to find comparable homes for sale in its ZIP."}
+        </div>
+      ) : (
+        <div className="cmpA-grid">
+          {comps.map((c) => <CompCard key={c.property_id} comp={c} />)}
+        </div>
+      )}
     </div>
   );
 }
@@ -1387,6 +1464,8 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
               </div>
             </div>
           )}
+
+          {!isArchived && <AreaListingsCard property={property} />}
         </div>
 
         <div>
@@ -1448,8 +1527,6 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
 
           <SchoolsCard schools={property.schools || []} />
-
-          <AreaListingsCard propertyId={property.id} />
         </div>
       </div>
     </div>

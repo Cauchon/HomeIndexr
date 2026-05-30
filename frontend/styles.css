@@ -2413,3 +2413,152 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ============================================================
+   Comparable homes for sale — detail-page module (design Option A).
+   Photo-forward card grid of nearby active listings; sits full-width
+   below the activity timeline. Prefixed cmp- / cmpA-.
+   ============================================================ */
+.cmp-module { font-family: "Inter", ui-sans-serif, system-ui, sans-serif; color: var(--text); }
+
+/* ---- module header ---- */
+.cmp-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.cmp-head-l { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cmp-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin: 0;
+}
+.cmp-title .cmp-count {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg-sunken); border: 1px solid var(--border);
+  border-radius: 20px; padding: 1px 8px; font-variant-numeric: tabular-nums;
+}
+.cmp-sub { font-size: 12px; color: var(--text-muted); }
+.cmp-sub b { color: var(--text); font-weight: 600; }
+.cmp-head-r { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cmp-scope {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-muted);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 9px; box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+.cmp-scope b { color: var(--text); font-weight: 600; }
+
+/* ---- relaxed-gating note + loading/empty/error states ---- */
+.cmp-note {
+  font-size: 12px; color: var(--text-muted);
+  margin: -2px 0 12px;
+}
+.cmp-state {
+  font-size: 13px; color: var(--text-muted);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-sm);
+  padding: 18px 16px;
+}
+
+/* ---- photo slot (real 3:2 listing photo, or a labeled placeholder) ---- */
+.cmp-photo {
+  position: relative;
+  background:
+    repeating-linear-gradient(135deg,
+      var(--bg-sunken) 0, var(--bg-sunken) 9px,
+      color-mix(in oklab, var(--bg-sunken) 55%, var(--border)) 9px,
+      color-mix(in oklab, var(--bg-sunken) 55%, var(--border)) 18px);
+  display: grid; place-items: center; overflow: hidden;
+}
+.cmp-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cmp-photo > span:not(.cmp-dom):not(.cmp-match) {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text-faint);
+  background: color-mix(in oklab, var(--bg-elev) 86%, transparent);
+  padding: 2px 7px; border-radius: 4px;
+}
+.cmp-photo .cmp-dom,
+.cmp-photo .cmp-match {
+  position: absolute; top: 7px;
+  font-family: "Inter", ui-sans-serif, sans-serif; font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0; text-transform: none; white-space: nowrap;
+  border: 1px solid var(--border); padding: 2px 7px; border-radius: 20px;
+}
+.cmp-photo .cmp-dom {
+  left: 7px; color: var(--text);
+  background: color-mix(in oklab, var(--bg-elev) 92%, transparent);
+}
+.cmp-photo .cmp-match {
+  right: 7px; color: var(--accent);
+  background: color-mix(in oklab, var(--bg-elev) 92%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 28%, var(--border));
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- track button (toggleable) + open-listing link ---- */
+.cmp-track {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 11px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-elev);
+  color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer;
+  box-shadow: var(--shadow-sm); white-space: nowrap; transition: background .12s, border-color .12s;
+}
+.cmp-track:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.cmp-track.on {
+  background: var(--pos-soft); color: var(--pos);
+  border-color: color-mix(in oklab, var(--pos) 30%, transparent); box-shadow: none;
+}
+.cmp-track svg { width: 13px; height: 13px; }
+.cmp-link {
+  display: inline-grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-elev);
+  color: var(--text-muted); box-shadow: var(--shadow-sm); cursor: pointer; text-decoration: none;
+  flex-shrink: 0;
+}
+.cmp-link:hover { color: var(--accent); border-color: var(--border-strong); background: var(--bg-hover); }
+.cmp-link svg { width: 13px; height: 13px; }
+
+/* ---- card grid (3-up, 2-up medium, 1-up narrow) ---- */
+.cmpA-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.cmpA-card {
+  display: flex; flex-direction: column;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm);
+  transition: box-shadow .14s, border-color .14s, transform .14s;
+}
+.cmpA-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); transform: translateY(-1px); }
+.cmpA-card .cmp-photo { aspect-ratio: 3 / 2; }
+.cmpA-body { padding: 11px 12px 12px; display: flex; flex-direction: column; gap: 9px; }
+.cmpA-addr-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cmpA-addr {
+  font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; min-width: 0; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmpA-dist { font-size: 11px; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.cmpA-price-row { display: flex; align-items: baseline; gap: 8px; }
+.cmpA-price { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.cmpA-ppsf { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cmpA-specs {
+  display: flex; align-items: center; gap: 7px; white-space: nowrap;
+  font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.cmpA-specs .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--border-strong); }
+.cmpA-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.cmpA-foot {
+  display: flex; align-items: center; gap: 7px;
+  padding-top: 10px; margin-top: 1px; border-top: 1px solid var(--border);
+}
+.cmpA-foot .cmp-track { flex: 1; justify-content: center; }
+
+@media (max-width: 980px) {
+  .cmpA-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .cmpA-grid { grid-template-columns: 1fr; }
+}
