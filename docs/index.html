@@ -58,27 +58,46 @@
           <svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49l-.01-1.9c-2.78.62-3.37-1.2-3.37-1.2-.46-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.9 1.57 2.36 1.12 2.94.85.09-.66.35-1.12.63-1.37-2.22-.26-4.55-1.14-4.55-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.27 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9l-.01 2.82c0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/></svg>
           GitHub
         </a>
-        <button class="icon-btn nav-burger" id="burger" aria-label="Open menu">
-          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        <button class="icon-btn nav-burger" id="burger" aria-label="Open menu" aria-expanded="false" aria-controls="sheet">
+          <svg class="ico burger-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          <svg class="ico burger-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- mobile sheet -->
-  <div class="mobile-sheet" id="sheet">
-    <div class="container">
-      <div class="sheet-card">
-        <a href="#features">Features</a>
-        <a href="#how">How it works</a>
-        <a href="#quickstart">Quickstart</a>
-        <a href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">Docs</a>
-        <div class="sheet-cta">
-          <a class="btn btn-primary" href="#quickstart">Get Started</a>
-          <a class="btn" href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">View on GitHub</a>
-        </div>
+  <!-- mobile menu -->
+  <div class="mobile-menu" id="sheet" aria-hidden="true">
+    <div class="mm-scrim" data-close></div>
+    <nav class="mm-panel" aria-label="Mobile navigation">
+      <span class="mm-label">Menu</span>
+      <a class="mm-link" href="#features">
+        Features
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+      <a class="mm-link" href="#how">
+        How it works
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+      <a class="mm-link" href="#quickstart">
+        Quickstart
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+      <a class="mm-link" href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">
+        Docs
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg>
+      </a>
+      <div class="mm-actions">
+        <a class="btn btn-primary btn-lg" href="#quickstart">
+          Get Started
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="btn btn-lg" href="https://github.com/Cauchon/HomeIndexr" target="_blank" rel="noopener">
+          <svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49l-.01-1.9c-2.78.62-3.37-1.2-3.37-1.2-.46-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.05 1.53 1.05.9 1.57 2.36 1.12 2.94.85.09-.66.35-1.12.63-1.37-2.22-.26-4.55-1.14-4.55-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.27 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9l-.01 2.82c0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"/></svg>
+          View on GitHub
+        </a>
       </div>
-    </div>
+    </nav>
   </div>
 
   <main id="top">
@@ -624,18 +643,33 @@
       window.addEventListener("scroll", onScroll, { passive: true });
     })();
 
-    // ---- mobile sheet ----
+    // ---- mobile menu ----
     (function () {
       var burger = document.getElementById("burger");
-      var sheet = document.getElementById("sheet");
-      burger.addEventListener("click", function () { sheet.classList.toggle("open"); });
-      sheet.addEventListener("click", function (e) {
-        if (e.target.tagName === "A" || e.target === sheet || e.target.closest(".container") === e.target) {
-          sheet.classList.remove("open");
-        }
+      var menu = document.getElementById("sheet");
+
+      function open() {
+        menu.classList.add("open");
+        document.body.classList.add("menu-open");
+        burger.setAttribute("aria-label", "Close menu");
+        burger.setAttribute("aria-expanded", "true");
+        menu.setAttribute("aria-hidden", "false");
+      }
+      function close() {
+        menu.classList.remove("open");
+        document.body.classList.remove("menu-open");
+        burger.setAttribute("aria-label", "Open menu");
+        burger.setAttribute("aria-expanded", "false");
+        menu.setAttribute("aria-hidden", "true");
+      }
+      function toggle() { menu.classList.contains("open") ? close() : open(); }
+
+      burger.addEventListener("click", toggle);
+      menu.querySelectorAll("a, [data-close]").forEach(function (el) {
+        el.addEventListener("click", close);
       });
-      sheet.querySelectorAll("a").forEach(function (a) {
-        a.addEventListener("click", function () { sheet.classList.remove("open"); });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && menu.classList.contains("open")) close();
       });
     })();
   </script>
