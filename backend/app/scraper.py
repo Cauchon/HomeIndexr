@@ -644,3 +644,99 @@ def fetch(address: str) -> dict:
     flat["raw_json"] = raw
     flat["error"] = None
     return flat
+
+
+AREA_SEARCH_QUERY = (
+    "query ConsumerSearchQuery($query: HomeSearchCriteria!, $limit: Int, $offset: Int, $sort: [SearchAPISort]) {"
+    "  home_search(query: $query, limit: $limit, offset: $offset, sort: $sort) {"
+    "    count total"
+    "    results {"
+    "      property_id listing_id status list_price list_date days_on_market"
+    "      href permalink"
+    "      description { beds baths_full baths_half sqft lot_sqft type sub_type year_built }"
+    "      location { address { line city state_code postal_code coordinate { lat lon } } }"
+    "      primary_photo { href }"
+    "      flags { is_new_listing is_price_reduced is_foreclosure }"
+    "    }"
+    "  }"
+    "}"
+)
+
+
+def _flatten_listing(node: dict) -> dict | None:
+    """Project one Realtor home_search (SRP) result into a light card dict.
+
+    A trimmed sibling of `_flatten` for area listings: no AVM/estimate/schools
+    data, just what the "other homes for sale" cards render.
+    """
+    if not isinstance(node, dict):
+        return None
+    pid = node.get("property_id")
+    if not pid:
+        return None
+    loc = (node.get("location") or {}).get("address") or {}
+    coord = loc.get("coordinate") or {}
+    desc = node.get("description") or {}
+    flags = node.get("flags") or {}
+    return {
+        "property_id": str(pid),
+        "listing_id": node.get("listing_id"),
+        "address": _build_matched_address(node),
+        "line": loc.get("line"),
+        "city": _title_city(loc.get("city")),
+        "state": loc.get("state_code").upper() if loc.get("state_code") else None,
+        "zip": loc.get("postal_code"),
+        "latitude": coord.get("lat"),
+        "longitude": coord.get("lon"),
+        "list_price": _to_int(node.get("list_price")),
+        "beds": desc.get("beds"),
+        "baths": _baths_combined(desc),
+        "sqft": desc.get("sqft"),
+        "lot_sqft": desc.get("lot_sqft"),
+        "year_built": desc.get("year_built"),
+        "property_type": desc.get("type"),
+        "property_sub_type": desc.get("sub_type"),
+        "list_date": node.get("list_date"),
+        "days_on_market": _to_int(node.get("days_on_market")),
+        "listing_state": normalize_listing_state(node),
+        "photo_url": (node.get("primary_photo") or {}).get("href"),
+        "property_url": _href(node),
+        "is_new_listing": _to_bool(flags.get("is_new_listing")),
+        "is_price_reduced": _to_bool(flags.get("is_price_reduced")),
+        "is_foreclosure": _to_bool(flags.get("is_foreclosure")),
+    }
+
+
+def fetch_area_listings(zip_code: str, limit: int = 40) -> list[dict]:
+    """Fetch active for-sale listings in a ZIP from Realtor.com SRP search.
+
+    Single page, no pagination — keeps the upstream footprint to one request per
+    ZIP and avoids any enumeration signature. Returns light card dicts via
+    `_flatten_listing`, deduped by property_id.
+    """
+    zip_code = (zip_code or "").strip()
+    if not zip_code:
+        return []
+    data = _post_gql(
+        "ConsumerSearchQuery",
+        AREA_SEARCH_QUERY,
+        {
+            "query": {"status": ["for_sale"], "postal_code": zip_code},
+            "limit": int(limit),
+            "offset": 0,
+            "sort": [{"field": "list_date", "direction": "desc"}],
+        },
+    )
+    results = (((data.get("data") or {}).get("home_search") or {}).get("results")) or []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for node in results:
+        flat = _flatten_listing(node)
+        if not flat:
+            continue
+        pid = flat["property_id"]
+        if pid in seen:
+            continue
+        seen.add(pid)
+        out.append(flat)
+    return out

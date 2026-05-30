@@ -2,6 +2,7 @@ import atexit
 import os
 import tempfile
 import unittest
+import unittest.mock
 
 # Redirect the database to a throwaway path BEFORE importing app modules so a
 # stray DB access can never touch the real data/app.db (see test_main.py).
@@ -100,6 +101,71 @@ class MatchStatusTests(unittest.TestCase):
             scraper._match_status(raw, "18737 Effinger Way, Oregon City, OR 97045"),
             "candidate_mismatch",
         )
+
+
+class FlattenListingTests(unittest.TestCase):
+    def _node(self, **overrides):
+        node = {
+            "property_id": "8240260738",
+            "listing_id": "2996200173",
+            "status": "for_sale",
+            "list_price": 625000,
+            "list_date": "2026-05-29T17:18:13.000000Z",
+            "days_on_market": 1,
+            "href": "https://www.realtor.com/realestateandhomes-detail/12022-Arcadia-Bend-Ln_Houston_TX_77041_M82402-60738",
+            "permalink": "12022-Arcadia-Bend-Ln_Houston_TX_77041_M82402-60738",
+            "description": {
+                "beds": 4, "baths_full": 3, "baths_half": 1, "sqft": 3100,
+                "lot_sqft": 9148, "type": "single_family", "sub_type": None,
+                "year_built": 2004,
+            },
+            "location": {"address": {
+                "line": "12022 Arcadia Bend Ln", "city": "houston",
+                "state_code": "tx", "postal_code": "77041",
+                "coordinate": {"lat": 29.862468, "lon": -95.589335},
+            }},
+            "primary_photo": {"href": "http://ap.rdcpix.com/x.jpg"},
+            "flags": {"is_new_listing": True, "is_price_reduced": None, "is_foreclosure": None},
+        }
+        node.update(overrides)
+        return node
+
+    def test_flatten_listing_projects_card_fields(self):
+        flat = scraper._flatten_listing(self._node())
+        self.assertEqual(flat["property_id"], "8240260738")
+        self.assertEqual(flat["list_price"], 625000)
+        self.assertEqual(flat["beds"], 4)
+        self.assertEqual(flat["baths"], 3.5)  # 3 full + 1 half
+        self.assertEqual(flat["sqft"], 3100)
+        self.assertEqual(flat["city"], "Houston")  # title-cased
+        self.assertEqual(flat["state"], "TX")  # upper-cased
+        self.assertEqual(flat["zip"], "77041")
+        self.assertEqual(flat["listing_state"], "for_sale")
+        self.assertEqual(flat["photo_url"], "http://ap.rdcpix.com/x.jpg")
+        self.assertEqual(flat["is_new_listing"], 1)
+        self.assertTrue(flat["property_url"].startswith("https://www.realtor.com/"))
+
+    def test_flatten_listing_requires_property_id(self):
+        self.assertIsNone(scraper._flatten_listing({"list_price": 100}))
+        self.assertIsNone(scraper._flatten_listing(None))
+
+    def test_fetch_area_listings_filters_and_dedupes(self):
+        payload = {"data": {"home_search": {"count": 3, "total": 3, "results": [
+            self._node(property_id="A"),
+            self._node(property_id="A"),  # duplicate -> dropped
+            {"list_price": 1},            # no property_id -> dropped
+        ]}}}
+        with unittest.mock.patch.object(scraper, "_post_gql", return_value=payload) as post:
+            out = scraper.fetch_area_listings("77041", limit=40)
+        self.assertEqual([l["property_id"] for l in out], ["A"])
+        # Verify the query is sent as a for-sale, single-ZIP, single-page search.
+        variables = post.call_args.args[2]
+        self.assertEqual(variables["query"], {"status": ["for_sale"], "postal_code": "77041"})
+        self.assertEqual(variables["limit"], 40)
+        self.assertEqual(variables["offset"], 0)
+
+    def test_fetch_area_listings_empty_zip(self):
+        self.assertEqual(scraper.fetch_area_listings(""), [])
 
 
 if __name__ == "__main__":

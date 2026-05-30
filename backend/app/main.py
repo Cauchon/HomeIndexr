@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.types import Scope
 
-from . import ai, scraper, store
+from . import ai, comps, scraper, store
 from .db import init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -249,7 +249,37 @@ def add_property(body: AddBody):
 
     backfill = _backfill_history(prop["id"], prop.get("property_id"))
     prop = _property_with_related(prop["id"])
+    if prop.get("zip"):
+        store.refresh_area_for_zip(prop["zip"])
     return {"status": status, "property": prop, "candidate": None, "error": None, "backfill": backfill}
+
+
+@app.get("/api/properties/{pid}/area")
+def get_property_area(pid: int):
+    """Comparable for-sale homes in this property's ZIP. Reads the per-ZIP cache
+    only (never calls Realtor; populated by property refresh), excludes the
+    subject property, then gates + ranks the rest into appraisal-style comps."""
+    prop = store.get_property(pid)
+    if not prop:
+        raise HTTPException(404, "property not found")
+    zip_code = prop.get("zip")
+    if not zip_code:
+        return {"zip": None, "fetched_at": None, "comps": [], "relaxed": None,
+                "limited": False, "subject_price_per_sqft": None}
+    area = store.get_area_listings(zip_code)
+    subject = str(prop.get("property_id") or "")
+    candidates = [
+        l for l in area["listings"] if str(l.get("property_id") or "") != subject
+    ]
+    ranked = comps.rank_comparables(prop, candidates)
+    return {
+        "zip": area["zip"],
+        "fetched_at": area["fetched_at"],
+        "comps": ranked["comps"],
+        "relaxed": ranked["relaxed"],
+        "limited": ranked["limited"],
+        "subject_price_per_sqft": ranked["subject_price_per_sqft"],
+    }
 
 
 @app.post("/api/properties/{pid}/refresh")
@@ -260,6 +290,9 @@ def refresh_property(pid: int):
     addr = prop["canonical_address"] or prop["input_address"]
     fetched = scraper.fetch(addr)
     store.update_property_meta(pid, fetched)
+    zip_code = fetched.get("zip") or prop.get("zip")
+    if zip_code:
+        store.refresh_area_for_zip(zip_code)
     return _property_with_related(pid)
 
 
@@ -267,12 +300,19 @@ def refresh_property(pid: int):
 def refresh_all():
     props = [p for p in store.list_properties() if p.get("active") is not False]
     results = []
+    zips: set[str] = set()
     for p in props:
         addr = p.get("canonical_address") or p["input_address"]
         fetched = scraper.fetch(addr)
         observed_event = store.update_property_meta(p["id"], fetched)
+        zip_code = fetched.get("zip") or p.get("zip")
+        if zip_code:
+            zips.add(zip_code)
         results.append({"id": p["id"], "status": fetched.get("status"), "observed_event": observed_event})
-    return {"refreshed": len(results), "results": results}
+    # One area fetch per unique ZIP, not per property.
+    for zip_code in zips:
+        store.refresh_area_for_zip(zip_code)
+    return {"refreshed": len(results), "results": results, "areas_refreshed": len(zips)}
 
 
 # ---------- Static frontend ----------

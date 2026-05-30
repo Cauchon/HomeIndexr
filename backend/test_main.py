@@ -310,5 +310,81 @@ class PropertyNameTests(unittest.TestCase):
         self.assertIsNone(updated["property_name"])
 
 
+class AreaListingsTests(unittest.TestCase):
+    def setUp(self):
+        _reset_db()
+
+    def _seed(self, property_id="12345", zip_code="77041"):
+        return store.create_property(
+            f"addr {property_id}",
+            _fetched(property_id=property_id, zip=zip_code, matched_address=f"addr {property_id}"),
+        )
+
+    def test_area_endpoint_ranks_comps_and_excludes_subject(self):
+        # Subject is a 4bd/2000sqft single_family; one true comp, one off-type.
+        prop = store.create_property(
+            "subject addr",
+            _fetched(property_id="12345", zip="77041", matched_address="subject addr",
+                     property_type="single_family", beds=4, baths=2.0, sqft=2000,
+                     year_built=2000, latitude=29.0, longitude=-95.0, list_price=600000),
+        )
+        store.upsert_area_listings("77041", [
+            {"property_id": "12345", "line": "the subject home", "property_type": "single_family", "sqft": 2000, "beds": 4},
+            {"property_id": "comp", "line": "a close comp", "list_price": 610000,
+             "property_type": "single_family", "beds": 4, "baths": 2.0, "sqft": 2050,
+             "year_built": 2002, "latitude": 29.001, "longitude": -95.001},
+            {"property_id": "condo", "line": "an off-type condo", "list_price": 600000,
+             "property_type": "condo", "beds": 4, "sqft": 2000},
+        ])
+
+        res = main.get_property_area(prop["id"])
+
+        self.assertEqual(res["zip"], "77041")
+        # Subject excluded; condo gated out; only the same-type comp survives.
+        self.assertEqual([l["property_id"] for l in res["comps"]], ["comp"])
+        self.assertIsNone(res["relaxed"])
+        self.assertEqual(res["comps"][0]["price_per_sqft"], 298)  # 610000 / 2050
+        self.assertEqual(res["subject_price_per_sqft"], 300)       # 600000 / 2000
+        self.assertGreater(res["comps"][0]["comp_score"], 80)
+        self.assertIsNotNone(res["fetched_at"])
+
+    def test_area_endpoint_empty_without_cache(self):
+        prop = self._seed()
+        res = main.get_property_area(prop["id"])
+        self.assertEqual(res["comps"], [])
+        self.assertIsNone(res["fetched_at"])
+
+    @patch.object(store.scraper, "fetch_area_listings", return_value=[{"property_id": "777"}])
+    @patch.object(main.scraper, "fetch_history_bundle", return_value=_bundle())
+    @patch.object(main.scraper, "fetch")
+    def test_refresh_property_populates_area_cache(self, fetch, _hist, fetch_area):
+        prop = self._seed(property_id="12345", zip_code="77041")
+        fetch.return_value = _fetched(property_id="12345", zip="77041", matched_address="addr 12345")
+
+        main.refresh_property(prop["id"])
+
+        fetch_area.assert_called_once_with("77041")
+        self.assertEqual(store.get_area_listings("77041")["listings"], [{"property_id": "777"}])
+
+    @patch.object(store.scraper, "fetch_area_listings", return_value=[])
+    @patch.object(main.scraper, "fetch")
+    def test_refresh_all_dedupes_area_fetch_by_zip(self, fetch, fetch_area):
+        self._seed(property_id="1", zip_code="77041")
+        self._seed(property_id="2", zip_code="77041")
+        self._seed(property_id="3", zip_code="77002")
+
+        def _f(addr):
+            zip_code = "77002" if addr.endswith(" 3") else "77041"
+            return _fetched(property_id="x", zip=zip_code, matched_address=addr)
+
+        fetch.side_effect = _f
+
+        res = main.refresh_all()
+
+        self.assertEqual(res["areas_refreshed"], 2)
+        called_zips = sorted(c.args[0] for c in fetch_area.call_args_list)
+        self.assertEqual(called_zips, ["77002", "77041"])
+
+
 if __name__ == "__main__":
     unittest.main()

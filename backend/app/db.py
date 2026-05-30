@@ -191,6 +191,12 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT,
     updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS area_listings (
+    zip TEXT PRIMARY KEY,
+    listings_json TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+);
 """
 
 

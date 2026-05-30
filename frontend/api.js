@@ -19,6 +19,7 @@
   const API = {
     listProperties: () => req("/api/properties"),
     getProperty: (id) => req(`/api/properties/${id}`),
+    getAreaListings: (id) => req(`/api/properties/${id}/area`),
     addProperty: (address, confirm_mismatch = false) =>
       req("/api/properties", {
         method: "POST",

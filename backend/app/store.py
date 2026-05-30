@@ -435,6 +435,59 @@ def update_property_meta(property_id: int, fetched: dict) -> dict | None:
     return observed_event
 
 
+def upsert_area_listings(zip_code: str, listings: list[dict]) -> int:
+    """Cache the for-sale listings for a ZIP, overwriting any prior cache row."""
+    zip_code = (zip_code or "").strip()
+    if not zip_code:
+        return 0
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO area_listings (zip, listings_json, fetched_at)
+               VALUES (?,?,?)
+               ON CONFLICT(zip) DO UPDATE SET
+                 listings_json = excluded.listings_json,
+                 fetched_at = excluded.fetched_at""",
+            (zip_code, json.dumps(listings, default=str), now),
+        )
+    return len(listings)
+
+
+def get_area_listings(zip_code: str) -> dict:
+    """Read the cached for-sale listings for a ZIP. Never hits Realtor."""
+    zip_code = (zip_code or "").strip()
+    if not zip_code:
+        return {"zip": None, "fetched_at": None, "listings": []}
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT zip, listings_json, fetched_at FROM area_listings WHERE zip = ?",
+            (zip_code,),
+        ).fetchone()
+    if not row:
+        return {"zip": zip_code, "fetched_at": None, "listings": []}
+    try:
+        listings = json.loads(row["listings_json"])
+    except (TypeError, ValueError):
+        listings = []
+    return {"zip": row["zip"], "fetched_at": row["fetched_at"], "listings": listings}
+
+
+def refresh_area_for_zip(zip_code: str) -> int:
+    """Fetch + cache for-sale listings for a ZIP. Best-effort.
+
+    Wrapped so a Realtor block or upstream hiccup never breaks the core property
+    refresh that triggered it — the last good cache row stays in place.
+    """
+    zip_code = (zip_code or "").strip()
+    if not zip_code:
+        return 0
+    try:
+        listings = scraper.fetch_area_listings(zip_code)
+    except Exception:  # noqa: BLE001 — area fetch must never fail the caller
+        return 0
+    return upsert_area_listings(zip_code, listings)
+
+
 def replace_historical(property_id: int, records: list[dict]) -> int:
     """Upsert historical estimates for a property. Returns rows written."""
     now = _now()

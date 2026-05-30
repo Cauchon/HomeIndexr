@@ -760,6 +760,103 @@ function SchoolsCard({ schools }) {
   );
 }
 
+// Comparable homes for sale in this property's ZIP. Reads a server-side cache
+// (refreshed only when the user refreshes the property — this card never
+// triggers a Realtor fetch, so opening a detail page adds no upstream traffic),
+// then the server gates + ranks them into appraisal-style comps. Empty state
+// points the user at refresh; a relaxed note shows when strict gating fell back.
+function AreaListingsCard({ propertyId }) {
+  const [state, setState] = useState_p({ loading: true, error: null, data: null });
+
+  useEffect_p(() => {
+    let alive = true;
+    setState({ loading: true, error: null, data: null });
+    API.getAreaListings(propertyId)
+      .then((data) => { if (alive) setState({ loading: false, error: null, data }); })
+      .catch((e) => { if (alive) setState({ loading: false, error: e.message || "Failed to load", data: null }); });
+    return () => { alive = false; };
+  }, [propertyId]);
+
+  const { loading, error, data } = state;
+  const comps = (data && data.comps) || [];
+  const fetchedAt = data && data.fetched_at;
+  const subjectPpsf = data && data.subject_price_per_sqft;
+
+  return (
+    <div className="card" style={{ marginTop: 12 }}>
+      <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div className="card-title">Comparable homes{data && data.zip ? ` · ${data.zip}` : ""}</div>
+        {fetchedAt ? <span className="k" style={{ fontSize: 11 }}>Updated {fmt.relative(fetchedAt)}</span> : null}
+      </div>
+      <div className="card-body flush">
+        {loading ? (
+          <div className="fact-row"><span className="k">Loading…</span></div>
+        ) : error ? (
+          <div className="fact-row"><span className="k">{error}</span></div>
+        ) : comps.length === 0 ? (
+          <div className="fact-row" style={{ padding: "12px 0" }}>
+            <span className="k" style={{ whiteSpace: "normal" }}>
+              {fetchedAt
+                ? "No comparable for-sale homes in this ZIP."
+                : "Refresh this property to find comparable homes for sale in its ZIP."}
+            </span>
+          </div>
+        ) : (
+          <React.Fragment>
+            {(subjectPpsf != null || data.relaxed) && (
+              <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--border)" }}>
+                {subjectPpsf != null && (
+                  <span className="k" style={{ fontSize: 11 }}>
+                    This home: <strong>{fmt.usd(subjectPpsf)}/sqft</strong>
+                  </span>
+                )}
+                {data.relaxed && (
+                  <span className="k" style={{ fontSize: 11, whiteSpace: "normal", display: "block", marginTop: subjectPpsf != null ? 2 : 0 }}>
+                    Few strict comps — {data.relaxed}.
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="facts-stack">
+              {comps.map((l) => (
+                <a
+                  key={l.property_id}
+                  href={l.property_url || "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="fact-row"
+                  style={{ alignItems: "center", textDecoration: "none", color: "inherit" }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
+                    <span className="v" style={{ fontWeight: 500, whiteSpace: "normal" }}>
+                      {l.line || l.address || "—"}
+                      {l.is_new_listing ? <span className="badge ok" style={{ marginLeft: 6, verticalAlign: "middle" }}>New</span> : null}
+                      {l.is_price_reduced ? <span className="badge warn" style={{ marginLeft: 6, verticalAlign: "middle" }}>Reduced</span> : null}
+                    </span>
+                    <span className="k" style={{ fontSize: 11 }}>
+                      {l.beds != null ? `${l.beds} bd` : "—"}
+                      {l.baths != null ? ` · ${fmt.baths(l.baths)} ba` : ""}
+                      {l.sqft != null ? ` · ${fmt.num(l.sqft)} sqft` : ""}
+                      {l.price_per_sqft != null ? ` · ${fmt.usd(l.price_per_sqft)}/sqft` : ""}
+                      {l.distance_mi != null ? ` · ${l.distance_mi} mi` : ""}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end", marginLeft: 8 }}>
+                    <span className="v" style={{ fontWeight: 600 }}>{fmt.usd(l.list_price)}</span>
+                    {l.comp_score != null && (
+                      <span className="k" style={{ fontSize: 11 }}>{l.comp_score}% match</span>
+                    )}
+                  </div>
+                </a>
+              ))}
+            </div>
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Property Detail ----------
 function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [property, setProperty] = useState_p(null);
@@ -1351,6 +1448,8 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
           </div>
 
           <SchoolsCard schools={property.schools || []} />
+
+          <AreaListingsCard propertyId={property.id} />
         </div>
       </div>
     </div>
@@ -2894,5 +2993,6 @@ function CadencePanel({ cadence, setCadence, latestJob }) {
 
 window.DashboardPage = DashboardPage;
 window.AddPropertyPage = AddPropertyPage;
+window.AreaListingsCard = AreaListingsCard;
 window.PropertyDetailPage = PropertyDetailPage;
 window.AdminPage = AdminPage;
