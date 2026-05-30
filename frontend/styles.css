@@ -806,8 +806,21 @@ table.data tbody tr.archived-row td {
 .detail-grid > * {
   min-width: 0;
 }
+/* Desktop: main content + comparable homes stack in column 1; the sidebar
+   (facts / estimates / schools) spans both rows in column 2. */
+.detail-grid > .detail-main { grid-column: 1; grid-row: 1; }
+.detail-grid > .detail-side { grid-column: 2; grid-row: 1 / span 2; }
+.detail-grid > .cmp-module  { grid-column: 1; grid-row: 2; }
 @media (max-width: 1280px) {
+  /* Tablet & mobile: single column in plain DOM order — comparable homes
+     follows the sidebar, dropping it below Schools. */
   .detail-grid { grid-template-columns: 1fr; }
+  .detail-grid > .detail-main,
+  .detail-grid > .detail-side,
+  .detail-grid > .cmp-module {
+    grid-column: auto;
+    grid-row: auto;
+  }
 }
 
 .detail-header {
@@ -2559,6 +2572,36 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 @media (max-width: 980px) {
   .cmpA-grid { grid-template-columns: repeat(2, 1fr); }
 }
-@media (max-width: 560px) {
-  .cmpA-grid { grid-template-columns: 1fr; }
+/* Below 560px the desktop card grid hands off to the compact two-up grid
+   (CompCardCompact), so the module never drops to a single column. */
+
+/* ---- compact two-up grid (phone ≤560px) ---- */
+/* Denser browse layout rendered by CompCardCompact: two cards per row, a 4:3
+   photo with a +/✓ Track overlay, and a tight body. Same comp data as the
+   desktop card, trimmed to fit a phone screen. */
+.cmpM-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cmpM-card {
+  display: flex; flex-direction: column;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm);
 }
+.cmpM-card .cmp-photo { aspect-ratio: 4 / 3; }
+.cmpM-card .cmp-photo .cmp-dom { top: 7px; left: 7px; font-size: 9.5px; padding: 1px 6px; }
+.cmpM-body { padding: 10px 11px 11px; display: flex; flex-direction: column; gap: 5px; }
+.cmpM-priceline { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.cmpM-price { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.cmpM-addr {
+  font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmpM-specs {
+  font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmpM-metarow { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 2px; }
+.cmpM-dist { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.cmpM-foot {
+  display: flex; align-items: center; gap: 7px;
+  padding-top: 10px; margin-top: 3px; border-top: 1px solid var(--border);
+}
+.cmpM-foot .cmp-track { flex: 1; justify-content: center; }
