@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import requests
@@ -18,6 +19,26 @@ MAX_TOOL_STEPS = 4
 WEB_SEARCH_TIMEOUT = 20
 GEOCODE_TIMEOUT = 20
 CHAT_TIMEOUT = 45
+
+# When we cut the model off at the tool-call limit, we must force a prose answer.
+# DeepSeek reasoning models (e.g. deepseek-v4-flash) that still "want" to call a
+# tool will otherwise leak their internal tool-call markup into `content` — the
+# user sees raw `<｜｜DSML｜｜tool_calls>… invoke name="web_search"…` text instead of
+# an answer. Simply omitting the tools array (or setting tool_choice="none") is
+# NOT enough; an explicit instruction is. This mostly bit web_search questions,
+# which exhaust the step budget far more readily than the geocode-only path.
+_FINAL_ANSWER_DIRECTIVE = (
+    "Stop searching. Using only the information you have already gathered, write "
+    "your final answer now in plain Markdown prose. Do NOT call any tools or emit "
+    "any tool-call markup."
+)
+
+# Defensive guard: if leaked tool-call markup still reaches us, never show it.
+_TOOL_MARKUP_RE = re.compile(r"DSML|invoke name=|tool_calls", re.IGNORECASE)
+
+
+def _looks_like_tool_markup(text: str | None) -> bool:
+    return bool(text) and bool(_TOOL_MARKUP_RE.search(text))
 
 
 def _clean_obj(value: Any) -> Any:
@@ -338,6 +359,13 @@ def answer_property_question(prop: dict, question: str) -> dict:
     tools_used: list[str] = []
 
     for step in range(MAX_TOOL_STEPS + 1):
+        offering_tools = bool(tools) and step < MAX_TOOL_STEPS
+        # On the final allowed step we drop tools to force an answer. Reasoning
+        # models leak tool-call markup when cut off this way, so also instruct
+        # them — once — to answer in prose. See _FINAL_ANSWER_DIRECTIVE.
+        if tools and step == MAX_TOOL_STEPS:
+            messages.append({"role": "user", "content": _FINAL_ANSWER_DIRECTIVE})
+
         payload: dict = {
             "model": model,
             "messages": messages,
@@ -345,8 +373,7 @@ def answer_property_question(prop: dict, question: str) -> dict:
             "max_tokens": 900,
             "stream": False,
         }
-        # On the final allowed step, drop tools so the model must answer.
-        if tools and step < MAX_TOOL_STEPS:
+        if offering_tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
@@ -359,8 +386,16 @@ def answer_property_question(prop: dict, question: str) -> dict:
 
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
+            answer = message.get("content") or ""
+            # Safety net: the directive normally prevents this, but never surface
+            # raw leaked tool-call markup to the user.
+            if _looks_like_tool_markup(answer):
+                answer = (
+                    "I gathered web and location data but couldn't compose a final "
+                    "summary this time. Please ask again."
+                )
             return {
-                "answer": message.get("content") or "",
+                "answer": answer,
                 "model": data.get("model") or model,
                 "usage": usage_total,
                 "tools_used": tools_used,
