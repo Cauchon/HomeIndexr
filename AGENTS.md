@@ -27,9 +27,26 @@ frontend/
   pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
+extension/       MV3 Chrome extension — thin client over the API (see below)
 run.sh           uvicorn dev launcher (port 5173)
 data/app.db      SQLite database, auto-created on first run
 ```
+
+## Browser extension
+
+`extension/` is an unpacked MV3 Chrome extension ("Add to HomeIndexr") that
+tracks the Zillow/Realtor.com property in the active tab. It is a **thin client
+over the existing API** — it scrapes the listing's address from the page and
+calls `POST /api/properties {address}`; the backend does all Realtor matching
+(rule #1 still holds — the extension only reads the address already rendered on
+the listing page; it never calls Realtor's GraphQL, so all data fetching stays
+server-side). It also
+uses `GET /api/properties` (reachability + already-tracking check), and the
+per-property `GET …/{id}` and `POST …/{id}/refresh`. Plain HTML/CSS/JS, no build
+step. Address extraction runs on demand via `chrome.scripting.executeScript`
+(`activeTab`), and the popup fetches the local server directly (the existing
+permissive CORS + local `host_permissions` make a background worker unnecessary).
+Keep this in lockstep with the API contract below. See `extension/README.md`.
 
 ## Run it
 

@@ -3,6 +3,23 @@
 
 const { useState: useState_p, useMemo: useMemo_p, useEffect: useEffect_p } = React;
 
+// Live viewport check — true on phone-width screens, kept in sync via a
+// matchMedia listener so the comps module can swap to its two-up grid.
+function useIsMobile(maxWidth = 480) {
+  const query = `(max-width: ${maxWidth}px)`;
+  const [isMobile, setIsMobile] = useState_p(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches
+  );
+  useEffect_p(() => {
+    const mql = window.matchMedia(query);
+    const onChange = (e) => setIsMobile(e.matches);
+    mql.addEventListener("change", onChange);
+    setIsMobile(mql.matches);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+  return isMobile;
+}
+
 // ---------- Contextual price ----------
 // Returns whichever price is meaningful for this property's current listing
 // state, plus a tag for context. `base` is the value to diff the estimate
@@ -772,25 +789,61 @@ function rdcResize(url, size) {
   return url.replace(/^http:/i, "https:").replace(RDC_SIZE_RE, `$1${size}$3$4`);
 }
 
+// Track a comparable listing as a real tracked property. Runs the same add flow
+// as the Add Property page — POST the comp's full address, and auto-confirm a
+// candidate mismatch since the address comes straight from a Realtor listing the
+// user explicitly picked. On success it refreshes the dashboard list (so the new
+// property + its detail page appear) and routes to the freshly created PDP.
+// Returns the button state shared by both comp card layouts.
+function useTrackComp(comp, navigate, onChanged) {
+  const [tracked, setTracked] = useState_p(false);
+  const [saving, setSaving] = useState_p(false);
+  const toast = useToast();
+  const addr = comp.line || comp.address || "this home";
+  const fullAddr = comp.line
+    ? [comp.line, comp.city, [comp.state, comp.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")
+    : (comp.address || "");
+
+  async function track() {
+    if (saving || tracked || !fullAddr) {
+      if (!fullAddr) toast.push({ kind: "err", text: "This listing is missing an address to track." });
+      return;
+    }
+    setSaving(true);
+    try {
+      let res = await API.addProperty(fullAddr, false);
+      if (res && res.status === "candidate_mismatch") {
+        res = await API.addProperty(fullAddr, true);
+      }
+      if (res && res.property) {
+        setTracked(true);
+        const line1 = splitAddress(displayAddress(res.property)).line1;
+        toast.push({ kind: "ok", text: `Now tracking ${line1}` });
+        if (onChanged) onChanged();
+        if (navigate) navigate("detail", res.property.id);
+      } else if (res && res.status === "no_candidates") {
+        toast.push({ kind: "err", text: `Couldn't find ${addr} on Realtor.com.` });
+      } else {
+        toast.push({ kind: "err", text: (res && res.error) || "Couldn't track this home." });
+      }
+    } catch (e) {
+      toast.push({ kind: "err", text: e.message || "Couldn't track this home." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return { tracked, saving, track };
+}
+
 // One comparable listing — a photo-forward card (design Option A). 3:2 listing
 // photo with a days-on-market pill and the appraisal match score, then address +
 // distance, list price + the listing's own $/sqft, and beds·baths·sqft. "Track"
-// toggles a green tracking state (demonstrates adding the comp to HomeTracker);
-// the ↗ button opens the listing on Realtor.com.
-function CompCard({ comp }) {
-  const [tracked, setTracked] = useState_p(false);
-  const toast = useToast();
+// adds the comp as a real tracked property (see useTrackComp); the ↗ button
+// opens the listing on Realtor.com.
+function CompCard({ comp, navigate, onChanged }) {
+  const { tracked, saving, track } = useTrackComp(comp, navigate, onChanged);
   const addr = comp.line || comp.address || "—";
-
-  function toggleTrack() {
-    setTracked((v) => {
-      const next = !v;
-      toast.push(next
-        ? { kind: "ok", text: `Now tracking ${addr}` }
-        : { kind: "info", text: `Stopped tracking ${addr}` });
-      return next;
-    });
-  }
 
   return (
     <div className="cmpA-card">
@@ -828,11 +881,78 @@ function CompCard({ comp }) {
         <div className="cmpA-foot">
           <button
             className={"cmp-track" + (tracked ? " on" : "")}
-            onClick={toggleTrack}
+            onClick={track}
+            disabled={saving || tracked}
             title={tracked ? "Tracking — added to your properties" : "Add to HomeTracker"}
           >
             <Icon name={tracked ? "check" : "plus"} size={13} />
-            {tracked ? "Tracking" : "Track"}
+            {saving ? "Tracking…" : tracked ? "Tracking" : "Track"}
+          </button>
+          {comp.property_url && (
+            <a
+              className="cmp-link"
+              href={comp.property_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open listing on Realtor.com"
+            >
+              <Icon name="arrowUpRight" size={13} />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Compact two-up card — the phone-width treatment of a comparable home. Denser
+// than CompCard: a 4:3 photo with the days-on-market badge, then price, address,
+// a single specs line, and a meta row pairing distance · days-on-market against
+// $/sqft. Keeps the same footer as the desktop card (full-width Track button +
+// open-listing link); only the "price reduced" flag is dropped to save room.
+function CompCardCompact({ comp, navigate, onChanged }) {
+  const { tracked, saving, track } = useTrackComp(comp, navigate, onChanged);
+  const addr = comp.line || comp.address || "—";
+
+  const metaLeft = [
+    comp.distance_mi != null ? `${comp.distance_mi} mi` : null,
+    comp.days_on_market != null ? `${comp.days_on_market}d` : null,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div className="cmpM-card">
+      <div className="cmp-photo">
+        {comp.days_on_market != null && <span className="cmp-dom">{comp.days_on_market}d</span>}
+        {comp.photo_url
+          ? <img
+              src={rdcResize(comp.photo_url, "x")}
+              srcSet={`${rdcResize(comp.photo_url, "x")} 1x, ${rdcResize(comp.photo_url, "od")} 2x`}
+              alt=""
+              loading="lazy"
+            />
+          : <span>listing photo</span>}
+      </div>
+      <div className="cmpM-body">
+        <div className="cmpM-priceline">
+          <span className="cmpM-price">{comp.list_price != null ? fmt.usd(comp.list_price) : "—"}</span>
+        </div>
+        <div className="cmpM-addr" title={addr}>{addr}</div>
+        <div className="cmpM-specs">
+          {comp.beds != null ? `${comp.beds} bd` : "— bd"} · {comp.baths != null ? `${fmt.baths(comp.baths)} ba` : "— ba"} · {comp.sqft != null ? `${fmt.num(comp.sqft)} sqft` : "— sqft"}
+        </div>
+        <div className="cmpM-metarow">
+          <span className="cmpM-dist">{metaLeft || "—"}</span>
+          {comp.price_per_sqft != null && <span className="cmpM-dist">{fmt.usd(comp.price_per_sqft)}/sf</span>}
+        </div>
+        <div className="cmpM-foot">
+          <button
+            className={"cmp-track" + (tracked ? " on" : "")}
+            onClick={track}
+            disabled={saving || tracked}
+            title={tracked ? "Tracking — added to your properties" : "Add to HomeTracker"}
+          >
+            <Icon name={tracked ? "check" : "plus"} size={13} />
+            {saving ? "Tracking…" : tracked ? "Tracking" : "Track"}
           </button>
           {comp.property_url && (
             <a
@@ -859,8 +979,11 @@ function CompCard({ comp }) {
 // count and scope chips (within X mi · bed/sqft band · this home's $/sqft)
 // derived from the actual comp set. Empty state points the user at refresh; a
 // relaxed note shows when strict gating fell back to a looser comp set.
-function AreaListingsCard({ property }) {
+function AreaListingsCard({ property, navigate, onChanged }) {
   const [state, setState] = useState_p({ loading: true, error: null, data: null });
+  // Switch to the compact two-up grid at the same width the desktop card grid
+  // would otherwise collapse to a single column, so comps stay two-up on phones.
+  const isMobile = useIsMobile(560);
 
   useEffect_p(() => {
     let alive = true;
@@ -885,12 +1008,11 @@ function AreaListingsCard({ property }) {
   const maxDist = dists.length ? Math.max(...dists) : null;
 
   return (
-    <div className="cmp-module" style={{ marginTop: 16 }}>
+    <div className="cmp-module">
       <div className="cmp-head">
         <div className="cmp-head-l">
           <h2 className="cmp-title">
             Comparable homes for sale
-            {comps.length > 0 && <span className="cmp-count">{comps.length}</span>}
           </h2>
           <div className="cmp-sub">
             Active listings near <b>{line1}</b>
@@ -926,8 +1048,10 @@ function AreaListingsCard({ property }) {
             : "Refresh this property to find comparable homes for sale in its ZIP."}
         </div>
       ) : (
-        <div className="cmpA-grid">
-          {comps.map((c) => <CompCard key={c.property_id} comp={c} />)}
+        <div className={isMobile ? "cmpM-grid" : "cmpA-grid"}>
+          {comps.map((c) => isMobile
+            ? <CompCardCompact key={c.property_id} comp={c} navigate={navigate} onChanged={onChanged} />
+            : <CompCard key={c.property_id} comp={c} navigate={navigate} onChanged={onChanged} />)}
         </div>
       )}
     </div>
@@ -1412,7 +1536,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
       </div>
 
       <div className="detail-grid">
-        <div>
+        <div className="detail-main">
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <div className="card-title">Value over time</div>
@@ -1465,10 +1589,9 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
             </div>
           )}
 
-          {!isArchived && <AreaListingsCard property={property} />}
         </div>
 
-        <div>
+        <div className="detail-side">
           {!isArchived && (
             <AskAboutHome
               refEl={aiPanelRef}
@@ -1528,6 +1651,8 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
 
           <SchoolsCard schools={property.schools || []} />
         </div>
+
+        {!isArchived && <AreaListingsCard property={property} navigate={navigate} onChanged={onChanged} />}
       </div>
     </div>
   );
