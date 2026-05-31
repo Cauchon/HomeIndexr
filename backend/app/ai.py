@@ -110,7 +110,15 @@ def build_property_context(prop: dict) -> dict:
             "flood_factor_severity": prop.get("flood_factor_severity"),
         },
         "current_estimates": prop.get("all_estimates") or [],
-        "historical_estimates_recent": _take_sorted(prop.get("historical") or [], "date", 36),
+        # Send the FULL historical series (chronological), not a recent slice. The
+        # series interleaves two sources (Cotality + Quantarium), so an N-row cap
+        # silently halves the visible time span — a 36-row cap left the model
+        # thinking history "started" ~18 months ago and denying older estimates it
+        # was simply never shown. The series is bounded (~5 years monthly × 2
+        # sources ≈ 122 rows), so there is no context-size reason to truncate it.
+        "historical_estimates": sorted(
+            prop.get("historical") or [], key=lambda r: str(r.get("date") or "")
+        ),
         "market_and_observed_events_recent": _take_sorted(prop.get("events") or [], "date", 36),
         "tax_history_recent": _take_sorted(prop.get("tax_history") or [], "year", 8),
         "schools": prop.get("schools") or [],
@@ -419,7 +427,7 @@ def answer_property_question(prop: dict, question: str) -> dict:
                 "usage": usage_total,
                 "tools_used": tools_used,
                 "context": {
-                    "historical_estimates": len(context.get("historical_estimates_recent", [])),
+                    "historical_estimates": len(context.get("historical_estimates", [])),
                     "events": len(context.get("market_and_observed_events_recent", [])),
                     "tax_rows": len(context.get("tax_history_recent", [])),
                     "schools": len(context.get("schools", [])),
