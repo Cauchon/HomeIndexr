@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    body { width: auto; max-width: 520px; margin: 0 auto; padding: 28px 24px; background: var(--bg); }
+    .opt-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .opt-head .hi-mark { width: 30px; height: 30px; }
+    .opt-head h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+    .opt-sub { font-size: 12.5px; color: var(--text-muted); margin: 0 0 22px 40px; line-height: 1.5; }
+    .opt-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); padding: 18px; }
+    .opt-card label { font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 7px; }
+    .opt-row { display: flex; gap: 8px; align-items: center; }
+    .opt-row .hip-input { height: 36px; }
+    .opt-hint { font-size: 11.5px; color: var(--text-faint); margin-top: 9px; line-height: 1.5; }
+    .opt-hint code { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 11px; }
+    #status { font-size: 12px; color: var(--pos); margin-left: 8px; opacity: 0; transition: opacity .2s; }
+    #status.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="opt-head">
+    <span class="hi-mark"><svg width="18" height="18" viewBox="30 22 200 178" fill="none"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M41 188 V93 L128 29 L215 93 V143" stroke="currentColor" stroke-width="15"/><path d="M42 188 H89 L121 154 L160 171 L215 103" stroke="#2F74FF" stroke-width="15"/><circle cx="215" cy="103" r="14" fill="#2F74FF"/></g></svg></span>
+    <h1>Add to HomeIndexr — Options</h1>
+  </div>
+  <p class="opt-sub">Point the extension at your HomeIndexr instance. Adding a property sends the listing's address to this server, which matches it against Realtor.com and captures a first snapshot.</p>
+
+  <div class="opt-card">
+    <label for="server">Server URL</label>
+    <div class="opt-row">
+      <input class="hip-input" id="server" placeholder="http://127.0.0.1:5173" />
+      <button class="btn btn-primary" id="save">Save</button>
+      <span id="status">Saved</span>
+    </div>
+    <p class="opt-hint">
+      Default is <code>http://127.0.0.1:5173</code> (what <code>./run.sh</code> serves). The extension can only reach
+      <code>localhost</code> / <code>127.0.0.1</code> hosts out of the box — a custom host needs the matching entry added to
+      <code>host_permissions</code> in <code>manifest.json</code>.
+    </p>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
