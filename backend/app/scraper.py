@@ -79,6 +79,8 @@ HOME_DETAILS_QUERY = (
     "    list_price last_sold_price last_sold_date last_status_change_date"
     "    list_date days_on_market"
     "    last_price_change_amount last_price_change_date"
+    "    photo_count"
+    "    photos { href tags { label } }"
     "    hoa { fee }"
     "    description {"
     "      beds baths_full baths_half sqft lot_sqft year_built"
@@ -573,6 +575,44 @@ def _normalize_schools(raw: dict) -> list[dict]:
             "distance_in_miles": float(s["distance_in_miles"]) if s.get("distance_in_miles") is not None else None,
             "student_count": _to_int(s.get("student_count")),
         })
+    return out
+
+
+def _photo_label(photo: dict) -> str | None:
+    """Human room label for a listing photo, derived from its first tag.
+
+    Realtor tags look like `swimming_pool` / `exterior`; surface them as
+    `Swimming Pool` / `Exterior` to caption the lightbox. Untagged → None.
+    """
+    tags = photo.get("tags") if isinstance(photo, dict) else None
+    for t in tags or []:
+        label = (t or {}).get("label") if isinstance(t, dict) else None
+        if not label or str(label).strip().lower() == "unknown":
+            continue
+        return re.sub(r"[_\s]+", " ", str(label)).strip().title() or None
+    return None
+
+
+def extract_photos(raw: dict) -> list[dict]:
+    """Return the listing photos from a raw Realtor home node.
+
+    Each entry is `{href, label}` — href is the rdcpix URL as served (the
+    frontend upgrades http→https and picks a display size), label is the room
+    tag when present. Deduped by href, preserving Realtor's order (the first
+    photo is the primary/hero shot).
+    """
+    if not isinstance(raw, dict):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for p in raw.get("photos") or []:
+        if not isinstance(p, dict):
+            continue
+        href = p.get("href")
+        if not href or not isinstance(href, str) or href in seen:
+            continue
+        seen.add(href)
+        out.append({"href": href, "label": _photo_label(p)})
     return out
 
 

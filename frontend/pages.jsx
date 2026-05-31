@@ -1058,6 +1058,112 @@ function AreaListingsCard({ property, navigate, onChanged }) {
   );
 }
 
+// ---------- Listing photos ----------
+// Sidebar reference card (design Option D) + full-screen lightbox. Photos come
+// from Realtor.com (GET /api/properties/{id} → `photos: [{href, label}]`); the
+// first is the hero. Card stays restrained so the chart/activity lead the page:
+// hero + 3-up thumbnail row (last tile shows the overflow count) + "View all
+// photos". Everything opens the lightbox, where the full set is lazy-loaded.
+function PhotoCIcon({ name, size = 13 }) {
+  const p = {
+    camera: <><path d="M3 8.5A1.5 1.5 0 0 1 4.5 7H7l1.2-1.8A1 1 0 0 1 9 4.7h6a1 1 0 0 1 .8.5L17 7h2.5A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" /><circle cx="12" cy="12.5" r="3.2" /></>,
+    grid: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">{p[name]}</svg>;
+}
+
+// Full-screen photo viewer. Arrows + filmstrip; ←/→/Esc keyboard nav. The hero
+// is fetched at the large rdcpix size on demand (only the current frame), and
+// the filmstrip thumbnails are lazy-loaded so opening the modal doesn't pull
+// every photo at once.
+function PhotoLightbox({ photos, open, start = 0, onClose }) {
+  const [i, setI] = useState_p(start);
+  useEffect_p(() => { if (open) setI(start); }, [open, start]);
+  useEffect_p(() => {
+    if (!open) return;
+    const n = photos.length;
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") setI((p) => (p + 1) % n);
+      if (e.key === "ArrowLeft") setI((p) => (p - 1 + n) % n);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose, photos.length]);
+  if (!open || !photos.length) return null;
+  const n = photos.length;
+  const go = (d) => setI((p) => (p + d + n) % n);
+  const cur = photos[i];
+  return (
+    <div className="lightbox" onClick={onClose}>
+      <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
+        <div className="lightbox-bar">
+          <span className="lightbox-count">{i + 1} / {n}{cur.label ? ` · ${cur.label}` : ""}</span>
+          <button className="lightbox-close" onClick={onClose} aria-label="Close"><Icon name="x" size={15} /></button>
+        </div>
+        <div className="lightbox-stage">
+          {n > 1 && <button className="lb-arrow left" onClick={() => go(-1)} aria-label="Previous"><Icon name="chevronLeft" size={20} /></button>}
+          <img className="lb-hero" src={rdcResize(cur.href, "od")} alt={cur.label || ""} />
+          {n > 1 && <button className="lb-arrow right" onClick={() => go(1)} aria-label="Next"><Icon name="chevronRight" size={20} /></button>}
+        </div>
+        {n > 1 && (
+          <div className="lightbox-strip">
+            {photos.map((ph, k) => (
+              <div key={k} className={`lb-thumb ${k === i ? "on" : ""}`} onClick={() => setI(k)}>
+                <img src={rdcResize(ph.href, "x")} alt={ph.label || ""} loading="lazy" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PropertyPhotosCard({ photos }) {
+  const [lb, setLb] = useState_p(null); // null = closed, else start index
+  if (!photos || !photos.length) return null;
+  const n = photos.length;
+  const hero = photos[0];
+  const overflow = n - 4; // photos beyond the hero + 3 thumbnails
+  const thumbIdxs = [1, 2, 3].filter((k) => photos[k]);
+  return (
+    <div className="card photo-card" style={{ marginBottom: 12 }}>
+      <div className="pc-hero" onClick={() => setLb(0)}>
+        <img
+          src={rdcResize(hero.href, "x")}
+          srcSet={`${rdcResize(hero.href, "x")} 1x, ${rdcResize(hero.href, "od")} 2x`}
+          alt={hero.label || ""}
+        />
+        <span className="count-pill"><PhotoCIcon name="camera" size={13} /> {n} photos</span>
+      </div>
+      {thumbIdxs.length > 0 && (
+        <div className="pc-thumbs">
+          {thumbIdxs.map((k) => {
+            const showMore = k === thumbIdxs[thumbIdxs.length - 1] && overflow > 0;
+            return showMore ? (
+              <div key={k} className="pc-more" onClick={() => setLb(k)}>
+                <div className="photo" style={{ borderRadius: 6 }}>
+                  <img src={rdcResize(photos[k].href, "x")} alt={photos[k].label || ""} />
+                </div>
+                <span>+{overflow}</span>
+              </div>
+            ) : (
+              <div key={k} className="photo" style={{ borderRadius: 6 }} onClick={() => setLb(k)}>
+                <img src={rdcResize(photos[k].href, "x")} alt={photos[k].label || ""} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <button className="btn pc-btn" onClick={() => setLb(0)}>
+        <PhotoCIcon name="grid" size={13} /> View all photos
+      </button>
+      <PhotoLightbox photos={photos} open={lb != null} start={lb || 0} onClose={() => setLb(null)} />
+    </div>
+  );
+}
+
 // ---------- Property Detail ----------
 function PropertyDetailPage({ propertyId, navigate, onChanged }) {
   const [property, setProperty] = useState_p(null);
@@ -1592,6 +1698,7 @@ function PropertyDetailPage({ propertyId, navigate, onChanged }) {
         </div>
 
         <div className="detail-side">
+          <PropertyPhotosCard photos={property.photos} />
           {!isArchived && (
             <AskAboutHome
               refEl={aiPanelRef}

@@ -84,6 +84,7 @@ def _property_with_related(pid: int) -> dict | None:
     prop["events"] = store.list_events(pid)
     prop["tax_history"] = store.list_tax_history(pid)
     prop["schools"] = store.list_schools(pid)
+    prop["photos"] = scraper.extract_photos(prop.get("raw_json"))
     return prop
 
 
