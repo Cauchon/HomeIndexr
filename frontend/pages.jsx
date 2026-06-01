@@ -789,6 +789,15 @@ function rdcResize(url, size) {
   return url.replace(/^http:/i, "https:").replace(RDC_SIZE_RE, `$1${size}$3$4`);
 }
 
+// "City, State ZIP" line for a comp card — assembled from whatever locality
+// fields the listing carries, so cards show the same City/State/ZIP context the
+// design calls for under the street address. Returns "" when none are present.
+function compCityLine(comp) {
+  return [comp.city, [comp.state, comp.zip].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+}
+
 // Track a comparable listing as a real tracked property. Runs the same add flow
 // as the Add Property page — POST the comp's full address, and auto-confirm a
 // candidate mismatch since the address comes straight from a Realtor listing the
@@ -801,7 +810,7 @@ function useTrackComp(comp, navigate, onChanged) {
   const toast = useToast();
   const addr = comp.line || comp.address || "this home";
   const fullAddr = comp.line
-    ? [comp.line, comp.city, [comp.state, comp.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")
+    ? [comp.line, compCityLine(comp)].filter(Boolean).join(", ")
     : (comp.address || "");
 
   async function track() {
@@ -844,6 +853,7 @@ function useTrackComp(comp, navigate, onChanged) {
 function CompCard({ comp, navigate, onChanged }) {
   const { tracked, saving, track } = useTrackComp(comp, navigate, onChanged);
   const addr = comp.line || comp.address || "—";
+  const cityLine = compCityLine(comp);
 
   return (
     <div className="cmpA-card">
@@ -861,7 +871,10 @@ function CompCard({ comp, navigate, onChanged }) {
       </div>
       <div className="cmpA-body">
         <div className="cmpA-addr-row">
-          <span className="cmpA-addr" title={addr}>{addr}</span>
+          <div className="cmpA-addr-wrap">
+            <span className="cmpA-addr" title={cityLine ? `${addr}, ${cityLine}` : addr}>{addr}</span>
+            {cityLine && <span className="cmpA-city">{cityLine}</span>}
+          </div>
           {comp.distance_mi != null && <span className="cmpA-dist">{comp.distance_mi} mi</span>}
         </div>
         <div className="cmpA-price-row">
@@ -913,6 +926,7 @@ function CompCard({ comp, navigate, onChanged }) {
 function CompCardCompact({ comp, navigate, onChanged }) {
   const { tracked, saving, track } = useTrackComp(comp, navigate, onChanged);
   const addr = comp.line || comp.address || "—";
+  const cityLine = compCityLine(comp);
 
   const metaLeft = [
     comp.distance_mi != null ? `${comp.distance_mi} mi` : null,
@@ -936,7 +950,8 @@ function CompCardCompact({ comp, navigate, onChanged }) {
         <div className="cmpM-priceline">
           <span className="cmpM-price">{comp.list_price != null ? fmt.usd(comp.list_price) : "—"}</span>
         </div>
-        <div className="cmpM-addr" title={addr}>{addr}</div>
+        <div className="cmpM-addr" title={cityLine ? `${addr}, ${cityLine}` : addr}>{addr}</div>
+        {cityLine && <div className="cmpM-city">{cityLine}</div>}
         <div className="cmpM-specs">
           {comp.beds != null ? `${comp.beds} bd` : "— bd"} · {comp.baths != null ? `${fmt.baths(comp.baths)} ba` : "— ba"} · {comp.sqft != null ? `${fmt.num(comp.sqft)} sqft` : "— sqft"}
         </div>
