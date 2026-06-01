@@ -19,7 +19,14 @@
   const API = {
     listProperties: () => req("/api/properties"),
     getProperty: (id) => req(`/api/properties/${id}`),
-    getAreaListings: (id) => req(`/api/properties/${id}/area`),
+    getAreaListings: (id, filters) => {
+      const qs = new URLSearchParams();
+      Object.entries(filters || {}).forEach(([k, v]) => {
+        if (v != null) qs.set(k, v);
+      });
+      const s = qs.toString();
+      return req(`/api/properties/${id}/area${s ? `?${s}` : ""}`);
+    },
     addProperty: (address, confirm_mismatch = false) =>
       req("/api/properties", {
         method: "POST",

@@ -1124,11 +1124,11 @@ function MinMaxBox({ prefix, suffix, value, display, onCommit }) {
     </label>);
 }
 
-function RangeFooter({ onReset, onDone, disabled }) {
+function RangeFooter({ onReset, onApply, disabled }) {
   return (
     <div className="rs-foot">
       <button type="button" className="rs-reset" onClick={onReset} disabled={disabled}>Reset</button>
-      <button type="button" className="rs-done" onClick={onDone}>Done</button>
+      <button type="button" className="rs-done" onClick={onApply}>Apply</button>
     </div>);
 }
 
@@ -1153,40 +1153,67 @@ function MinSelectControl({ stops, value, onChange }) {
 // (refreshed only when the user refreshes the property — this module never
 // triggers a Realtor fetch, so opening a detail page adds no upstream traffic),
 // which the server gates + ranks into appraisal-style comps. Header shows the
-// count and portal-style range filters (price / beds / sqft / distance) that
-// narrow the loaded comp set client-side — no upstream fetch. Filter domains
-// (and the price histogram behind the price slider) are derived from the actual
-// comp set, so the sliders always span the real listings. Empty state points the
-// user at refresh; a relaxed note shows when strict gating fell back to a looser
-// comp set; a separate empty state shows when filters exclude every comp.
+// count and portal-style range filters (price / beds / baths / sqft). Pressing
+// Apply re-ranks the whole cached pool server-side for those filters (still
+// cache-only — no upstream fetch), so a filter draws the best six matches rather
+// than subtracting from an already-narrowed six. Filter domains (and the price
+// histogram) come from the server's unfiltered comp spread, so the sliders span
+// the real comp universe and stay put across Apply. Empty state points the user
+// at refresh; a relaxed note shows when strict gating fell back to a looser comp
+// set; a separate empty state shows when filters exclude every comp.
 function AreaListingsCard({ property, navigate, onChanged }) {
   const [state, setState] = useState_p({ loading: true, error: null, data: null });
   // Switch to the compact two-up grid at the same width the desktop card grid
   // would otherwise collapse to a single column, so comps stay two-up on phones.
   const isMobile = useIsMobile(560);
 
+  // Pending filter selection (what the popovers edit) vs. `applied` (what the
+  // server is currently ranking against). price/sqft are null when unconstrained
+  // so the sliders fall back to the full domain; beds/baths are a min threshold.
+  const [price, setPrice] = useState_p(null);
+  const [sqft,  setSqft]  = useState_p(null);
+  const [beds,  setBeds]  = useState_p(null);
+  const [baths, setBaths] = useState_p(null);
+  const [applied, setApplied] = useState_p({});
+
+  // New property → drop every filter and clear the stale comp set before the
+  // first fetch. Filters reset here (keyed on the property), NOT on the comp set,
+  // so applying a filter doesn't wipe the user's own selection.
+  useEffect_p(() => {
+    setPrice(null); setSqft(null); setBeds(null); setBaths(null);
+    setApplied({});
+    setState({ loading: true, error: null, data: null });
+  }, [property.id]);
+
+  // Fetch ranked comps for the applied filters. Pressing Apply re-ranks the whole
+  // cached ZIP pool server-side (cache-only — no Realtor fetch), so a filter draws
+  // the best six matches instead of subtracting from an already-narrowed six. We
+  // keep the prior data visible while a filter refetch is in flight (the property
+  // effect above is what clears it) so the sliders and grid don't flash.
   useEffect_p(() => {
     let alive = true;
-    setState({ loading: true, error: null, data: null });
-    API.getAreaListings(property.id)
+    setState((s) => ({ ...s, loading: true, error: null }));
+    API.getAreaListings(property.id, applied)
       .then((data) => { if (alive) setState({ loading: false, error: null, data }); })
       .catch((e) => { if (alive) setState({ loading: false, error: e.message || "Failed to load", data: null }); });
     return () => { alive = false; };
-  }, [property.id]);
+  }, [property.id, applied]);
 
   const { loading, error, data } = state;
-  // Stable reference between renders so the domain/reset memos below don't churn.
-  const allComps = useMemo_p(() => (data && data.comps) || [], [data]);
+  // Server already filtered + ranked + capped these; render them as-is.
+  const comps = useMemo_p(() => (data && data.comps) || [], [data]);
   const fetchedAt = data && data.fetched_at;
   const subjectPpsf = data && data.subject_price_per_sqft;
   const line1 = splitAddress(displayAddress(property)).line1;
 
-  // Slider domains + a smoothed price histogram derived from the comp set. Each
-  // band is padded out to a round step so the handles sit just past the extremes.
-  // Degenerate (no values) → zero-width domain; the matching pill reads "Any".
+  // Slider domains + a smoothed price histogram. Derived from the server's
+  // `domain` (the spread of the *unfiltered* comp pool), not the shown page, so
+  // the handles span the real comp universe and don't rescale when filters apply.
+  // Each band is padded to a round step so the handles sit just past the extremes.
   const dom = useMemo_p(() => {
-    const prices = allComps.map((c) => c.list_price).filter((v) => v != null);
-    const sqfts  = allComps.map((c) => c.sqft).filter((v) => v != null);
+    const d = (data && data.domain) || {};
+    const prices = (d.prices || []).filter((v) => v != null);
+    const sqfts  = (d.sqfts  || []).filter((v) => v != null);
     const pLo = prices.length ? Math.max(0, floorTo(Math.min(...prices), 25000) - 25000) : 0;
     const pHi = prices.length ? ceilTo(Math.max(...prices), 25000) + 25000 : 0;
     const sLo = sqfts.length ? Math.max(0, floorTo(Math.min(...sqfts), 100) - 100) : 0;
@@ -1198,51 +1225,47 @@ function AreaListingsCard({ property, navigate, onChanged }) {
     });
     const mx = Math.max(...raw) || 1;
     return { pLo, pHi, sLo, sHi, hist: prices.length ? raw.map((v) => v / mx) : [] };
-  }, [allComps]);
+  }, [data]);
 
-  const [price, setPrice] = useState_p([dom.pLo, dom.pHi]);
-  const [sqft,  setSqft]  = useState_p([dom.sLo, dom.sHi]);
-  const [beds,  setBeds]  = useState_p(null);
-  const [baths, setBaths] = useState_p(null);
+  // The ZIP has comps at all (any filter aside) when the unfiltered pool isn't
+  // empty — lets the empty states tell "no comps here" from "filters excluded all".
+  const hasComps = !!(data && data.domain && data.domain.count > 0);
 
-  // Reset the bands to the full domain whenever a new comp set loads (property
-  // change → refetch → new allComps → new dom).
-  useEffect_p(() => {
-    setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
-    setBeds(null); setBaths(null);
-  }, [dom]);
-
-  const priceActive = price[0] > dom.pLo || price[1] < dom.pHi;
-  const sqftActive  = sqft[0] > dom.sLo || sqft[1] < dom.sHi;
+  // Effective slider bands: null pending value → the full domain.
+  const priceVal = price || [dom.pLo, dom.pHi];
+  const sqftVal  = sqft  || [dom.sLo, dom.sHi];
+  const priceActive = priceVal[0] > dom.pLo || priceVal[1] < dom.pHi;
+  const sqftActive  = sqftVal[0] > dom.sLo || sqftVal[1] < dom.sHi;
   const bedsActive  = beds !== null;
   const bathsActive = baths !== null;
   const anyFilter   = priceActive || sqftActive || bedsActive || bathsActive;
 
-  // Filter the loaded comps. A comp missing a dimension isn't excluded on it —
-  // we only hide listings that actively fall outside a band the user set.
-  const comps = useMemo_p(
-    () => allComps.filter((c) =>
-      (c.list_price == null || (c.list_price >= price[0] && c.list_price <= price[1])) &&
-      (c.sqft == null || (c.sqft >= sqft[0] && c.sqft <= sqft[1])) &&
-      (beds === null || c.beds == null || c.beds >= beds) &&
-      (baths === null || c.baths == null || c.baths >= baths)),
-    [allComps, price, sqft, beds, baths]
-  );
+  // Commit the pending selection to the server (triggers a re-rank refetch).
+  function applyFilters() {
+    setApplied({
+      min_price: priceActive ? priceVal[0] : undefined,
+      max_price: priceActive ? priceVal[1] : undefined,
+      min_sqft:  sqftActive  ? sqftVal[0]  : undefined,
+      max_sqft:  sqftActive  ? sqftVal[1]  : undefined,
+      min_beds:  beds  != null ? beds  : undefined,
+      min_baths: baths != null ? baths : undefined,
+    });
+  }
 
   function clearAll() {
-    setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
-    setBeds(null); setBaths(null);
+    setPrice(null); setSqft(null); setBeds(null); setBaths(null);
+    setApplied({});
   }
 
   // Pill summaries.
   const priceSummary = !priceActive ? "Any"
-    : price[0] <= dom.pLo ? "Up to " + usdK(price[1])
-    : price[1] >= dom.pHi ? usdK(price[0]) + "+"
-    : usdK(price[0]) + "–" + usdK(price[1]);
+    : priceVal[0] <= dom.pLo ? "Up to " + usdK(priceVal[1])
+    : priceVal[1] >= dom.pHi ? usdK(priceVal[0]) + "+"
+    : usdK(priceVal[0]) + "–" + usdK(priceVal[1]);
   const sqftSummary = !sqftActive ? "Any"
-    : sqft[0] <= dom.sLo ? "Up to " + fmt.num(sqft[1])
-    : sqft[1] >= dom.sHi ? fmt.num(sqft[0]) + "+"
-    : fmt.num(sqft[0]) + "–" + fmt.num(sqft[1]);
+    : sqftVal[0] <= dom.sLo ? "Up to " + fmt.num(sqftVal[1])
+    : sqftVal[1] >= dom.sHi ? fmt.num(sqftVal[0]) + "+"
+    : fmt.num(sqftVal[0]) + "–" + fmt.num(sqftVal[1]);
   const bedsSummary = beds == null ? "Any" : beds + "+";
   const bathsSummary = baths == null ? "Any" : baths + "+";
 
@@ -1252,7 +1275,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
         <div className="cmp-head-l">
           <h2 className="cmp-title">
             Comparable homes for sale
-            {allComps.length > 0 && <span className="cmp-count">{comps.length}</span>}
+            {hasComps && <span className="cmp-count">{comps.length}</span>}
           </h2>
           <div className="cmp-sub">
             Active listings near <b>{line1}</b>
@@ -1261,23 +1284,23 @@ function AreaListingsCard({ property, navigate, onChanged }) {
             {fetchedAt ? ` · updated ${fmt.relative(fetchedAt)}` : ""}
           </div>
         </div>
-        {allComps.length > 0 && (
+        {hasComps && (
           <div className="cmp-head-r">
 
             <FilterPop label="Price" summary={priceSummary} active={priceActive} popWidth={300}>
               {(close) => (
                 <div className="rs-pop">
                   <div className="rs-fields">
-                    <MinMaxBox prefix="$" value={price[0]} display={(v) => v.toLocaleString()}
-                      onCommit={(n) => setPrice([clamp(n, dom.pLo, price[1]), price[1]])} />
+                    <MinMaxBox prefix="$" value={priceVal[0]} display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setPrice([clamp(n, dom.pLo, priceVal[1]), priceVal[1]])} />
                     <span className="rs-dash">–</span>
-                    <MinMaxBox prefix="$" value={price[1]} display={(v) => v.toLocaleString()}
-                      onCommit={(n) => setPrice([price[0], clamp(n, price[0], dom.pHi)])} />
+                    <MinMaxBox prefix="$" value={priceVal[1]} display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setPrice([priceVal[0], clamp(n, priceVal[0], dom.pHi)])} />
                   </div>
-                  <RangeSlider min={dom.pLo} max={dom.pHi} step={5000} value={price} onChange={setPrice} hist={dom.hist} />
+                  <RangeSlider min={dom.pLo} max={dom.pHi} step={5000} value={priceVal} onChange={setPrice} hist={dom.hist} />
                   <div className="rs-ends"><span>{usdK(dom.pLo)}</span><span>{usdK(dom.pHi)}+</span></div>
-                  <RangeFooter disabled={!priceActive} onDone={close}
-                    onReset={() => setPrice([dom.pLo, dom.pHi])} />
+                  <RangeFooter disabled={!priceActive} onApply={() => { applyFilters(); close(); }}
+                    onReset={() => setPrice(null)} />
                 </div>
               )}
             </FilterPop>
@@ -1287,7 +1310,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
                 <div className="rs-pop">
                   <div className="rs-hint">Minimum bedrooms</div>
                   <MinSelectControl stops={BED_STOPS} value={beds} onChange={setBeds} />
-                  <RangeFooter disabled={!bedsActive} onDone={close} onReset={() => setBeds(null)} />
+                  <RangeFooter disabled={!bedsActive} onApply={() => { applyFilters(); close(); }} onReset={() => setBeds(null)} />
                 </div>
               )}
             </FilterPop>
@@ -1297,7 +1320,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
                 <div className="rs-pop">
                   <div className="rs-hint">Minimum bathrooms</div>
                   <MinSelectControl stops={BATH_STOPS} value={baths} onChange={setBaths} />
-                  <RangeFooter disabled={!bathsActive} onDone={close} onReset={() => setBaths(null)} />
+                  <RangeFooter disabled={!bathsActive} onApply={() => { applyFilters(); close(); }} onReset={() => setBaths(null)} />
                 </div>
               )}
             </FilterPop>
@@ -1306,16 +1329,16 @@ function AreaListingsCard({ property, navigate, onChanged }) {
               {(close) => (
                 <div className="rs-pop">
                   <div className="rs-fields">
-                    <MinMaxBox value={sqft[0]} suffix="sqft" display={(v) => v.toLocaleString()}
-                      onCommit={(n) => setSqft([clamp(n, dom.sLo, sqft[1]), sqft[1]])} />
+                    <MinMaxBox value={sqftVal[0]} suffix="sqft" display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setSqft([clamp(n, dom.sLo, sqftVal[1]), sqftVal[1]])} />
                     <span className="rs-dash">–</span>
-                    <MinMaxBox value={sqft[1]} suffix="sqft" display={(v) => v.toLocaleString()}
-                      onCommit={(n) => setSqft([sqft[0], clamp(n, sqft[0], dom.sHi)])} />
+                    <MinMaxBox value={sqftVal[1]} suffix="sqft" display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setSqft([sqftVal[0], clamp(n, sqftVal[0], dom.sHi)])} />
                   </div>
-                  <RangeSlider min={dom.sLo} max={dom.sHi} step={50} value={sqft} onChange={setSqft} />
+                  <RangeSlider min={dom.sLo} max={dom.sHi} step={50} value={sqftVal} onChange={setSqft} />
                   <div className="rs-ends"><span>{fmt.num(dom.sLo)}</span><span>{fmt.num(dom.sHi)}+</span></div>
-                  <RangeFooter disabled={!sqftActive} onDone={close}
-                    onReset={() => setSqft([dom.sLo, dom.sHi])} />
+                  <RangeFooter disabled={!sqftActive} onApply={() => { applyFilters(); close(); }}
+                    onReset={() => setSqft(null)} />
                 </div>
               )}
             </FilterPop>
@@ -1329,15 +1352,15 @@ function AreaListingsCard({ property, navigate, onChanged }) {
         )}
       </div>
 
-      {data && data.relaxed && allComps.length > 0 && (
+      {data && data.relaxed && comps.length > 0 && (
         <div className="cmp-note">Few strict comps — {data.relaxed}.</div>
       )}
 
-      {loading ? (
+      {loading && !data ? (
         <div className="cmp-state">Loading comparable homes…</div>
       ) : error ? (
         <div className="cmp-state">{error}</div>
-      ) : allComps.length === 0 ? (
+      ) : !hasComps ? (
         <div className="cmp-state">
           {fetchedAt
             ? "No comparable for-sale homes in this ZIP."

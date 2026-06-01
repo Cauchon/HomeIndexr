@@ -107,6 +107,35 @@ def _match_pct(subject: dict, c: dict) -> tuple[int, float | None]:
     return round(100 * (1 - dissimilarity)), dist
 
 
+def _passes_user_filter(c: dict, f: dict) -> bool:
+    """User-selected filter pills (min/max price + sqft, min beds + baths).
+
+    Applied *before* the appraisal gate ladder so ranking draws the best comps
+    that match the filter from the whole cached pool. Mirrors the frontend rule:
+    a candidate missing a dimension is never excluded on that dimension — only
+    listings that actively fall outside a band the user set are dropped.
+    """
+    lp = _f(c.get("list_price"))
+    if lp is not None:
+        if f.get("min_price") is not None and lp < f["min_price"]:
+            return False
+        if f.get("max_price") is not None and lp > f["max_price"]:
+            return False
+    cs = _f(c.get("sqft"))
+    if cs is not None:
+        if f.get("min_sqft") is not None and cs < f["min_sqft"]:
+            return False
+        if f.get("max_sqft") is not None and cs > f["max_sqft"]:
+            return False
+    cb = _f(c.get("beds"))
+    if cb is not None and f.get("min_beds") is not None and cb < f["min_beds"]:
+        return False
+    cba = _f(c.get("baths"))
+    if cba is not None and f.get("min_baths") is not None and cba < f["min_baths"]:
+        return False
+    return True
+
+
 def _passes_gates(subject: dict, c: dict, sqft_tol: float | None, beds_gate: bool) -> bool:
     st, ct = subject.get("property_type"), c.get("property_type")
     if st and ct and st != ct:
@@ -124,23 +153,32 @@ def _passes_gates(subject: dict, c: dict, sqft_tol: float | None, beds_gate: boo
     return True
 
 
-def rank_comparables(subject: dict | None, listings: list[dict] | None, limit: int = 6) -> dict:
+def rank_comparables(subject: dict | None, listings: list[dict] | None,
+                     filters: dict | None = None, limit: int | None = 6) -> dict:
     """Gate + rank candidate listings into strict appraisal-style comparables.
 
     Returns ``{comps, relaxed, limited, subject_price_per_sqft}``:
       - ``comps``: ranked list (best match first), each candidate dict copied
         with ``comp_score`` (match %), ``distance_mi``, and ``price_per_sqft``.
+        Capped to ``limit`` (``None`` returns the whole ranked set).
       - ``relaxed``: ``None`` when the strict gates produced comps, else a short
         human label naming which fallback rung was used.
       - ``limited``: True when the subject itself lacks ``sqft`` (size gating and
         the $/sqft reference can't be computed).
       - ``subject_price_per_sqft``: the subject's own $/sqft reference line.
 
+    ``filters`` (optional user-selected pills) pre-filters the candidate pool via
+    ``_passes_user_filter`` *before* the gate ladder, so the strictest appraisal
+    rung is computed over only the listings the user asked for — the returned
+    comps are the best matches that are BOTH appraisal-comparable and in-filter.
+
     Fallback ladder: keep the strictest rung that yields ANY comp, so a thin ZIP
     shows a few precise comps rather than diluting with loose ones; only drop to
     the next rung when the current one is empty.
     """
     listings = [l for l in (listings or []) if isinstance(l, dict)]
+    if filters:
+        listings = [c for c in listings if _passes_user_filter(c, filters)]
     subject = subject or {}
 
     # (label, sqft tolerance, enforce beds gate). label None == strict, no note.
@@ -183,8 +221,23 @@ def rank_comparables(subject: dict | None, listings: list[dict] | None, limit: i
         subject_price = subject.get("best_current_estimate")
 
     return {
-        "comps": scored[:limit],
+        "comps": scored if limit is None else scored[:limit],
         "relaxed": relaxed,
         "limited": _f(subject.get("sqft")) is None,
         "subject_price_per_sqft": price_per_sqft(subject_price, subject.get("sqft")),
     }
+
+
+def comp_domain(subject: dict | None, listings: list[dict] | None) -> dict:
+    """Stable filter-slider domain for the comp module: the price/sqft spread of
+    the *unfiltered* comp set (the full ranked pool, not just the shown page).
+
+    Returned to the frontend so the Price/Sqft sliders span the real comp
+    universe and don't rescale every time the user applies a filter (which the
+    server now honors by re-ranking). ``count`` lets the UI tell "this ZIP has no
+    comps" apart from "your filters excluded them all".
+    """
+    base = rank_comparables(subject, listings, limit=None)["comps"]
+    prices = [int(round(v)) for v in (_f(c.get("list_price")) for c in base) if v is not None]
+    sqfts = [int(round(v)) for v in (_f(c.get("sqft")) for c in base) if v is not None]
+    return {"prices": prices, "sqfts": sqfts, "count": len(base)}
