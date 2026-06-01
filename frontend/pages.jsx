@@ -1078,7 +1078,11 @@ function PhotoCIcon({ name, size = 13 }) {
 // every photo at once.
 function PhotoLightbox({ photos, open, start = 0, onClose }) {
   const [i, setI] = useState_p(start);
+  const [heroLoaded, setHeroLoaded] = useState_p(false);
+  const stripRef = React.useRef(null);
   useEffect_p(() => { if (open) setI(start); }, [open, start]);
+  // Fade each hero in as it loads so navigation doesn't flash the prior frame.
+  useEffect_p(() => { setHeroLoaded(false); }, [i, open]);
   useEffect_p(() => {
     if (!open) return;
     const n = photos.length;
@@ -1090,6 +1094,17 @@ function PhotoLightbox({ photos, open, start = 0, onClose }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, photos.length]);
+  // Keep the active filmstrip thumbnail centered in view as you navigate.
+  useEffect_p(() => {
+    if (!open) return;
+    const strip = stripRef.current;
+    const active = strip && strip.children[i];
+    if (active) {
+      // Instant (not smooth) so holding the arrow keys keeps the active thumb
+      // centered instead of cancelling a half-finished smooth scroll each step.
+      active.scrollIntoView({ inline: "center", block: "nearest" });
+    }
+  }, [i, open]);
   if (!open || !photos.length) return null;
   const n = photos.length;
   const go = (d) => setI((p) => (p + d + n) % n);
@@ -1098,16 +1113,24 @@ function PhotoLightbox({ photos, open, start = 0, onClose }) {
     <div className="lightbox" onClick={onClose}>
       <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
         <div className="lightbox-bar">
-          <span className="lightbox-count">{i + 1} / {n}{cur.label ? ` · ${cur.label}` : ""}</span>
+          <span className="lightbox-count">
+            <b>{i + 1}</b> / {n}{cur.label ? <span className="lightbox-room"> · {cur.label}</span> : ""}
+          </span>
           <button className="lightbox-close" onClick={onClose} aria-label="Close"><Icon name="x" size={15} /></button>
         </div>
         <div className="lightbox-stage">
           {n > 1 && <button className="lb-arrow left" onClick={() => go(-1)} aria-label="Previous"><Icon name="chevronLeft" size={20} /></button>}
-          <img className="lb-hero" src={rdcResize(cur.href, "od")} alt={cur.label || ""} />
+          <img
+            key={i}
+            className={`lb-hero ${heroLoaded ? "ready" : ""}`}
+            src={rdcResize(cur.href, "od")}
+            alt={cur.label || ""}
+            onLoad={() => setHeroLoaded(true)}
+          />
           {n > 1 && <button className="lb-arrow right" onClick={() => go(1)} aria-label="Next"><Icon name="chevronRight" size={20} /></button>}
         </div>
         {n > 1 && (
-          <div className="lightbox-strip">
+          <div className="lightbox-strip" ref={stripRef}>
             {photos.map((ph, k) => (
               <div key={k} className={`lb-thumb ${k === i ? "on" : ""}`} onClick={() => setI(k)}>
                 <img src={rdcResize(ph.href, "x")} alt={ph.label || ""} loading="lazy" />
