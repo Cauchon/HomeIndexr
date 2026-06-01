@@ -108,6 +108,52 @@ class AddPropertyBackfillTests(unittest.TestCase):
         fetch_history_bundle.assert_called_once_with("12345")
 
 
+class MismatchPersistenceTests(unittest.TestCase):
+    """A tracked property's match is accepted, so `candidate_mismatch` is never
+    persisted — only the add-time gate uses it (to block unconfirmed new adds)."""
+
+    def setUp(self):
+        _reset_db()
+
+    def test_unconfirmed_new_mismatch_is_gated_not_persisted(self):
+        with patch.object(main.scraper, "fetch", return_value=_fetched(status="candidate_mismatch")):
+            res = main.add_property(main.AddBody(address="118 prospect st framingham ma"))
+        self.assertEqual(res["status"], "candidate_mismatch")
+        self.assertIsNone(res["property"])
+        self.assertIsNotNone(res["candidate"])
+        self.assertEqual(store.list_properties(), [])
+
+    @patch.object(main.scraper, "fetch_history_bundle", return_value=_bundle())
+    @patch.object(main.scraper, "fetch", return_value=_fetched(status="candidate_mismatch"))
+    def test_confirmed_mismatch_persists_as_matched(self, fetch, _bundle_fetch):
+        res = main.add_property(
+            main.AddBody(address="118 prospect st framingham ma", confirm_mismatch=True)
+        )
+        self.assertIsNotNone(res["property"])
+        self.assertEqual(res["property"]["status"], "matched")
+
+    def test_refresh_of_tracked_property_does_not_reflag_mismatch(self):
+        prop = store.create_property("118 prospect st framingham ma", _fetched())
+        self.assertEqual(prop["status"], "matched")
+        store.update_property_meta(prop["id"], _fetched(status="candidate_mismatch"))
+        self.assertEqual(store.get_property(prop["id"])["status"], "matched")
+
+    def test_genuine_problem_status_still_surfaces_on_refresh(self):
+        prop = store.create_property("5907 Cape Hatteras Dr, Houston, TX 77041", _fetched())
+        store.update_property_meta(prop["id"], _fetched(status="error", error="boom"))
+        self.assertEqual(store.get_property(prop["id"])["status"], "error")
+
+    @patch.object(main.scraper, "fetch_area_listings", return_value=[])
+    def test_refresh_all_reports_persisted_status_not_raw(self, _area):
+        prop = store.create_property("118 prospect st framingham ma", _fetched())
+        with patch.object(main.scraper, "fetch", return_value=_fetched(status="candidate_mismatch")):
+            res = main.refresh_all()
+        # The job log counts result.status != "matched"; it must agree with what
+        # was actually persisted (matched), not the raw recomputed mismatch.
+        statuses = [r["status"] for r in res["results"] if r["id"] == prop["id"]]
+        self.assertEqual(statuses, ["matched"])
+
+
 class AISettingsTests(unittest.TestCase):
     def setUp(self):
         _reset_db()
