@@ -153,6 +153,8 @@ body {
 /* matched-record preview */
 .match { display: flex; gap: 11px; border: 1px solid var(--border); border-radius: 11px; padding: 10px; background: var(--bg-sunken); }
 .match .thumb { width: 66px; height: 66px; border-radius: 8px; flex: 0 0 auto; }
+.tr-thumb { width: 54px; height: 54px; border-radius: 8px; flex: 0 0 auto; }
+.thumb-img { object-fit: cover; background: var(--bg-sunken); }
 .match .info { min-width: 0; flex: 1; }
 .match .addr { font-weight: 600; font-size: 13px; letter-spacing: -0.005em; }
 .match .csub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }

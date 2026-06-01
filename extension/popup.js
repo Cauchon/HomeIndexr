@@ -118,7 +118,7 @@ async function apiPost(path, body) {
 // Self-contained: injected via chrome.scripting.executeScript({ func }).
 function extractListing() {
   const ADDR_RE = /\d+[^,\n]{0,60}?,\s*[A-Za-z .'-]{2,40},\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?/;
-  const out = { site: "other", address: null, price: null, beds: null, baths: null, sqft: null, url: location.href };
+  const out = { site: "other", address: null, price: null, beds: null, baths: null, sqft: null, image: null, url: location.href };
 
   const host = location.hostname.replace(/^www\./, "");
   if (host.includes("zillow.")) out.site = "zillow";
@@ -144,6 +144,11 @@ function extractListing() {
           const street = a.streetAddress, city = a.addressLocality, region = a.addressRegion, zip = a.postalCode;
           if (street && city && region) out.address = `${street}, ${city}, ${region}${zip ? " " + zip : ""}`;
         }
+        if (!out.image && node.image) {
+          const img = Array.isArray(node.image) ? node.image[0] : node.image;
+          const url = img && typeof img === "object" ? (img.url || img.contentUrl) : img;
+          if (typeof url === "string" && /^https?:\/\//.test(url)) out.image = url;
+        }
         if (!out.price && node.offers && node.offers.price) out.price = toNum(node.offers.price);
         if (!out.price && node.price) out.price = toNum(node.price);
         if (!out.sqft && node.floorSize && node.floorSize.value) out.sqft = toNum(node.floorSize.value);
@@ -167,6 +172,13 @@ function extractListing() {
       const m = (text || "").match(ADDR_RE);
       if (m) { out.address = m[0].replace(/\s+/g, " ").trim(); break; }
     }
+  }
+
+  // 2b) hero image fallback: og:image / twitter:image (both sites set these)
+  if (!out.image) {
+    const m = document.querySelector('meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"], meta[property="twitter:image"]');
+    const url = m && m.content;
+    if (typeof url === "string" && /^https?:\/\//.test(url)) out.image = url;
   }
 
   // 3) Realtor.com URL slug fallback: /…detail/4901-Bouldin-Ave_Austin_TX_78704[_M…]
@@ -203,6 +215,14 @@ async function detectListing() {
     // No host access (e.g. user must click the icon) — still mark as a listing host.
     return { ...base, site: host.includes("zillow.") ? "zillow" : "realtor" };
   }
+}
+
+// Listing thumbnail: the scraped hero image, falling back to the striped
+// placeholder if there's no image (or it fails to load).
+function thumb(url, cls = "thumb") {
+  // MV3 blocks inline handlers; the load-failure fallback is wired in paint().
+  if (url) return `<img class="${cls} thumb-img" src="${esc(url)}" alt="" referrerpolicy="no-referrer" />`;
+  return `<div class="ph ${cls}"></div>`;
 }
 
 // ---------- shared UI pieces ----------
@@ -242,7 +262,7 @@ function matchPreview(listing, { estimate, estLow, estHigh, estSource } = {}) {
   return `<div>
     <div class="hip-label">${icon("check", 12)} Listing detected<span class="badge ${site.badge} src" style="font-size:10px">${esc(site.name)}</span></div>
     <div class="match">
-      <div class="ph thumb"></div>
+      ${thumb(listing.image)}
       <div class="info">
         <div class="addr">${esc(line1)}</div>
         <div class="csub">${esc(line2)}</div>
@@ -255,7 +275,18 @@ function matchPreview(listing, { estimate, estLow, estHigh, estSource } = {}) {
 
 // ---------- render ----------
 const root = document.getElementById("root");
-function paint(html) { root.innerHTML = html; }
+function paint(html) {
+  root.innerHTML = html;
+  // Swap any thumbnail that fails to load back to the striped placeholder.
+  for (const img of root.querySelectorAll("img.thumb-img")) {
+    const fallbackCls = img.classList.contains("tr-thumb") ? "tr-thumb" : "thumb";
+    img.addEventListener("error", () => {
+      const ph = document.createElement("div");
+      ph.className = "ph " + fallbackCls;
+      img.replaceWith(ph);
+    }, { once: true });
+  }
+}
 function $(sel) { return root.querySelector(sel); }
 function openOptions() { chrome.runtime.openOptionsPage(); }
 
@@ -320,7 +351,7 @@ async function renderTracking(property) {
       <div class="hip-label" style="margin-bottom:0">${icon("activity", 12)} Already tracking this home</div>
       <div class="hip-tracking">
         <div class="tr-head">
-          <div class="ph thumb" style="width:54px;height:54px;border-radius:8px"></div>
+          ${thumb(LISTING && LISTING.image, "tr-thumb")}
           <div style="min-width:0;flex:1">
             <div style="font-weight:600;font-size:13px">${esc(line1)}</div>
             <div style="font-size:11px;color:var(--text-muted)">${esc(line2)}</div>
