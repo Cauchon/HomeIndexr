@@ -1106,42 +1106,6 @@ function RangeSlider({ min, max, step, value, onChange, hist }) {
     </div>);
 }
 
-// Single-handle slider (used for distance — a "within X" threshold).
-function SoloSlider({ min, max, step, value, onChange }) {
-  const trackRef = React.useRef(null);
-  const span = max - min || 1;
-  const pct = (v) => ((v - min) / span) * 100;
-  const startDrag = (e) => {
-    e.preventDefault();
-    const el = trackRef.current;
-    const move = (ev) => {
-      const r = el.getBoundingClientRect();
-      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
-      let t = clamp((cx - r.left) / r.width, 0, 1);
-      let v = Math.round((min + t * (max - min)) / step) * step;
-      onChange(clamp(v, min, max));
-    };
-    const up = () => {
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", up);
-      document.removeEventListener("touchmove", move);
-      document.removeEventListener("touchend", up);
-    };
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", up);
-    document.addEventListener("touchmove", move, { passive: false });
-    document.addEventListener("touchend", up);
-  };
-  return (
-    <div className="rs">
-      <div className="rs-track" ref={trackRef}>
-        <div className="rs-fill" style={{ left: 0, right: (100 - pct(value)) + "%" }} />
-        <button type="button" className="rs-thumb" style={{ left: pct(value) + "%" }}
-          onPointerDown={startDrag} aria-label="Distance" />
-      </div>
-    </div>);
-}
-
 // Editable Min / Max boxes that mirror the slider.
 function MinMaxBox({ prefix, suffix, value, display, onCommit }) {
   const [draft, setDraft] = useState_p(null);
@@ -1229,38 +1193,34 @@ function AreaListingsCard({ property, navigate, onChanged }) {
   const dom = useMemo_p(() => {
     const prices = allComps.map((c) => c.list_price).filter((v) => v != null);
     const sqfts  = allComps.map((c) => c.sqft).filter((v) => v != null);
-    const dists  = allComps.map((c) => c.distance_mi).filter((v) => v != null);
     const pLo = prices.length ? Math.max(0, floorTo(Math.min(...prices), 25000) - 25000) : 0;
     const pHi = prices.length ? ceilTo(Math.max(...prices), 25000) + 25000 : 0;
     const sLo = sqfts.length ? Math.max(0, floorTo(Math.min(...sqfts), 100) - 100) : 0;
     const sHi = sqfts.length ? ceilTo(Math.max(...sqfts), 100) + 100 : 0;
-    const dMax = dists.length ? Math.max(1, ceilTo(Math.max(...dists), 0.5)) : 1;
     const N = 30, bw = (pHi - pLo) / 6 || 1;
     const raw = Array.from({ length: N }, (_, i) => {
       const x = pLo + ((i + 0.5) / N) * (pHi - pLo);
       return prices.reduce((s, p) => { const d = (x - p) / bw; return s + Math.exp(-0.5 * d * d); }, 0);
     });
     const mx = Math.max(...raw) || 1;
-    return { pLo, pHi, sLo, sHi, dMax, hist: prices.length ? raw.map((v) => v / mx) : [] };
+    return { pLo, pHi, sLo, sHi, hist: prices.length ? raw.map((v) => v / mx) : [] };
   }, [allComps]);
 
   const [price, setPrice] = useState_p([dom.pLo, dom.pHi]);
   const [sqft,  setSqft]  = useState_p([dom.sLo, dom.sHi]);
   const [beds,  setBeds]  = useState_p(null);
-  const [dist,  setDist]  = useState_p(dom.dMax);
 
   // Reset the bands to the full domain whenever a new comp set loads (property
   // change → refetch → new allComps → new dom).
   useEffect_p(() => {
     setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
-    setBeds(null); setDist(dom.dMax);
+    setBeds(null);
   }, [dom]);
 
   const priceActive = price[0] > dom.pLo || price[1] < dom.pHi;
   const sqftActive  = sqft[0] > dom.sLo || sqft[1] < dom.sHi;
   const bedsActive  = beds !== null;
-  const distActive  = dist < dom.dMax;
-  const anyFilter   = priceActive || sqftActive || bedsActive || distActive;
+  const anyFilter   = priceActive || sqftActive || bedsActive;
 
   // Filter the loaded comps. A comp missing a dimension isn't excluded on it —
   // we only hide listings that actively fall outside a band the user set.
@@ -1268,14 +1228,13 @@ function AreaListingsCard({ property, navigate, onChanged }) {
     () => allComps.filter((c) =>
       (c.list_price == null || (c.list_price >= price[0] && c.list_price <= price[1])) &&
       (c.sqft == null || (c.sqft >= sqft[0] && c.sqft <= sqft[1])) &&
-      (c.distance_mi == null || c.distance_mi <= dist) &&
       (beds === null || c.beds == null || (c.beds >= beds[0] && (beds[1] >= 5 || c.beds <= beds[1])))),
-    [allComps, price, sqft, dist, beds]
+    [allComps, price, sqft, beds]
   );
 
   function clearAll() {
     setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
-    setBeds(null); setDist(dom.dMax);
+    setBeds(null);
   }
 
   // Pill summaries.
@@ -1291,7 +1250,6 @@ function AreaListingsCard({ property, navigate, onChanged }) {
   const bedsSummary = !beds ? "Any"
     : beds[0] === beds[1] ? bedLabel(beds[0])
     : (beds[1] >= 5 ? beds[0] + "+" : beds[0] + "–" + beds[1]);
-  const distSummary = !distActive ? "Any" : "≤ " + (dist % 1 === 0 ? dist : dist.toFixed(1)) + " mi";
 
   return (
     <div className="cmp-module">
@@ -1353,17 +1311,6 @@ function AreaListingsCard({ property, navigate, onChanged }) {
                   <div className="rs-ends"><span>{fmt.num(dom.sLo)}</span><span>{fmt.num(dom.sHi)}+</span></div>
                   <RangeFooter disabled={!sqftActive} onDone={close}
                     onReset={() => setSqft([dom.sLo, dom.sHi])} />
-                </div>
-              )}
-            </FilterPop>
-
-            <FilterPop label="Distance" summary={distSummary} active={distActive} popWidth={244}>
-              {(close) => (
-                <div className="rs-pop">
-                  <div className="rs-readout">Within <b>{dist % 1 === 0 ? dist : dist.toFixed(1)} mi</b></div>
-                  <SoloSlider min={0.5} max={dom.dMax} step={0.5} value={dist} onChange={setDist} />
-                  <div className="rs-ends"><span>½ mi</span><span>{dom.dMax} mi</span></div>
-                  <RangeFooter disabled={!distActive} onDone={close} onReset={() => setDist(dom.dMax)} />
                 </div>
               )}
             </FilterPop>
