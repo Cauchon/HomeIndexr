@@ -78,7 +78,10 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
    `canonical_address`; new fetches for an existing address update and
    reactivate that row.
 4. **Raw Realtor JSON is preserved on the property row** in `properties.raw_json`
-   for debugging. Don't strip it.
+   for debugging. Don't strip it. Listing photos are derived from it at read
+   time (`scraper.extract_photos`, surfaced as `photos` on the detail endpoint),
+   not stored separately — keep that derivation in one place, like
+   `all_estimates`. The detail query requests `photos { href tags { label } }`.
 5. **AVM data lives in two shapes.** `scraper._normalize_estimates` handles
    both `raw["current_estimates"]` (flat snake_case) and
    `raw["estimates"]["currentValues"]` (nested camelCase). Preference order:
@@ -200,7 +203,7 @@ the frontend formatters.
 | GET    | `/api/properties`                 | List properties with current state              |
 | GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
 | PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
-| GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools |
+| GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools + `photos` (`[{href, label}]`, derived from `raw_json`) |
 | GET    | `/api/properties/{id}/area`       | Comparable for-sale homes in this property's ZIP (cache-only; excludes the subject; strict gating + similarity ranking). `{zip, fetched_at, comps, relaxed, limited, subject_price_per_sqft}` |
 | POST   | `/api/properties/{id}/ai/ask`     | `{question}` — server-side DeepSeek answer grounded in local property context; may call web-search/geocoding tools. Returns `tools_used` |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
