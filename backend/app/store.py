@@ -49,6 +49,21 @@ def _norm(addr: str | None) -> str:
     return re.sub(r"\s+", " ", (addr or "")).strip().lower()
 
 
+def persisted_status(fetched: dict) -> str:
+    """The status to store on a tracked property row.
+
+    A property only reaches the store once its match has been accepted: the add
+    endpoint gates an unconfirmed *new* `candidate_mismatch` and never persists
+    it. So a `candidate_mismatch` recomputed on an already-tracked property (e.g.
+    because the saved input address omits the ZIP) is a resolved decision, not a
+    standing problem — we store it as `matched` rather than re-flagging it as an
+    issue on every refresh. Genuine problems (`error`, `no_candidates`) are kept
+    so they still surface.
+    """
+    status = fetched.get("status", "matched")
+    return "matched" if status == "candidate_mismatch" else status
+
+
 def _row_to_property(row: Any) -> dict:
     p = {k: row[k] for k in PROPERTY_COLS}
     p["active"] = bool(p["active"])
@@ -266,7 +281,7 @@ def create_property(input_address: str, fetched: dict) -> dict:
                 fetched.get("property_url"),
                 fetched.get("listing_state"),
                 1,
-                fetched.get("status", "matched"),
+                persisted_status(fetched),
                 *_current_values(fetched, now),
                 now,
                 now,
@@ -392,12 +407,13 @@ def update_property_meta(property_id: int, fetched: dict) -> dict | None:
     """Refresh metadata/current fetched state and record observed price changes."""
     now = _now()
     observed_event = None
+    status = persisted_status(fetched)
     with get_conn() as conn:
         previous = conn.execute(
             "SELECT id, listing_state, listing_id, list_price FROM properties WHERE id = ?",
             (property_id,),
         ).fetchone()
-        if previous and fetched.get("status", "matched") == "matched":
+        if previous and status == "matched":
             observed_event = _observed_list_price_event(previous, fetched, now)
             if observed_event:
                 observed_event = _insert_observed_event(conn, observed_event)
@@ -425,7 +441,7 @@ def update_property_meta(property_id: int, fetched: dict) -> dict | None:
                 fetched.get("listing_id"),
                 fetched.get("property_url"),
                 fetched.get("listing_state"),
-                fetched.get("status", "matched"),
+                status,
                 *_current_values(fetched, now),
                 now,
                 property_id,

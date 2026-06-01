@@ -309,7 +309,7 @@ def refresh_all():
         zip_code = fetched.get("zip") or p.get("zip")
         if zip_code:
             zips.add(zip_code)
-        results.append({"id": p["id"], "status": fetched.get("status"), "observed_event": observed_event})
+        results.append({"id": p["id"], "status": store.persisted_status(fetched), "observed_event": observed_event})
     # One area fetch per unique ZIP, not per property.
     for zip_code in zips:
         store.refresh_area_for_zip(zip_code)

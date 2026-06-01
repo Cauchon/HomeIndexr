@@ -3007,7 +3007,7 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
               <div className="label">Issues</div>
               <div className="value" style={{ color: issues.length ? "var(--warn)" : "var(--text)" }}>{issues.length}</div>
               <div className="sub">
-                {issues.filter((p) => p.status === "error").length} errors · {issues.filter((p) => p.status === "candidate_mismatch").length} mismatches
+                {issues.filter((p) => p.status === "error").length} errors · {issues.filter((p) => p.status === "no_candidates").length} no match
               </div>
             </div>
             <div className="fact">
@@ -3051,8 +3051,7 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
                         <tbody>
                           {issues.map((p) => {
                             const sp = splitAddress(displayAddress(p));
-                            const note = p.error ||
-                              (p.status === "candidate_mismatch" ? `Matched ${p.matched_address || "candidate"}` : "No candidates returned");
+                            const note = p.error || "No candidates returned";
                             return (
                               <tr key={p.id} onClick={() => navigate("detail", p.id)}>
                                 <td className="address-cell">{sp.line1} <span className="sub">· {sp.line2}</span></td>
