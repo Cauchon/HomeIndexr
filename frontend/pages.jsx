@@ -986,14 +986,196 @@ function CompCardCompact({ comp, navigate, onChanged }) {
   );
 }
 
+// ============================================================
+// Range-based comp filters — set a low/high band per dimension, like the
+// price / beds / sqft range controls on the major listing portals. Each
+// dimension is a pill that opens a popover holding a draggable range slider
+// (plus editable Min/Max), instead of the read-only scope chips that used to
+// sit here. Filtering is purely client-side over the already-loaded comp set,
+// so it never triggers a Realtor fetch.
+// ============================================================
+const usdK = (v) => fmt.usd(v, { compact: true });
+
+// nice rounding helpers
+const floorTo = (v, s) => Math.floor(v / s) * s;
+const ceilTo  = (v, s) => Math.ceil(v / s) * s;
+const clamp   = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Pill + popover shell shared by every range filter.
+function FilterPop({ label, summary, active, popWidth, children }) {
+  const [open, setOpen] = useState_p(false);
+  const ref = React.useRef(null);
+  useEffect_p(() => {
+    if (!open) return;
+    const off = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("pointerdown", off, true);
+    return () => document.removeEventListener("pointerdown", off, true);
+  }, [open]);
+  return (
+    <div className={"cmp-filter" + (open ? " open" : "")} ref={ref}>
+      <button
+        type="button"
+        className={"cmp-filter-btn" + (active ? " active" : "")}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}>
+        <span className="k">{label}</span>
+        <b>{summary}</b>
+        <svg className="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+      </button>
+      {open &&
+        <div className="cmp-filter-menu cmp-rangepop" style={popWidth ? { width: popWidth } : null}>
+          {typeof children === "function" ? children(() => setOpen(false)) : children}
+        </div>}
+    </div>);
+}
+
+// Dual-handle range slider (drag either thumb). Optional histogram behind it.
+function RangeSlider({ min, max, step, value, onChange, hist }) {
+  const [lo, hi] = value;
+  const trackRef = React.useRef(null);
+  const span = max - min || 1;
+  const pct = (v) => ((v - min) / span) * 100;
+
+  const startDrag = (which) => (e) => {
+    e.preventDefault();
+    const el = trackRef.current;
+    const move = (ev) => {
+      const r = el.getBoundingClientRect();
+      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+      let t = clamp((cx - r.left) / r.width, 0, 1);
+      let v = Math.round((min + t * (max - min)) / step) * step;
+      v = clamp(v, min, max);
+      if (which === 0) onChange([Math.min(v, hi - step), hi]);
+      else onChange([lo, Math.max(v, lo + step)]);
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("touchmove", move);
+      document.removeEventListener("touchend", up);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("touchmove", move, { passive: false });
+    document.addEventListener("touchend", up);
+  };
+
+  return (
+    <div className="rs">
+      {hist && hist.length > 0 &&
+        <div className="rs-hist">
+          {hist.map((h, i) => {
+            const c = min + ((i + 0.5) / hist.length) * (max - min);
+            const inRange = c >= lo && c <= hi;
+            return <span key={i} className={"rs-bar" + (inRange ? " in" : "")} style={{ height: (10 + h * 30) + "px" }} />;
+          })}
+        </div>}
+      <div className="rs-track" ref={trackRef}>
+        <div className="rs-fill" style={{ left: pct(lo) + "%", right: (100 - pct(hi)) + "%" }} />
+        <button type="button" className="rs-thumb" style={{ left: pct(lo) + "%" }}
+          onPointerDown={startDrag(0)} aria-label="Minimum" />
+        <button type="button" className="rs-thumb" style={{ left: pct(hi) + "%" }}
+          onPointerDown={startDrag(1)} aria-label="Maximum" />
+      </div>
+    </div>);
+}
+
+// Single-handle slider (used for distance — a "within X" threshold).
+function SoloSlider({ min, max, step, value, onChange }) {
+  const trackRef = React.useRef(null);
+  const span = max - min || 1;
+  const pct = (v) => ((v - min) / span) * 100;
+  const startDrag = (e) => {
+    e.preventDefault();
+    const el = trackRef.current;
+    const move = (ev) => {
+      const r = el.getBoundingClientRect();
+      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+      let t = clamp((cx - r.left) / r.width, 0, 1);
+      let v = Math.round((min + t * (max - min)) / step) * step;
+      onChange(clamp(v, min, max));
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("touchmove", move);
+      document.removeEventListener("touchend", up);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("touchmove", move, { passive: false });
+    document.addEventListener("touchend", up);
+  };
+  return (
+    <div className="rs">
+      <div className="rs-track" ref={trackRef}>
+        <div className="rs-fill" style={{ left: 0, right: (100 - pct(value)) + "%" }} />
+        <button type="button" className="rs-thumb" style={{ left: pct(value) + "%" }}
+          onPointerDown={startDrag} aria-label="Distance" />
+      </div>
+    </div>);
+}
+
+// Editable Min / Max boxes that mirror the slider.
+function MinMaxBox({ prefix, suffix, value, display, onCommit }) {
+  const [draft, setDraft] = useState_p(null);
+  const shown = draft != null ? draft : display(value);
+  return (
+    <label className="rs-num">
+      {prefix && <span className="px">{prefix}</span>}
+      <input
+        value={shown}
+        inputMode="numeric"
+        onFocus={(e) => { setDraft(String(value)); requestAnimationFrame(() => e.target.select()); }}
+        onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
+        onBlur={(e) => { const n = parseInt((e.target.value || "").replace(/[^\d]/g, ""), 10); onCommit(Number.isNaN(n) ? value : n); setDraft(null); }}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+      {suffix && <span className="sx">{suffix}</span>}
+    </label>);
+}
+
+function RangeFooter({ onReset, onDone, disabled }) {
+  return (
+    <div className="rs-foot">
+      <button type="button" className="rs-reset" onClick={onReset} disabled={disabled}>Reset</button>
+      <button type="button" className="rs-done" onClick={onDone}>Done</button>
+    </div>);
+}
+
+// Beds — Redfin-style "tap two numbers to select a range".
+const BED_STOPS = [1, 2, 3, 4, 5];
+function BedsControl({ value, onChange }) {
+  // value === null => Any; otherwise [lo, hi]
+  function tap(v) {
+    if (!value) { onChange([v, v]); return; }
+    const [lo, hi] = value;
+    if (lo === hi) onChange([Math.min(lo, v), Math.max(lo, v)]);
+    else onChange([v, v]); // a full range exists → start over
+  }
+  const inRange = (v) => value && v >= value[0] && v <= value[1];
+  const isEnd = (v) => value && (v === value[0] || v === value[1]);
+  return (
+    <div className="rs-beds">
+      <button type="button" className={"rs-bedpill" + (!value ? " on" : "")} onClick={() => onChange(null)}>Any</button>
+      {BED_STOPS.map((v) =>
+        <button key={v} type="button"
+          className={"rs-bedpill" + (inRange(v) ? " in" : "") + (isEnd(v) ? " end" : "")}
+          onClick={() => tap(v)}>{v === 5 ? "5+" : v}</button>)}
+    </div>);
+}
+
 // Comparable homes for sale in this property's ZIP — Option A photo card grid,
 // sitting full-width below the activity timeline. Reads a server-side cache
 // (refreshed only when the user refreshes the property — this module never
 // triggers a Realtor fetch, so opening a detail page adds no upstream traffic),
 // which the server gates + ranks into appraisal-style comps. Header shows the
-// count and scope chips (within X mi · bed/sqft band · this home's $/sqft)
-// derived from the actual comp set. Empty state points the user at refresh; a
-// relaxed note shows when strict gating fell back to a looser comp set.
+// count and portal-style range filters (price / beds / sqft / distance) that
+// narrow the loaded comp set client-side — no upstream fetch. Filter domains
+// (and the price histogram behind the price slider) are derived from the actual
+// comp set, so the sliders always span the real listings. Empty state points the
+// user at refresh; a relaxed note shows when strict gating fell back to a looser
+// comp set; a separate empty state shows when filters exclude every comp.
 function AreaListingsCard({ property, navigate, onChanged }) {
   const [state, setState] = useState_p({ loading: true, error: null, data: null });
   // Switch to the compact two-up grid at the same width the desktop card grid
@@ -1010,17 +1192,81 @@ function AreaListingsCard({ property, navigate, onChanged }) {
   }, [property.id]);
 
   const { loading, error, data } = state;
-  const comps = (data && data.comps) || [];
+  // Stable reference between renders so the domain/reset memos below don't churn.
+  const allComps = useMemo_p(() => (data && data.comps) || [], [data]);
   const fetchedAt = data && data.fetched_at;
   const subjectPpsf = data && data.subject_price_per_sqft;
   const line1 = splitAddress(displayAddress(property)).line1;
 
-  // Scope chips derived from the actual comp set (not the request).
-  const sqfts = comps.map((c) => c.sqft).filter((v) => v != null);
-  const dists = comps.map((c) => c.distance_mi).filter((v) => v != null);
-  const lo = sqfts.length ? Math.floor(Math.min(...sqfts) / 50) * 50 : null;
-  const hi = sqfts.length ? Math.ceil(Math.max(...sqfts) / 50) * 50 : null;
-  const maxDist = dists.length ? Math.max(...dists) : null;
+  // Slider domains + a smoothed price histogram derived from the comp set. Each
+  // band is padded out to a round step so the handles sit just past the extremes.
+  // Degenerate (no values) → zero-width domain; the matching pill reads "Any".
+  const dom = useMemo_p(() => {
+    const prices = allComps.map((c) => c.list_price).filter((v) => v != null);
+    const sqfts  = allComps.map((c) => c.sqft).filter((v) => v != null);
+    const dists  = allComps.map((c) => c.distance_mi).filter((v) => v != null);
+    const pLo = prices.length ? Math.max(0, floorTo(Math.min(...prices), 25000) - 25000) : 0;
+    const pHi = prices.length ? ceilTo(Math.max(...prices), 25000) + 25000 : 0;
+    const sLo = sqfts.length ? Math.max(0, floorTo(Math.min(...sqfts), 100) - 100) : 0;
+    const sHi = sqfts.length ? ceilTo(Math.max(...sqfts), 100) + 100 : 0;
+    const dMax = dists.length ? Math.max(1, ceilTo(Math.max(...dists), 0.5)) : 1;
+    const N = 30, bw = (pHi - pLo) / 6 || 1;
+    const raw = Array.from({ length: N }, (_, i) => {
+      const x = pLo + ((i + 0.5) / N) * (pHi - pLo);
+      return prices.reduce((s, p) => { const d = (x - p) / bw; return s + Math.exp(-0.5 * d * d); }, 0);
+    });
+    const mx = Math.max(...raw) || 1;
+    return { pLo, pHi, sLo, sHi, dMax, hist: prices.length ? raw.map((v) => v / mx) : [] };
+  }, [allComps]);
+
+  const [price, setPrice] = useState_p([dom.pLo, dom.pHi]);
+  const [sqft,  setSqft]  = useState_p([dom.sLo, dom.sHi]);
+  const [beds,  setBeds]  = useState_p(null);
+  const [dist,  setDist]  = useState_p(dom.dMax);
+
+  // Reset the bands to the full domain whenever a new comp set loads (property
+  // change → refetch → new allComps → new dom).
+  useEffect_p(() => {
+    setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
+    setBeds(null); setDist(dom.dMax);
+  }, [dom]);
+
+  const priceActive = price[0] > dom.pLo || price[1] < dom.pHi;
+  const sqftActive  = sqft[0] > dom.sLo || sqft[1] < dom.sHi;
+  const bedsActive  = beds !== null;
+  const distActive  = dist < dom.dMax;
+  const anyFilter   = priceActive || sqftActive || bedsActive || distActive;
+
+  // Filter the loaded comps. A comp missing a dimension isn't excluded on it —
+  // we only hide listings that actively fall outside a band the user set.
+  const comps = useMemo_p(
+    () => allComps.filter((c) =>
+      (c.list_price == null || (c.list_price >= price[0] && c.list_price <= price[1])) &&
+      (c.sqft == null || (c.sqft >= sqft[0] && c.sqft <= sqft[1])) &&
+      (c.distance_mi == null || c.distance_mi <= dist) &&
+      (beds === null || c.beds == null || (c.beds >= beds[0] && (beds[1] >= 5 || c.beds <= beds[1])))),
+    [allComps, price, sqft, dist, beds]
+  );
+
+  function clearAll() {
+    setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
+    setBeds(null); setDist(dom.dMax);
+  }
+
+  // Pill summaries.
+  const priceSummary = !priceActive ? "Any"
+    : price[0] <= dom.pLo ? "Up to " + usdK(price[1])
+    : price[1] >= dom.pHi ? usdK(price[0]) + "+"
+    : usdK(price[0]) + "–" + usdK(price[1]);
+  const sqftSummary = !sqftActive ? "Any"
+    : sqft[0] <= dom.sLo ? "Up to " + fmt.num(sqft[1])
+    : sqft[1] >= dom.sHi ? fmt.num(sqft[0]) + "+"
+    : fmt.num(sqft[0]) + "–" + fmt.num(sqft[1]);
+  const bedLabel = (v) => (v >= 5 ? "5+" : String(v));
+  const bedsSummary = !beds ? "Any"
+    : beds[0] === beds[1] ? bedLabel(beds[0])
+    : (beds[1] >= 5 ? beds[0] + "+" : beds[0] + "–" + beds[1]);
+  const distSummary = !distActive ? "Any" : "≤ " + (dist % 1 === 0 ? dist : dist.toFixed(1)) + " mi";
 
   return (
     <div className="cmp-module">
@@ -1028,27 +1274,85 @@ function AreaListingsCard({ property, navigate, onChanged }) {
         <div className="cmp-head-l">
           <h2 className="cmp-title">
             Comparable homes for sale
+            {allComps.length > 0 && <span className="cmp-count">{comps.length}</span>}
           </h2>
           <div className="cmp-sub">
             Active listings near <b>{line1}</b>
             {data && data.zip ? ` · ${data.zip}` : ""}
+            {subjectPpsf != null ? ` · this home ${fmt.usd(subjectPpsf)}/sqft` : ""}
             {fetchedAt ? ` · updated ${fmt.relative(fetchedAt)}` : ""}
           </div>
         </div>
-        {comps.length > 0 && (
+        {allComps.length > 0 && (
           <div className="cmp-head-r">
-            {maxDist != null && <span className="cmp-scope">Within <b>{maxDist} mi</b></span>}
-            {property.beds != null && lo != null && (
-              <span className="cmp-scope"><b>{property.beds} bd</b> · {fmt.num(lo)}–{fmt.num(hi)} sqft</span>
-            )}
-            {subjectPpsf != null && (
-              <span className="cmp-scope">This home <b>{fmt.usd(subjectPpsf)}/sqft</b></span>
+
+            <FilterPop label="Price" summary={priceSummary} active={priceActive} popWidth={300}>
+              {(close) => (
+                <div className="rs-pop">
+                  <div className="rs-fields">
+                    <MinMaxBox prefix="$" value={price[0]} display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setPrice([clamp(n, dom.pLo, price[1]), price[1]])} />
+                    <span className="rs-dash">–</span>
+                    <MinMaxBox prefix="$" value={price[1]} display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setPrice([price[0], clamp(n, price[0], dom.pHi)])} />
+                  </div>
+                  <RangeSlider min={dom.pLo} max={dom.pHi} step={5000} value={price} onChange={setPrice} hist={dom.hist} />
+                  <div className="rs-ends"><span>{usdK(dom.pLo)}</span><span>{usdK(dom.pHi)}+</span></div>
+                  <RangeFooter disabled={!priceActive} onDone={close}
+                    onReset={() => setPrice([dom.pLo, dom.pHi])} />
+                </div>
+              )}
+            </FilterPop>
+
+            <FilterPop label="Beds" summary={bedsSummary} active={bedsActive} popWidth={264}>
+              {(close) => (
+                <div className="rs-pop">
+                  <div className="rs-hint">Tap two numbers to set a range</div>
+                  <BedsControl value={beds} onChange={setBeds} />
+                  <RangeFooter disabled={!bedsActive} onDone={close} onReset={() => setBeds(null)} />
+                </div>
+              )}
+            </FilterPop>
+
+            <FilterPop label="Sqft" summary={sqftSummary} active={sqftActive} popWidth={284}>
+              {(close) => (
+                <div className="rs-pop">
+                  <div className="rs-fields">
+                    <MinMaxBox value={sqft[0]} suffix="sqft" display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setSqft([clamp(n, dom.sLo, sqft[1]), sqft[1]])} />
+                    <span className="rs-dash">–</span>
+                    <MinMaxBox value={sqft[1]} suffix="sqft" display={(v) => v.toLocaleString()}
+                      onCommit={(n) => setSqft([sqft[0], clamp(n, sqft[0], dom.sHi)])} />
+                  </div>
+                  <RangeSlider min={dom.sLo} max={dom.sHi} step={50} value={sqft} onChange={setSqft} />
+                  <div className="rs-ends"><span>{fmt.num(dom.sLo)}</span><span>{fmt.num(dom.sHi)}+</span></div>
+                  <RangeFooter disabled={!sqftActive} onDone={close}
+                    onReset={() => setSqft([dom.sLo, dom.sHi])} />
+                </div>
+              )}
+            </FilterPop>
+
+            <FilterPop label="Distance" summary={distSummary} active={distActive} popWidth={244}>
+              {(close) => (
+                <div className="rs-pop">
+                  <div className="rs-readout">Within <b>{dist % 1 === 0 ? dist : dist.toFixed(1)} mi</b></div>
+                  <SoloSlider min={0.5} max={dom.dMax} step={0.5} value={dist} onChange={setDist} />
+                  <div className="rs-ends"><span>½ mi</span><span>{dom.dMax} mi</span></div>
+                  <RangeFooter disabled={!distActive} onDone={close} onReset={() => setDist(dom.dMax)} />
+                </div>
+              )}
+            </FilterPop>
+
+            {anyFilter && (
+              <button type="button" className="cmp-clear" onClick={clearAll}>
+                <Icon name="x" size={12} /> Clear
+              </button>
             )}
           </div>
         )}
       </div>
 
-      {data && data.relaxed && comps.length > 0 && (
+      {data && data.relaxed && allComps.length > 0 && (
         <div className="cmp-note">Few strict comps — {data.relaxed}.</div>
       )}
 
@@ -1056,11 +1360,16 @@ function AreaListingsCard({ property, navigate, onChanged }) {
         <div className="cmp-state">Loading comparable homes…</div>
       ) : error ? (
         <div className="cmp-state">{error}</div>
-      ) : comps.length === 0 ? (
+      ) : allComps.length === 0 ? (
         <div className="cmp-state">
           {fetchedAt
             ? "No comparable for-sale homes in this ZIP."
             : "Refresh this property to find comparable homes for sale in its ZIP."}
+        </div>
+      ) : comps.length === 0 ? (
+        <div className="cmp-empty">
+          No comparable listings match these filters.{" "}
+          <button type="button" className="cmp-empty-reset" onClick={clearAll}>Reset filters</button>
         </div>
       ) : (
         <div className={isMobile ? "cmpM-grid" : "cmpA-grid"}>
