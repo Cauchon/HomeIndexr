@@ -1154,6 +1154,20 @@ function BedsControl({ value, onChange }) {
     </div>);
 }
 
+// Baths — single-select "minimum bathrooms" threshold (Any / 1+ / 1.5+ / …),
+// like the bath control on the major portals. value === null => Any.
+const BATH_STOPS = [1, 1.5, 2, 3, 4];
+function BathsControl({ value, onChange }) {
+  return (
+    <div className="rs-beds">
+      <button type="button" className={"rs-bedpill" + (value == null ? " on" : "")} onClick={() => onChange(null)}>Any</button>
+      {BATH_STOPS.map((v) =>
+        <button key={v} type="button"
+          className={"rs-bedpill" + (value === v ? " on" : "")}
+          onClick={() => onChange(v)}>{v}+</button>)}
+    </div>);
+}
+
 // Comparable homes for sale in this property's ZIP — Option A photo card grid,
 // sitting full-width below the activity timeline. Reads a server-side cache
 // (refreshed only when the user refreshes the property — this module never
@@ -1209,18 +1223,20 @@ function AreaListingsCard({ property, navigate, onChanged }) {
   const [price, setPrice] = useState_p([dom.pLo, dom.pHi]);
   const [sqft,  setSqft]  = useState_p([dom.sLo, dom.sHi]);
   const [beds,  setBeds]  = useState_p(null);
+  const [baths, setBaths] = useState_p(null);
 
   // Reset the bands to the full domain whenever a new comp set loads (property
   // change → refetch → new allComps → new dom).
   useEffect_p(() => {
     setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
-    setBeds(null);
+    setBeds(null); setBaths(null);
   }, [dom]);
 
   const priceActive = price[0] > dom.pLo || price[1] < dom.pHi;
   const sqftActive  = sqft[0] > dom.sLo || sqft[1] < dom.sHi;
   const bedsActive  = beds !== null;
-  const anyFilter   = priceActive || sqftActive || bedsActive;
+  const bathsActive = baths !== null;
+  const anyFilter   = priceActive || sqftActive || bedsActive || bathsActive;
 
   // Filter the loaded comps. A comp missing a dimension isn't excluded on it —
   // we only hide listings that actively fall outside a band the user set.
@@ -1228,13 +1244,14 @@ function AreaListingsCard({ property, navigate, onChanged }) {
     () => allComps.filter((c) =>
       (c.list_price == null || (c.list_price >= price[0] && c.list_price <= price[1])) &&
       (c.sqft == null || (c.sqft >= sqft[0] && c.sqft <= sqft[1])) &&
-      (beds === null || c.beds == null || (c.beds >= beds[0] && (beds[1] >= 5 || c.beds <= beds[1])))),
-    [allComps, price, sqft, beds]
+      (beds === null || c.beds == null || (c.beds >= beds[0] && (beds[1] >= 5 || c.beds <= beds[1]))) &&
+      (baths === null || c.baths == null || c.baths >= baths)),
+    [allComps, price, sqft, beds, baths]
   );
 
   function clearAll() {
     setPrice([dom.pLo, dom.pHi]); setSqft([dom.sLo, dom.sHi]);
-    setBeds(null);
+    setBeds(null); setBaths(null);
   }
 
   // Pill summaries.
@@ -1250,6 +1267,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
   const bedsSummary = !beds ? "Any"
     : beds[0] === beds[1] ? bedLabel(beds[0])
     : (beds[1] >= 5 ? beds[0] + "+" : beds[0] + "–" + beds[1]);
+  const bathsSummary = baths == null ? "Any" : baths + "+";
 
   return (
     <div className="cmp-module">
@@ -1293,6 +1311,16 @@ function AreaListingsCard({ property, navigate, onChanged }) {
                   <div className="rs-hint">Tap two numbers to set a range</div>
                   <BedsControl value={beds} onChange={setBeds} />
                   <RangeFooter disabled={!bedsActive} onDone={close} onReset={() => setBeds(null)} />
+                </div>
+              )}
+            </FilterPop>
+
+            <FilterPop label="Baths" summary={bathsSummary} active={bathsActive} popWidth={280}>
+              {(close) => (
+                <div className="rs-pop">
+                  <div className="rs-hint">Minimum bathrooms</div>
+                  <BathsControl value={baths} onChange={setBaths} />
+                  <RangeFooter disabled={!bathsActive} onDone={close} onReset={() => setBaths(null)} />
                 </div>
               )}
             </FilterPop>
