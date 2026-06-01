@@ -1132,36 +1132,16 @@ function RangeFooter({ onReset, onDone, disabled }) {
     </div>);
 }
 
-// Beds — Redfin-style "tap two numbers to select a range".
+// Single-select "minimum X" threshold (Any / 1+ / 2+ / …), shared by the Beds
+// and Baths filters — like the bed/bath controls on the major portals. Tapping a
+// stop sets that minimum; tapping Any clears it. value === null => Any.
 const BED_STOPS = [1, 2, 3, 4, 5];
-function BedsControl({ value, onChange }) {
-  // value === null => Any; otherwise [lo, hi]
-  function tap(v) {
-    if (!value) { onChange([v, v]); return; }
-    const [lo, hi] = value;
-    if (lo === hi) onChange([Math.min(lo, v), Math.max(lo, v)]);
-    else onChange([v, v]); // a full range exists → start over
-  }
-  const inRange = (v) => value && v >= value[0] && v <= value[1];
-  const isEnd = (v) => value && (v === value[0] || v === value[1]);
-  return (
-    <div className="rs-beds">
-      <button type="button" className={"rs-bedpill" + (!value ? " on" : "")} onClick={() => onChange(null)}>Any</button>
-      {BED_STOPS.map((v) =>
-        <button key={v} type="button"
-          className={"rs-bedpill" + (inRange(v) ? " in" : "") + (isEnd(v) ? " end" : "")}
-          onClick={() => tap(v)}>{v === 5 ? "5+" : v}</button>)}
-    </div>);
-}
-
-// Baths — single-select "minimum bathrooms" threshold (Any / 1+ / 1.5+ / …),
-// like the bath control on the major portals. value === null => Any.
 const BATH_STOPS = [1, 1.5, 2, 3, 4];
-function BathsControl({ value, onChange }) {
+function MinSelectControl({ stops, value, onChange }) {
   return (
     <div className="rs-beds">
       <button type="button" className={"rs-bedpill" + (value == null ? " on" : "")} onClick={() => onChange(null)}>Any</button>
-      {BATH_STOPS.map((v) =>
+      {stops.map((v) =>
         <button key={v} type="button"
           className={"rs-bedpill" + (value === v ? " on" : "")}
           onClick={() => onChange(v)}>{v}+</button>)}
@@ -1244,7 +1224,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
     () => allComps.filter((c) =>
       (c.list_price == null || (c.list_price >= price[0] && c.list_price <= price[1])) &&
       (c.sqft == null || (c.sqft >= sqft[0] && c.sqft <= sqft[1])) &&
-      (beds === null || c.beds == null || (c.beds >= beds[0] && (beds[1] >= 5 || c.beds <= beds[1]))) &&
+      (beds === null || c.beds == null || c.beds >= beds) &&
       (baths === null || c.baths == null || c.baths >= baths)),
     [allComps, price, sqft, beds, baths]
   );
@@ -1263,10 +1243,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
     : sqft[0] <= dom.sLo ? "Up to " + fmt.num(sqft[1])
     : sqft[1] >= dom.sHi ? fmt.num(sqft[0]) + "+"
     : fmt.num(sqft[0]) + "–" + fmt.num(sqft[1]);
-  const bedLabel = (v) => (v >= 5 ? "5+" : String(v));
-  const bedsSummary = !beds ? "Any"
-    : beds[0] === beds[1] ? bedLabel(beds[0])
-    : (beds[1] >= 5 ? beds[0] + "+" : beds[0] + "–" + beds[1]);
+  const bedsSummary = beds == null ? "Any" : beds + "+";
   const bathsSummary = baths == null ? "Any" : baths + "+";
 
   return (
@@ -1308,8 +1285,8 @@ function AreaListingsCard({ property, navigate, onChanged }) {
             <FilterPop label="Beds" summary={bedsSummary} active={bedsActive} popWidth={264}>
               {(close) => (
                 <div className="rs-pop">
-                  <div className="rs-hint">Tap two numbers to set a range</div>
-                  <BedsControl value={beds} onChange={setBeds} />
+                  <div className="rs-hint">Minimum bedrooms</div>
+                  <MinSelectControl stops={BED_STOPS} value={beds} onChange={setBeds} />
                   <RangeFooter disabled={!bedsActive} onDone={close} onReset={() => setBeds(null)} />
                 </div>
               )}
@@ -1319,7 +1296,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
               {(close) => (
                 <div className="rs-pop">
                   <div className="rs-hint">Minimum bathrooms</div>
-                  <BathsControl value={baths} onChange={setBaths} />
+                  <MinSelectControl stops={BATH_STOPS} value={baths} onChange={setBaths} />
                   <RangeFooter disabled={!bathsActive} onDone={close} onReset={() => setBaths(null)} />
                 </div>
               )}
