@@ -1001,9 +1001,14 @@ const floorTo = (v, s) => Math.floor(v / s) * s;
 const ceilTo  = (v, s) => Math.ceil(v / s) * s;
 const clamp   = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-// Pill + popover shell shared by every range filter.
+// Pill + popover shell shared by every range filter. The popover defaults to
+// opening leftward (right-anchored under the pill) the way the design intends
+// when the filters sit at the header's right edge. When the filter row wraps to
+// the left at constrained widths, right-anchoring would run off the left edge —
+// so on open we measure the pill and flip to left-anchored if that would clip.
 function FilterPop({ label, summary, active, popWidth, children }) {
   const [open, setOpen] = useState_p(false);
+  const [alignLeft, setAlignLeft] = useState_p(false);
   const ref = React.useRef(null);
   useEffect_p(() => {
     if (!open) return;
@@ -1011,6 +1016,25 @@ function FilterPop({ label, summary, active, popWidth, children }) {
     document.addEventListener("pointerdown", off, true);
     return () => document.removeEventListener("pointerdown", off, true);
   }, [open]);
+  React.useLayoutEffect(() => {
+    if (!open || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const w = Math.min(popWidth || 300, window.innerWidth - 28);
+    // The popover is clipped by the nearest scrolling/hidden ancestor (the page
+    // scroll container), not the viewport — measure against that boundary. Right-
+    // anchored, the menu spans [r.right - w, r.right]; flip to left-anchored when
+    // its left edge would fall past the clip boundary's left edge.
+    let clipLeft = 8, node = ref.current.parentElement;
+    while (node) {
+      const ox = getComputedStyle(node).overflowX;
+      if (ox === "auto" || ox === "hidden" || ox === "scroll" || ox === "clip") {
+        clipLeft = node.getBoundingClientRect().left;
+        break;
+      }
+      node = node.parentElement;
+    }
+    setAlignLeft(r.right - w < clipLeft + 4);
+  }, [open, popWidth]);
   return (
     <div className={"cmp-filter" + (open ? " open" : "")} ref={ref}>
       <button
@@ -1024,7 +1048,8 @@ function FilterPop({ label, summary, active, popWidth, children }) {
              stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
       </button>
       {open &&
-        <div className="cmp-filter-menu cmp-rangepop" style={popWidth ? { width: popWidth } : null}>
+        <div className={"cmp-filter-menu cmp-rangepop" + (alignLeft ? " align-left" : "")}
+             style={popWidth ? { width: popWidth } : null}>
           {typeof children === "function" ? children(() => setOpen(false)) : children}
         </div>}
     </div>);

@@ -2495,6 +2495,9 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 9px;
   box-shadow: var(--shadow-lg); padding: 5px; display: flex; flex-direction: column; gap: 1px;
 }
+/* Flip to left-anchored when right-anchoring would clip the left viewport edge
+   (set by FilterPop after measuring the pill). */
+.cmp-filter-menu.align-left { right: auto; left: 0; }
 .cmp-rangepop {
   max-width: min(320px, calc(100vw - 28px));
   padding: 14px 14px 12px;
