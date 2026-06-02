@@ -107,6 +107,62 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(res["relaxed"], "widened the size range to ±40%")
 
 
+class FilterTests(unittest.TestCase):
+    def _pool(self):
+        # Six in-gate comps spanning price/sqft so filters have room to bite.
+        return [
+            _listing(f"c{i}", property_type="single_family", beds=3 + (i % 2),
+                     baths=2.0 + (i % 2), sqft=1900 + i * 20, list_price=500000 + i * 40000)
+            for i in range(6)
+        ]
+
+    def test_filters_draw_from_whole_pool_before_ranking(self):
+        # A max_price filter keeps the matching subset; ranking still applies.
+        res = comps.rank_comparables(_subject(), self._pool(),
+                                     filters={"max_price": 560000})
+        prices = [c["list_price"] for c in res["comps"]]
+        self.assertTrue(prices and all(p <= 560000 for p in prices))
+
+    def test_min_beds_filter_excludes_below_threshold(self):
+        res = comps.rank_comparables(_subject(), self._pool(),
+                                     filters={"min_beds": 4})
+        self.assertTrue(res["comps"])
+        self.assertTrue(all(c["beds"] >= 4 for c in res["comps"]))
+
+    def test_candidate_missing_dimension_not_excluded_by_filter(self):
+        res = comps.rank_comparables(_subject(), [
+            _listing("nobeds", property_type="single_family", sqft=2000, list_price=600000),
+        ], filters={"min_beds": 4})
+        self.assertEqual([c["property_id"] for c in res["comps"]], ["nobeds"])
+
+    def test_none_filters_are_noop(self):
+        f = {"min_price": None, "max_price": None, "min_beds": None,
+             "min_baths": None, "min_sqft": None, "max_sqft": None}
+        with_f = comps.rank_comparables(_subject(), self._pool(), filters=f)
+        without = comps.rank_comparables(_subject(), self._pool())
+        self.assertEqual([c["property_id"] for c in with_f["comps"]],
+                         [c["property_id"] for c in without["comps"]])
+
+
+class CompDomainTests(unittest.TestCase):
+    def test_domain_spans_full_unfiltered_pool(self):
+        listings = [
+            _listing(f"c{i}", property_type="single_family", beds=4, sqft=1900 + i * 20,
+                     list_price=500000 + i * 30000)
+            for i in range(10)
+        ]
+        dom = comps.comp_domain(_subject(), listings)
+        # Pool of 10 exceeds the display cap of 6 — domain must still see all 10.
+        self.assertEqual(dom["count"], 10)
+        self.assertEqual(min(dom["prices"]), 500000)
+        self.assertEqual(max(dom["prices"]), 770000)
+        self.assertEqual(len(dom["sqfts"]), 10)
+
+    def test_empty_pool_domain(self):
+        dom = comps.comp_domain(_subject(), [])
+        self.assertEqual(dom, {"prices": [], "sqfts": [], "count": 0})
+
+
 class SubjectDataTests(unittest.TestCase):
     def test_limited_flag_when_subject_lacks_sqft(self):
         res = comps.rank_comparables(_subject(sqft=None), [

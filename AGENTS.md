@@ -143,6 +143,13 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
     runs this against the cache, so the same cached ZIP serves different comps
     per subject and a subject's attributes can change on refresh without
     re-fetching. Keep ranking in this one pure module — don't fork the scoring.
+   The comp filter pills (price/beds/baths/sqft) are applied **server-side**:
+   `rank_comparables` takes an optional `filters` dict and pre-filters candidates
+   via `_passes_user_filter` before the gate ladder, so a filter draws the best
+   comps from the whole cached pool rather than subtracting from the shown page.
+   `comps.comp_domain` returns the *unfiltered* price/sqft spread (+ count) so the
+   frontend sliders stay stable across filter changes. Still cache-only — applying
+   a filter re-ranks the cache and never triggers a Realtor fetch.
 
 ## Data model
 
@@ -204,7 +211,7 @@ the frontend formatters.
 | GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
 | PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools + `photos` (`[{href, label}]`, derived from `raw_json`) |
-| GET    | `/api/properties/{id}/area`       | Comparable for-sale homes in this property's ZIP (cache-only; excludes the subject; strict gating + similarity ranking). `{zip, fetched_at, comps, relaxed, limited, subject_price_per_sqft}` |
+| GET    | `/api/properties/{id}/area`       | Comparable for-sale homes in this property's ZIP (cache-only; excludes the subject; strict gating + similarity ranking). Optional filter query params (`min_price`, `max_price`, `min_beds`, `min_baths`, `min_sqft`, `max_sqft`) narrow the candidate pool *before* ranking. `{zip, fetched_at, comps, relaxed, limited, subject_price_per_sqft, domain}` where `domain` (`{prices, sqfts, count}`) describes the unfiltered comp spread for stable filter sliders. |
 | POST   | `/api/properties/{id}/ai/ask`     | `{question}` — server-side DeepSeek answer grounded in local property context; may call web-search/geocoding tools. Returns `tools_used` |
 | POST   | `/api/properties`                 | `{address, confirm_mismatch?}` — see below      |
 | PATCH  | `/api/properties/{id}`            | Edit `property_name`, `input_address`, `canonical_address`, `city`, `state`, `zip`, `active` |

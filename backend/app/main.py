@@ -256,23 +256,43 @@ def add_property(body: AddBody):
 
 
 @app.get("/api/properties/{pid}/area")
-def get_property_area(pid: int):
+def get_property_area(
+    pid: int,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    min_beds: float | None = None,
+    min_baths: float | None = None,
+    min_sqft: float | None = None,
+    max_sqft: float | None = None,
+):
     """Comparable for-sale homes in this property's ZIP. Reads the per-ZIP cache
     only (never calls Realtor; populated by property refresh), excludes the
-    subject property, then gates + ranks the rest into appraisal-style comps."""
+    subject property, then gates + ranks the rest into appraisal-style comps.
+
+    The optional filter params (min/max price + sqft, min beds + baths) narrow
+    the candidate pool *before* ranking, so the returned page is the best comps
+    that are both appraisal-comparable and in-filter — drawn from the whole
+    cached pool, not just a pre-narrowed page. `domain` describes the unfiltered
+    comp spread so the UI's sliders stay stable across filter changes."""
     prop = store.get_property(pid)
     if not prop:
         raise HTTPException(404, "property not found")
     zip_code = prop.get("zip")
     if not zip_code:
         return {"zip": None, "fetched_at": None, "comps": [], "relaxed": None,
-                "limited": False, "subject_price_per_sqft": None}
+                "limited": False, "subject_price_per_sqft": None,
+                "domain": {"prices": [], "sqfts": [], "count": 0}}
     area = store.get_area_listings(zip_code)
     subject = str(prop.get("property_id") or "")
     candidates = [
         l for l in area["listings"] if str(l.get("property_id") or "") != subject
     ]
-    ranked = comps.rank_comparables(prop, candidates)
+    filters = {
+        "min_price": min_price, "max_price": max_price,
+        "min_beds": min_beds, "min_baths": min_baths,
+        "min_sqft": min_sqft, "max_sqft": max_sqft,
+    }
+    ranked = comps.rank_comparables(prop, candidates, filters=filters)
     return {
         "zip": area["zip"],
         "fetched_at": area["fetched_at"],
@@ -280,6 +300,7 @@ def get_property_area(pid: int):
         "relaxed": ranked["relaxed"],
         "limited": ranked["limited"],
         "subject_price_per_sqft": ranked["subject_price_per_sqft"],
+        "domain": comps.comp_domain(prop, candidates),
     }
 
 
@@ -309,7 +330,7 @@ def refresh_all():
         zip_code = fetched.get("zip") or p.get("zip")
         if zip_code:
             zips.add(zip_code)
-        results.append({"id": p["id"], "status": fetched.get("status"), "observed_event": observed_event})
+        results.append({"id": p["id"], "status": store.persisted_status(fetched), "observed_event": observed_event})
     # One area fetch per unique ZIP, not per property.
     for zip_code in zips:
         store.refresh_area_for_zip(zip_code)

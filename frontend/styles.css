@@ -2437,16 +2437,20 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 /* ---- module header ---- */
 .cmp-head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 12px;
-  flex-wrap: wrap;
 }
 .cmp-head-l { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cmp-title {
   display: flex; align-items: center; gap: 8px;
   font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin: 0;
+}
+.cmp-title .cmp-count {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg-sunken); border: 1px solid var(--border);
+  border-radius: 20px; padding: 1px 8px; font-variant-numeric: tabular-nums;
 }
 .cmp-sub { font-size: 12px; color: var(--text-muted); }
 .cmp-sub b { color: var(--text); font-weight: 600; }
@@ -2459,6 +2463,160 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   white-space: nowrap;
 }
 .cmp-scope b { color: var(--text); font-weight: 600; }
+
+/* ---- range-band filters (price / beds / sqft / distance) ---- */
+/* Portal-style pills that open a popover with a draggable range slider; they
+   replace the read-only scope chips and narrow the loaded comp set in place. */
+.cmp-filter { position: relative; }
+.cmp-filter-btn {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 11px; color: var(--text-muted); cursor: pointer;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 7px 4px 9px; box-shadow: var(--shadow-sm);
+  transition: border-color .12s, background .12s, color .12s;
+}
+.cmp-filter-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.cmp-filter-btn .k { color: inherit; }
+.cmp-filter-btn b { color: var(--text); font-weight: 600; }
+.cmp-filter-btn .chev { color: var(--text-faint); transition: transform .15s; }
+.cmp-filter.open .cmp-filter-btn { border-color: var(--border-strong); color: var(--text); }
+.cmp-filter.open .cmp-filter-btn .chev { transform: rotate(180deg); }
+.cmp-filter-btn.active {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+.cmp-filter-btn.active .k { color: color-mix(in oklab, var(--accent) 75%, var(--text-muted)); }
+.cmp-filter-btn.active b { color: var(--accent); }
+.cmp-filter-btn.active .chev { color: var(--accent); }
+.cmp-filter-menu {
+  position: absolute; top: calc(100% + 5px); right: 0; z-index: 30; min-width: 142px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 9px;
+  box-shadow: var(--shadow-lg); padding: 5px; display: flex; flex-direction: column; gap: 1px;
+}
+/* Flip to left-anchored when right-anchoring would clip the left viewport edge
+   (set by FilterPop after measuring the pill). */
+.cmp-filter-menu.align-left { right: auto; left: 0; }
+.cmp-rangepop {
+  max-width: min(320px, calc(100vw - 28px));
+  padding: 14px 14px 12px;
+}
+.rs-pop { display: flex; flex-direction: column; gap: 12px; }
+.rs-hint, .rs-readout {
+  font-size: 11.5px; color: var(--text-muted); margin-top: -2px;
+}
+.rs-readout { font-size: 13px; }
+.rs-readout b { color: var(--text); font-weight: 600; }
+
+/* Min / Max input row */
+.rs-fields { display: flex; align-items: center; gap: 8px; }
+.rs-dash { color: var(--text-faint); font-size: 13px; }
+.rs-num {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 7px; padding: 7px 9px;
+  transition: border-color .12s, box-shadow .12s;
+}
+.rs-num:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.rs-num .px { color: var(--text-faint); font-size: 12.5px; }
+.rs-num .sx { color: var(--text-faint); font-size: 11px; }
+.rs-num input {
+  flex: 1; min-width: 0; width: 100%;
+  border: none; background: none; outline: none; padding: 0;
+  font: inherit; font-size: 13px; font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Slider */
+.rs { padding: 2px 9px 0; }
+.rs-hist {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 40px; margin-bottom: 4px;
+}
+.rs-hist .rs-bar {
+  flex: 1; border-radius: 2px 2px 0 0;
+  background: color-mix(in oklab, var(--text) 11%, transparent);
+  transition: background .1s;
+}
+.rs-hist .rs-bar.in { background: color-mix(in oklab, var(--accent) 42%, transparent); }
+.rs-track {
+  position: relative; height: 4px; border-radius: 999px;
+  background: var(--bg-active); margin: 9px 0;
+}
+.rs-fill {
+  position: absolute; top: 0; bottom: 0;
+  background: var(--accent); border-radius: 999px;
+}
+.rs-thumb {
+  position: absolute; top: 50%; width: 16px; height: 16px; padding: 0;
+  transform: translate(-50%, -50%);
+  background: var(--bg-elev); border: 1.5px solid var(--accent);
+  border-radius: 50%; cursor: grab; touch-action: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  transition: transform .06s;
+}
+.rs-thumb:hover { transform: translate(-50%, -50%) scale(1.12); }
+.rs-thumb:active { cursor: grabbing; transform: translate(-50%, -50%) scale(1.12); }
+.rs-thumb:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 3px rgba(0,0,0,.18); }
+.rs-ends {
+  display: flex; justify-content: space-between;
+  font-size: 10.5px; color: var(--text-faint);
+  font-variant-numeric: tabular-nums; margin-top: 2px;
+}
+
+/* Beds — tap-two-numbers segmented range */
+.rs-beds {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px;
+}
+.rs-bedpill {
+  font: inherit; font-size: 12.5px; font-weight: 500;
+  padding: 8px 0; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--text-muted); cursor: pointer;
+  transition: background .1s, color .1s, border-color .1s;
+}
+.rs-bedpill:hover { border-color: var(--border-strong); color: var(--text); }
+.rs-bedpill.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.rs-bedpill.in {
+  background: var(--accent-soft);
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
+  color: var(--accent);
+}
+.rs-bedpill.end { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* Footer */
+.rs-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  border-top: 1px solid var(--border); margin: 2px -14px -12px;
+  padding: 10px 14px 12px;
+}
+.rs-reset {
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 500; color: var(--text-muted);
+  padding: 4px 2px;
+}
+.rs-reset:hover:not(:disabled) { color: var(--text); }
+.rs-reset:disabled { color: var(--text-faint); opacity: .55; cursor: default; }
+.rs-done {
+  background: var(--accent); color: var(--accent-fg);
+  border: 1px solid color-mix(in oklab, var(--accent) 80%, black);
+  border-radius: 7px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; padding: 6px 16px;
+}
+.rs-done:hover { background: color-mix(in oklab, var(--accent) 92%, black 8%); }
+.cmp-clear {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted);
+  background: none; border: none; cursor: pointer; padding: 4px 7px; border-radius: 6px;
+}
+.cmp-clear:hover { color: var(--text); background: var(--bg-hover); }
+.cmp-empty {
+  padding: 30px 24px; text-align: center; color: var(--text-muted); font-size: 13px;
+  border: 1px dashed var(--border); border-radius: 14px; background: var(--bg-sunken);
+}
+.cmp-empty-reset {
+  background: none; border: none; color: var(--accent); font-size: 13px; font-weight: 500;
+  cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px;
+}
 
 /* ---- relaxed-gating note + loading/empty/error states ---- */
 .cmp-note {
@@ -2543,10 +2701,15 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 .cmpA-card:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); transform: translateY(-1px); }
 .cmpA-card .cmp-photo { aspect-ratio: 3 / 2; }
 .cmpA-body { padding: 11px 12px 12px; display: flex; flex-direction: column; gap: 9px; }
-.cmpA-addr-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cmpA-addr-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.cmpA-addr-wrap { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .cmpA-addr {
-  font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; min-width: 0; flex: 1;
+  font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmpA-city {
+  font-size: 11px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
 }
 .cmpA-dist { font-size: 11px; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .cmpA-price-row { display: flex; align-items: baseline; gap: 8px; }
@@ -2588,6 +2751,10 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 .cmpM-addr {
   font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmpM-city {
+  font-size: 11px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; margin-top: -2px;
 }
 .cmpM-specs {
   font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums;
