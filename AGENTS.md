@@ -16,9 +16,11 @@ backend/app/
   main.py        FastAPI routes + serves the frontend at /
   scraper.py     Realtor.com GraphQL client; normalizes AVM + history data
   store.py       SQLite reads/writes (current property state + history/events/taxes)
-  db.py          schema + connection helper (data/app.db)
+  comps.py       pure comparable ranking/gating over cached ZIP listings (rule #15)
+  ai.py          DeepSeek chat + tool-calling loop (web_search/geocode); MAX_TOOL_STEPS / MAX_WEB_SEARCHES caps
+  db.py          schema + connection helper (data/app.db) — authoritative table definitions
   models.py      pydantic types (currently unused by routes)
-backend/test_*.py unittest coverage for scraper state logic and API/store flows
+backend/test_*.py unittest coverage: scraper state, API/store flows, comps ranking, AI tool loop
 frontend/
   index.html     loads /static/* via UMD React + Babel
   styles.css     all visual tokens; from the design bundle
@@ -153,44 +155,19 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
 
 ## Data model
 
-`properties` is one row per tracked address and includes the latest fetched
-Realtor.com state.
+`db.py` holds the authoritative table definitions — read it for exact columns
+rather than duplicating the schema here. The shape at a glance:
 
-```
-properties(id, property_name, input_address, canonical_address, city, state, zip,
-           property_id, listing_id, property_url, listing_state,
-           active, status, matched_address,
-           best_current_estimate, estimate_source,
-           estimate_low, estimate_high, estimate_date,
-           list_price, sold_price, last_sold_price,
-           beds, baths, sqft, lot_sqft, year_built,
-           latitude, longitude,
-           list_date, days_on_market,
-           last_price_change_amount, last_price_change_date,
-           hoa_fee, property_type, property_sub_type,
-           stories, garage, garage_type,
-           pool, cooling, heating, fireplace,
-           is_new_listing, is_price_reduced, is_foreclosure,
-           flood_factor_score, flood_factor_severity,
-           raw_json, error, last_fetched_at,
-           created_at, updated_at)
-property_schools(property_id, school_id, name, rating, grades,
-                 education_levels, funding_type, distance_in_miles,
-                 student_count, fetched_at)
-historical_estimates(property_id, source, date, estimate, fetched_at)
-property_events(property_id, date, event_name, price, fetched_at)
-observed_events(id, property_id, observed_at, event_name, source,
-                listing_state, listing_id, old_price, new_price,
-                price, delta, pct)
-app_settings(key, value, updated_at)
-area_listings(zip, listings_json, fetched_at)
-tax_history(property_id, year, assessed_year, tax,
-            assessment_building, assessment_land, assessment_total,
-            market_building, market_land, market_total,
-            appraisal_building, appraisal_land, appraisal_total,
-            value_building, value_land, value_total,
-            tax_code_area, fetched_at)
-```
+- `properties` — one row per tracked address with the latest fetched Realtor.com
+  state (identity/match fields, current AVM + price fields, physical attributes,
+  flags, `raw_json`, timestamps).
+- `property_schools` — current school records, replaced on add/refresh (rule #8).
+- `historical_estimates` — monthly AVM history per source (rule #7).
+- `property_events` — sparse Realtor market events (`Listed`, `Sold`, …) (rule #7).
+- `observed_events` — same-listing list-price changes the app itself saw (rule #7).
+- `tax_history` — yearly tax + county assessment/market/appraisal values.
+- `area_listings` — per-ZIP SRP cache, one row per ZIP (rule #14).
+- `app_settings` — non-secret key/value flags (rule #13).
 
 `status` is one of: `matched`, `candidate_mismatch`, `no_candidates`, `error`.
 
