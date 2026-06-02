@@ -39,6 +39,9 @@ const BX_SORTS = [
   { v: "dom_asc", label: "Fewest days on market" },
 ];
 
+// How many cards to render initially / per "Load more" click.
+const BX_PAGE = 24;
+
 function statusLabel(s) {
   return ((window.LISTING_META || {})[s] || {}).label || s;
 }
@@ -250,8 +253,8 @@ function BrowseCard({ home, navigate, onChanged }) {
           <span className="mut">{home.sqft != null ? `${fmt.num(home.sqft)} sqft` : "— sqft"}</span>
         </div>
         <div className="cest">
-          <span>{home.days_on_market != null ? `${home.days_on_market} days on market` : "On market"}</span>
-          <span className="ev">{home.price_per_sqft != null ? `${fmt.usd(home.price_per_sqft)}/sqft` : "—"}</span>
+          <span className="ev">{home.days_on_market != null ? `${home.days_on_market} days on market` : "On market"}</span>
+          <span className="mut">{home.price_per_sqft != null ? `${fmt.usd(home.price_per_sqft)}/sqft` : "—"}</span>
         </div>
         <button className={`ctrack ${tracked ? "on" : ""}`} onClick={track} disabled={saving || tracked}
           title={tracked ? "Tracking — added to your properties" : "Add to your tracked properties"}>
@@ -280,6 +283,10 @@ function BrowsePage({ navigate, onChanged }) {
   const [load, setLoad] = useS_bx({ loading: true, err: null, data: null });
   const [f, setF] = useS_bx(null);
   const [sort, setSort] = useS_bx("relevance");
+  const [visible, setVisible] = useS_bx(BX_PAGE);
+
+  // Reset to the first page whenever the filters, search, or sort change.
+  useE_bx(() => { setVisible(BX_PAGE); }, [f, sort]);
 
   useE_bx(() => {
     let active = true;
@@ -309,6 +316,20 @@ function BrowsePage({ navigate, onChanged }) {
     () => (data ? bxSortHomes(bxApplyFilters(data.homes, ff, bounds), sort) : []),
     [data, ff, sort, bounds]
   );
+
+  // Auto-reveal the next page as the sentinel nears the viewport. The "Load more"
+  // button remains as a keyboard/no-observer fallback.
+  const moreRef = useR_bx(null);
+  useE_bx(() => {
+    const el = moreRef.current;
+    if (!el || visible >= rows.length) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries.some((e) => e.isIntersecting)) setVisible((v) => v + BX_PAGE); },
+      { rootMargin: "400px 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible, rows.length]);
 
   if (load.loading) {
     return (
@@ -371,8 +392,9 @@ function BrowsePage({ navigate, onChanged }) {
           <h1 className="page-title">Browse homes</h1>
           <div className="page-subtitle">
             <b style={{ color: "var(--text)", fontWeight: 600 }}>{data.total.toLocaleString()}</b> homes {where}
-            {" · showing "}
-            <b style={{ color: "var(--text)", fontWeight: 600 }}>{rows.length}</b>
+            {" · "}
+            <b style={{ color: "var(--text)", fontWeight: 600 }}>{rows.length.toLocaleString()}</b>
+            {" matching"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -438,11 +460,23 @@ function BrowsePage({ navigate, onChanged }) {
           <div>Try widening the price range or clearing a filter.</div>
         </div>
       ) : (
-        <div className="bx-grid">
-          {rows.map((h) => (
-            <BrowseCard key={h.property_id} home={h} navigate={navigate} onChanged={onChanged} />
-          ))}
-        </div>
+        <>
+          <div className="bx-grid">
+            {rows.slice(0, visible).map((h) => (
+              <BrowseCard key={h.property_id} home={h} navigate={navigate} onChanged={onChanged} />
+            ))}
+          </div>
+          {visible < rows.length && (
+            <div className="bx-more" ref={moreRef}>
+              <span className="bx-more-count">
+                Showing {Math.min(visible, rows.length).toLocaleString()} of {rows.length.toLocaleString()}
+              </span>
+              <button className="btn" onClick={() => setVisible((v) => v + BX_PAGE)}>
+                Load more
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
