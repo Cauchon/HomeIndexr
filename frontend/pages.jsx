@@ -1238,7 +1238,15 @@ function AreaListingsCard({ property, navigate, onChanged }) {
   const sqftActive  = sqftVal[0] > dom.sLo || sqftVal[1] < dom.sHi;
   const bedsActive  = beds !== null;
   const bathsActive = baths !== null;
-  const anyFilter   = priceActive || sqftActive || bedsActive || bathsActive;
+
+  // The filter row reflects the *applied* selection, not the in-progress draft: a
+  // pill keeps showing its last-applied value (and stays "Any"/inactive) until the
+  // user presses Apply. Derived from `applied`, which the popovers never touch.
+  const aPriceActive = applied.min_price != null || applied.max_price != null;
+  const aSqftActive  = applied.min_sqft  != null || applied.max_sqft  != null;
+  const aBedsActive  = applied.min_beds  != null;
+  const aBathsActive = applied.min_baths != null;
+  const anyFilter    = aPriceActive || aSqftActive || aBedsActive || aBathsActive;
 
   // Commit the pending selection to the server (triggers a re-rank refetch).
   function applyFilters() {
@@ -1257,17 +1265,17 @@ function AreaListingsCard({ property, navigate, onChanged }) {
     setApplied({});
   }
 
-  // Pill summaries.
-  const priceSummary = !priceActive ? "Any"
-    : priceVal[0] <= dom.pLo ? "Up to " + usdK(priceVal[1])
-    : priceVal[1] >= dom.pHi ? usdK(priceVal[0]) + "+"
-    : usdK(priceVal[0]) + "–" + usdK(priceVal[1]);
-  const sqftSummary = !sqftActive ? "Any"
-    : sqftVal[0] <= dom.sLo ? "Up to " + fmt.num(sqftVal[1])
-    : sqftVal[1] >= dom.sHi ? fmt.num(sqftVal[0]) + "+"
-    : fmt.num(sqftVal[0]) + "–" + fmt.num(sqftVal[1]);
-  const bedsSummary = beds == null ? "Any" : beds + "+";
-  const bathsSummary = baths == null ? "Any" : baths + "+";
+  // Pill summaries — from the applied filters, so a label only changes on Apply.
+  const priceSummary = !aPriceActive ? "Any"
+    : applied.min_price <= dom.pLo ? "Up to " + usdK(applied.max_price)
+    : applied.max_price >= dom.pHi ? usdK(applied.min_price) + "+"
+    : usdK(applied.min_price) + "–" + usdK(applied.max_price);
+  const sqftSummary = !aSqftActive ? "Any"
+    : applied.min_sqft <= dom.sLo ? "Up to " + fmt.num(applied.max_sqft)
+    : applied.max_sqft >= dom.sHi ? fmt.num(applied.min_sqft) + "+"
+    : fmt.num(applied.min_sqft) + "–" + fmt.num(applied.max_sqft);
+  const bedsSummary = applied.min_beds == null ? "Any" : applied.min_beds + "+";
+  const bathsSummary = applied.min_baths == null ? "Any" : applied.min_baths + "+";
 
   return (
     <div className="cmp-module">
@@ -1275,7 +1283,6 @@ function AreaListingsCard({ property, navigate, onChanged }) {
         <div className="cmp-head-l">
           <h2 className="cmp-title">
             Comparable homes for sale
-            {hasComps && <span className="cmp-count">{comps.length}</span>}
           </h2>
           <div className="cmp-sub">
             Active listings near <b>{line1}</b>
@@ -1287,7 +1294,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
         {hasComps && (
           <div className="cmp-head-r">
 
-            <FilterPop label="Price" summary={priceSummary} active={priceActive} popWidth={300}>
+            <FilterPop label="Price" summary={priceSummary} active={aPriceActive} popWidth={300}>
               {(close) => (
                 <div className="rs-pop">
                   <div className="rs-fields">
@@ -1305,7 +1312,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
               )}
             </FilterPop>
 
-            <FilterPop label="Beds" summary={bedsSummary} active={bedsActive} popWidth={264}>
+            <FilterPop label="Beds" summary={bedsSummary} active={aBedsActive} popWidth={264}>
               {(close) => (
                 <div className="rs-pop">
                   <div className="rs-hint">Minimum bedrooms</div>
@@ -1315,7 +1322,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
               )}
             </FilterPop>
 
-            <FilterPop label="Baths" summary={bathsSummary} active={bathsActive} popWidth={280}>
+            <FilterPop label="Baths" summary={bathsSummary} active={aBathsActive} popWidth={280}>
               {(close) => (
                 <div className="rs-pop">
                   <div className="rs-hint">Minimum bathrooms</div>
@@ -1325,7 +1332,7 @@ function AreaListingsCard({ property, navigate, onChanged }) {
               )}
             </FilterPop>
 
-            <FilterPop label="Sqft" summary={sqftSummary} active={sqftActive} popWidth={284}>
+            <FilterPop label="Sqft" summary={sqftSummary} active={aSqftActive} popWidth={284}>
               {(close) => (
                 <div className="rs-pop">
                   <div className="rs-fields">
