@@ -488,6 +488,31 @@ def get_area_listings(zip_code: str) -> dict:
     return {"zip": row["zip"], "fetched_at": row["fetched_at"], "listings": listings}
 
 
+def get_all_area_listings() -> list[dict]:
+    """Read every cached per-ZIP listing row. Never hits Realtor.
+
+    Returns one dict per ZIP ``{zip, fetched_at, listings}`` (newest cache first).
+    The Browse pool aggregates the whole cache across every ZIP the user has
+    touched via property refresh (rule #14); this is the cache-only read it sits
+    on, the metro-wide sibling of `get_area_listings`.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT zip, listings_json, fetched_at FROM area_listings "
+            "ORDER BY fetched_at DESC"
+        ).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        try:
+            listings = json.loads(row["listings_json"])
+        except (TypeError, ValueError):
+            listings = []
+        out.append(
+            {"zip": row["zip"], "fetched_at": row["fetched_at"], "listings": listings}
+        )
+    return out
+
+
 def refresh_area_for_zip(zip_code: str) -> int:
     """Fetch + cache for-sale listings for a ZIP. Best-effort.
 

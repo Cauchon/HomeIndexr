@@ -35,6 +35,7 @@ function App() {
       const h = window.location.hash.replace(/^#/, "");
       const [page, arg] = h.split("/").filter(Boolean);
       if (page === "add") setRoute({ page: "add", arg: null });
+      else if (page === "browse") setRoute({ page: "browse", arg: null });
       else if (page === "admin") setRoute({ page: "admin", arg: null });
       else if (page === "property" && arg) setRoute({ page: "detail", arg: Number(arg) });
       else setRoute({ page: "dashboard", arg: null });
@@ -48,6 +49,7 @@ function App() {
   function navigate(page, arg) {
     let h = "";
     if (page === "dashboard") h = "";
+    else if (page === "browse") h = "#browse";
     else if (page === "add") h = "#add";
     else if (page === "admin") h = "#admin";
     else if (page === "detail") h = `#property/${arg}`;
@@ -77,6 +79,7 @@ function App() {
 
   const crumbs = useM(() => {
     if (route.page === "dashboard") return ["Properties"];
+    if (route.page === "browse") return ["Browse"];
     if (route.page === "add") return ["Properties", "Add property"];
     if (route.page === "admin") return ["Admin"];
     if (route.page === "detail") {
@@ -96,6 +99,8 @@ function App() {
       refreshingAll={refreshingAll}
       onChanged={reload}
     />;
+  } else if (route.page === "browse") {
+    pageEl = <BrowsePage navigate={navigate} onChanged={reload} />;
   } else if (route.page === "add") {
     pageEl = <AddPropertyPage navigate={navigate} onAdded={reload} />;
   } else if (route.page === "admin") {
@@ -152,6 +157,11 @@ function App() {
                onClick={() => navigate("dashboard")}>
             <Icon name="list" /> Properties
             <span className="count">{counts.active}</span>
+          </div>
+          <div className={`nav-item ${route.page === "browse" ? "active" : ""}`}
+               onClick={() => navigate("browse")}>
+            <Icon name="globe" /> Browse
+            <span className="nav-new">New</span>
           </div>
           <div className={`nav-item ${route.page === "add" ? "active" : ""}`}
                onClick={() => navigate("add")}>

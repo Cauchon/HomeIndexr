@@ -27,6 +27,7 @@
       const s = qs.toString();
       return req(`/api/properties/${id}/area${s ? `?${s}` : ""}`);
     },
+    browse: () => req("/api/browse"),
     addProperty: (address, confirm_mismatch = false) =>
       req("/api/properties", {
         method: "POST",

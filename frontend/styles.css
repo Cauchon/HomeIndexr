@@ -2868,3 +2868,113 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 .lb-thumb { flex: 0 0 84px; height: 58px; border-radius: 6px; overflow: hidden; cursor: pointer; opacity: 0.6; }
 .lb-thumb.on { opacity: 1; box-shadow: 0 0 0 2px var(--accent); }
 .lb-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ============================================================
+   Browse tab (design Option B: chip filter bar + card grid).
+   All classes are bx- prefixed; reuses the shared tokens, .btn,
+   .field, .badge, .page-header. See browse.jsx.
+   ============================================================ */
+
+/* sidebar "New" badge on the Browse nav item */
+.nav-item .nav-new {
+  margin-left: auto;
+  font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-soft);
+  padding: 2px 6px; border-radius: 5px;
+}
+
+/* status badge (browse, slightly chunkier than .badge) */
+.bx-st { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-sunken); color: var(--text-muted); white-space: nowrap; }
+.bx-st i { width: 5px; height: 5px; border-radius: 3px; background: currentColor; }
+.bx-st.for_sale   { color: var(--info); background: var(--info-soft); border-color: color-mix(in oklab, var(--info) 28%, transparent); }
+.bx-st.pending    { color: var(--warn); background: var(--warn-soft); border-color: color-mix(in oklab, var(--warn) 28%, transparent); }
+.bx-st.sold       { color: var(--pos);  background: var(--pos-soft);  border-color: color-mix(in oklab, var(--pos) 28%, transparent); }
+.bx-st.off_market { color: var(--text-muted); }
+
+/* photo placeholder + real listing image */
+.bx-photo { position: relative; background: var(--bg-sunken); display: grid; place-items: center; color: color-mix(in oklab, var(--text) 22%, transparent); overflow: hidden; }
+.bx-photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 55%, rgba(0,0,0,.10)); pointer-events: none; }
+.bx-photo .glyph { opacity: .5; }
+.bx-photo .bx-photo-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.bx-photo .ph-status { position: absolute; top: 8px; left: 8px; z-index: 1; }
+.bx-photo .ph-price { position: absolute; bottom: 8px; left: 8px; z-index: 1; display: inline-flex; align-items: center; gap: 5px; background: rgba(20,18,15,.72); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bx-photo .ph-price .tag { font-size: 9px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; opacity: .7; }
+
+/* dual-handle range slider w/ histogram */
+.bx-range { display: flex; flex-direction: column; gap: 6px; }
+.bx-hist { display: flex; align-items: flex-end; gap: 2px; height: 34px; padding: 0 1px; }
+.bx-hist .b { flex: 1; min-height: 2px; background: var(--border-strong); border-radius: 1px 1px 0 0; opacity: .55; }
+.bx-hist .b.in { background: var(--accent); opacity: .8; }
+.bx-slider { position: relative; height: 16px; }
+.bx-slider .track { position: absolute; left: 0; right: 0; top: 7px; height: 3px; border-radius: 2px; background: var(--bg-active); }
+.bx-slider .fill { position: absolute; top: 7px; height: 3px; border-radius: 2px; background: var(--accent); }
+.bx-slider input[type=range] { position: absolute; left: -2px; right: -2px; top: 0; width: calc(100% + 4px); margin: 0; height: 16px; background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.bx-slider input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 15px; height: 15px; border-radius: 50%; background: var(--bg-elev); border: 1.5px solid var(--accent); box-shadow: var(--shadow-sm); cursor: grab; margin-top: 0; }
+.bx-slider input[type=range]::-moz-range-thumb { pointer-events: auto; width: 15px; height: 15px; border-radius: 50%; background: var(--bg-elev); border: 1.5px solid var(--accent); box-shadow: var(--shadow-sm); cursor: grab; }
+.bx-slider input[type=range]::-webkit-slider-runnable-track { background: transparent; }
+.bx-range-vals { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bx-range-vals .v { font-weight: 600; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev); }
+.bx-range-vals .dash { color: var(--text-faint); }
+
+/* single-select pill row (beds/baths) */
+.bx-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.bx-pills button { font: inherit; font-size: 11.5px; font-weight: 500; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elev); color: var(--text-muted); cursor: pointer; }
+.bx-pills button:hover { border-color: var(--border-strong); color: var(--text); }
+.bx-pills button.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+/* status checklist */
+.bx-checks { display: flex; flex-direction: column; gap: 7px; }
+.bx-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; color: var(--text); }
+.bx-check input { display: none; }
+.bx-check .box { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border-strong); display: grid; place-items: center; color: transparent; flex-shrink: 0; }
+.bx-check input:checked + .box { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.bx-check .ct { margin-left: auto; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* sort menu */
+.bx-sort { position: relative; }
+.bx-sortbtn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; box-shadow: var(--shadow-sm); }
+.bx-sortbtn:hover { border-color: var(--border-strong); }
+.bx-sortbtn .k { color: var(--text-muted); font-weight: 400; }
+
+/* filter pill + popover */
+.bx-fpill { position: relative; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); color: var(--text-muted); font-size: 12px; font-weight: 500; cursor: pointer; box-shadow: var(--shadow-sm); white-space: nowrap; }
+.bx-fpill:hover { border-color: var(--border-strong); color: var(--text); }
+.bx-fpill .chev { color: var(--text-faint); }
+.bx-fpill.on { background: color-mix(in oklab, var(--accent) 11%, var(--bg-elev)); border-color: color-mix(in oklab, var(--accent) 38%, var(--border)); color: var(--text); }
+.bx-fpill .v { color: var(--text); font-weight: 600; }
+.bx-fpill .clr { width: 17px; height: 17px; display: inline-grid; place-items: center; border-radius: 999px; color: var(--text-muted); }
+.bx-fpill .clr:hover { background: var(--border); color: var(--text); }
+.bx-pop { position: absolute; top: calc(100% + 6px); left: 0; min-width: 200px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 12px; z-index: 30; display: flex; flex-direction: column; gap: 10px; }
+.bx-pop.wide { min-width: 268px; }
+.bx-pop .poplab { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.bx-popopt { font: inherit; font-size: 12.5px; text-align: left; padding: 7px 9px; border-radius: 6px; border: 0; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text); }
+.bx-popopt:hover { background: var(--bg-hover); }
+.bx-popopt[data-on="1"] { color: var(--accent); font-weight: 600; }
+
+/* chip filter bar */
+.bx-chipbar { padding: 0; margin-bottom: 18px; display: flex; flex-direction: column; gap: 10px; }
+.bx-chiprow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; z-index: 5; }
+.bx-chiprow .field { flex: 0 0 280px; height: 30px; }
+.bx-chiprow .spacer { flex: 1; }
+
+/* card grid */
+.bx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 16px; padding-bottom: 8px; }
+.bx-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; transition: box-shadow .15s, transform .15s; }
+.bx-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.bx-card .bx-photo { height: 138px; }
+.bx-card .cbody { padding: 11px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.bx-card .caddr { font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bx-card .caddr .sub { display: block; font-weight: 400; font-size: 11px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bx-card .cspecs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.bx-card .cspecs .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-faint); }
+.bx-card .cspecs .mut { color: var(--text-muted); }
+.bx-card .cest { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--text-muted); padding-top: 8px; border-top: 1px solid var(--border); }
+.bx-card .cest .ev { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bx-card .ctrack { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12.5px; font-weight: 600; cursor: pointer; width: 100%; }
+.bx-card .ctrack:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.bx-card .ctrack:disabled { cursor: default; }
+.bx-card .ctrack.on { background: var(--pos); color: #fff; border-color: color-mix(in oklab, var(--pos) 80%, black); }
+
+@media (max-width: 880px) {
+  .bx-chiprow .field { flex: 1 1 100%; }
+}

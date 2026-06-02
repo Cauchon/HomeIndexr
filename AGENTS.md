@@ -17,16 +17,18 @@ backend/app/
   scraper.py     Realtor.com GraphQL client; normalizes AVM + history data
   store.py       SQLite reads/writes (current property state + history/events/taxes)
   comps.py       pure comparable ranking/gating over cached ZIP listings (rule #15)
+  browse.py      pure Browse-pool aggregation over the whole area-listings cache (rule #16)
   ai.py          DeepSeek chat + tool-calling loop (web_search/geocode); MAX_TOOL_STEPS / MAX_WEB_SEARCHES caps
   db.py          schema + connection helper (data/app.db) — authoritative table definitions
   models.py      pydantic types (currently unused by routes)
-backend/test_*.py unittest coverage: scraper state, API/store flows, comps ranking, AI tool loop
+backend/test_*.py unittest coverage: scraper state, API/store flows, comps ranking, AI tool loop, Browse pool
 frontend/
   index.html     loads /static/* via UMD React + Babel
   styles.css     all visual tokens; from the design bundle
   components.jsx shared UI (icons, badges, formatters, JsonViewer)
   chart.jsx      PriceChart (AVM lines; event rows/ownership strip live in pages.jsx)
   pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
+  browse.jsx     Browse page — chip filter bar + card grid over /api/browse (rule #16)
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
 extension/       MV3 Chrome extension — thin client over the API (see below)
@@ -152,6 +154,21 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
    `comps.comp_domain` returns the *unfiltered* price/sqft spread (+ count) so the
    frontend sliders stay stable across filter changes. Still cache-only — applying
    a filter re-ranks the cache and never triggers a Realtor fetch.
+16. **Browse is a cache-only discovery pool, never a new fetch.** `GET /api/browse`
+    unions the *whole* `area_listings` cache (every ZIP, populated by property
+    refresh — rule #14) into one pool via `browse.build_pool` (pure, in
+    `backend/app/browse.py`): deduped by Realtor `property_id` (newest ZIP cache
+    wins), with homes already tracked removed (matched against
+    `properties.property_id`) and a `price_per_sqft` attached. `browse.pool_facets`
+    derives the filter facets — value bounds (rounded outward to the real pool), a
+    24-bucket price histogram, the cities present, and a per-status count.
+    Filtering/sorting run **client-side** in `frontend/browse.jsx` over the whole
+    (bounded) pool — the design's Option B chip bar + card grid — so the server
+    just shapes the pool and supplies stable slider bounds. Opening Browse must
+    add no upstream traffic; keep the aggregation in this one pure module. The
+    per-card "Track home" reuses the comp-card add flow (`useTrackComp`,
+    `navigateOnSuccess: false`), so tracking POSTs the listing's address through
+    the normal server-side Realtor match.
 
 ## Data model
 
@@ -185,6 +202,7 @@ the frontend formatters.
 | Method | Path                              | Body / Notes                                    |
 |-------:|-----------------------------------|-------------------------------------------------|
 | GET    | `/api/properties`                 | List properties with current state              |
+| GET    | `/api/browse`                     | Cache-only Browse pool: all `area_listings` deduped, tracked homes excluded, each with `price_per_sqft`. Returns `{homes, total, zips, fetched_at, cities, statuses, bounds, price_hist}` (rule #16). Never calls Realtor. |
 | GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
 | PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools + `photos` (`[{href, label}]`, derived from `raw_json`) |

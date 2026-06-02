@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.types import Scope
 
-from . import ai, comps, scraper, store
+from . import ai, browse, comps, scraper, store
 from .db import init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -301,6 +301,34 @@ def get_property_area(
         "limited": ranked["limited"],
         "subject_price_per_sqft": ranked["subject_price_per_sqft"],
         "domain": comps.comp_domain(prop, candidates),
+    }
+
+
+@app.get("/api/browse")
+def get_browse():
+    """Cache-only Browse pool: every for-sale home across the per-ZIP area cache,
+    deduped, with homes you already track removed. Never calls Realtor — the cache
+    is populated by property refresh (rule #14), so opening Browse adds no upstream
+    traffic. Filtering and sorting happen client-side over the whole pool; `bounds`
+    + `price_hist` give the filter sliders a stable span, `total` the pool size,
+    and `zips`/`cities` describe which areas the pool spans."""
+    area_rows = store.get_all_area_listings()
+    tracked_ids = {
+        str(p.get("property_id"))
+        for p in store.list_properties()
+        if p.get("property_id")
+    }
+    pool = browse.build_pool(area_rows, tracked_ids)
+    facets = browse.pool_facets(pool["homes"])
+    return {
+        "homes": pool["homes"],
+        "total": facets["count"],
+        "zips": pool["zips"],
+        "fetched_at": pool["fetched_at"],
+        "cities": facets["cities"],
+        "statuses": facets["statuses"],
+        "bounds": facets["bounds"],
+        "price_hist": facets["price_hist"],
     }
 
 

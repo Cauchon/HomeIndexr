@@ -804,7 +804,11 @@ function compCityLine(comp) {
 // user explicitly picked. On success it refreshes the dashboard list (so the new
 // property + its detail page appear) and routes to the freshly created PDP.
 // Returns the button state shared by both comp card layouts.
-function useTrackComp(comp, navigate, onChanged) {
+// `opts.navigateOnSuccess` (default true) routes to the new PDP after tracking —
+// the Browse grid passes false so it can flip the card to "Tracking" in place
+// and let the user keep adding homes without leaving the page.
+function useTrackComp(comp, navigate, onChanged, opts = {}) {
+  const navigateOnSuccess = opts.navigateOnSuccess !== false;
   const [tracked, setTracked] = useState_p(false);
   const [saving, setSaving] = useState_p(false);
   const toast = useToast();
@@ -829,7 +833,7 @@ function useTrackComp(comp, navigate, onChanged) {
         const line1 = splitAddress(displayAddress(res.property)).line1;
         toast.push({ kind: "ok", text: `Now tracking ${line1}` });
         if (onChanged) onChanged();
-        if (navigate) navigate("detail", res.property.id);
+        if (navigateOnSuccess && navigate) navigate("detail", res.property.id);
       } else if (res && res.status === "no_candidates") {
         toast.push({ kind: "err", text: `Couldn't find ${addr} on Realtor.com.` });
       } else {
@@ -3658,3 +3662,8 @@ window.AddPropertyPage = AddPropertyPage;
 window.AreaListingsCard = AreaListingsCard;
 window.PropertyDetailPage = PropertyDetailPage;
 window.AdminPage = AdminPage;
+// Shared with the Browse page (browse.jsx) — same Track flow, photo CDN resizer,
+// and city/state/zip line the comp cards use.
+window.useTrackComp = useTrackComp;
+window.rdcResize = rdcResize;
+window.compCityLine = compCityLine;
