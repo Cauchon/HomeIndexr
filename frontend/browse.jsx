@@ -55,15 +55,20 @@ function bxApplyFilters(homes, f, bounds) {
       const hay = `${h.line || ""} ${h.city || ""} ${h.state || ""} ${h.zip || ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
+    // The upper price/sqft bounds are capped at a percentile server-side, so a
+    // top handle resting at max means "and up" — don't filter out the mansions
+    // (or huge homes) that live above the cap.
+    const priceUncapped = f.price[1] >= bounds.price[1];
+    const sqftUncapped = f.sqft[1] >= bounds.sqft[1];
     const price = h.list_price;
     if (price != null) {
-      if (price < f.price[0] || price > f.price[1]) return false;
+      if (price < f.price[0] || (!priceUncapped && price > f.price[1])) return false;
     } else if (f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1]) {
       return false; // unpriced homes drop out once the price filter is narrowed
     }
     if ((h.beds ?? 0) < f.beds) return false;
     if ((h.baths ?? 0) < f.baths) return false;
-    if (h.sqft != null && (h.sqft < f.sqft[0] || h.sqft > f.sqft[1])) return false;
+    if (h.sqft != null && (h.sqft < f.sqft[0] || (!sqftUncapped && h.sqft > f.sqft[1]))) return false;
     if (h.year_built != null && (h.year_built < f.year[0] || h.year_built > f.year[1])) return false;
     if (f.status.length && !f.status.includes(h.listing_state || "off_market")) return false;
     return true;

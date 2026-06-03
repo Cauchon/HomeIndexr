@@ -129,6 +129,21 @@ class PoolFacetsTests(unittest.TestCase):
         self.assertEqual(facets["statuses"], {"for_sale": 2, "pending": 1})
         self.assertEqual(facets["cities"], ["Austin", "Round Rock"])
 
+    def test_upper_bounds_capped_at_percentile_not_max(self):
+        # 19 ordinary homes + one mansion / one McMansion. The raw max would
+        # stretch the slider; the p97 cap keeps the bulk of the pool on-track.
+        homes = [
+            _listing(i, list_price=400000 + i * 10000, sqft=1400 + i * 20)
+            for i in range(19)
+        ]
+        homes.append(_listing("MANSION", list_price=8_000_000, sqft=12000))
+        facets = browse.pool_facets(homes)
+        # Cap lands well below the 8M / 12k-sqft outlier, rounded outward to step.
+        self.assertLess(facets["bounds"]["price"][1], 1_000_000)
+        self.assertLess(facets["bounds"]["sqft"][1], 3_000)
+        # Lower bounds stay at the true (rounded) min.
+        self.assertEqual(facets["bounds"]["price"][0], 400_000)
+
     def test_empty_pool_falls_back_to_default_bounds(self):
         facets = browse.pool_facets([])
         self.assertEqual(facets["count"], 0)

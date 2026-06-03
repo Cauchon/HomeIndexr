@@ -20,6 +20,13 @@ from .comps import price_per_sqft
 # Buckets in the price histogram drawn behind the dual-range price slider.
 PRICE_BUCKETS = 24
 
+# Upper bound for the price/sqft sliders is capped at this percentile of the pool
+# rather than the raw max, so a handful of mansions can't stretch the track and
+# bury the bulk of homes in the leftmost sliver. Everything above the cap still
+# shows (the client treats the top handle at max as "and up") — it just isn't
+# separately sliceable. Lower bounds stay at the true min.
+_CAP_PCTILE = 0.97
+
 # Fallbacks when the pool is empty (or a dimension is entirely missing) so the
 # Browse sliders still have a sane span to render against.
 _PRICE_FALLBACK = (200_000, 1_500_000)
@@ -78,10 +85,10 @@ def pool_facets(homes: list[dict] | None) -> dict:
     sqfts = sorted(s for s in (_opt_int(h.get("sqft")) for h in homes) if s)
     years = sorted(y for y in (_opt_int(h.get("year_built")) for h in homes) if y)
 
-    price_bounds = _round_bounds(prices, 25_000, _PRICE_FALLBACK)
+    price_bounds = _round_bounds(prices, 25_000, _PRICE_FALLBACK, cap_pct=_CAP_PCTILE)
     bounds = {
         "price": list(price_bounds),
-        "sqft": list(_round_bounds(sqfts, 100, _SQFT_FALLBACK)),
+        "sqft": list(_round_bounds(sqfts, 100, _SQFT_FALLBACK, cap_pct=_CAP_PCTILE)),
         "year": list(_minmax(years, _YEAR_FALLBACK)),
     }
 
@@ -124,12 +131,32 @@ def _minmax(vals: list[int], fallback: tuple[int, int]) -> tuple[int, int]:
     return (int(min(vals)), int(max(vals)))
 
 
-def _round_bounds(vals: list[int], step: int, fallback: tuple[int, int]) -> tuple[int, int]:
-    """Min/max rounded outward to a step, so slider ends land on round numbers."""
+def _percentile(vals: list[int], q: float) -> int:
+    """Nearest-rank percentile (``q`` in 0..1) over numeric ``vals``.
+
+    With a small or uniform pool this lands on (or near) the max, so the cap is a
+    no-op until there's a real long tail to clip.
+    """
+    s = sorted(vals)
+    if not s:
+        return 0
+    k = max(0, min(len(s) - 1, round(q * (len(s) - 1))))
+    return s[k]
+
+
+def _round_bounds(
+    vals: list[int], step: int, fallback: tuple[int, int], cap_pct: float | None = None
+) -> tuple[int, int]:
+    """Min/max rounded outward to a step, so slider ends land on round numbers.
+
+    When ``cap_pct`` is given, the upper bound is the percentile rather than the
+    raw max — clipping the mansion tail so the bulk of the pool fills the track.
+    """
     if not vals:
         return fallback
     lo = (min(vals) // step) * step
-    hi = -(-max(vals) // step) * step  # ceil to step
+    top = _percentile(vals, cap_pct) if cap_pct is not None else max(vals)
+    hi = -(-top // step) * step  # ceil to step
     if hi <= lo:
         hi = lo + step
     return (int(lo), int(hi))
