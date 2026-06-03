@@ -24,8 +24,14 @@ PRICE_BUCKETS = 24
 # rather than the raw max, so a handful of mansions can't stretch the track and
 # bury the bulk of homes in the leftmost sliver. Everything above the cap still
 # shows (the client treats the top handle at max as "and up") — it just isn't
-# separately sliceable. Lower bounds stay at the true min.
+# separately sliceable.
 _CAP_PCTILE = 0.97
+
+# Year built skews the other way: a lone 1890 farmhouse stretches the *low* end,
+# burying recent homes in the right sliver. So the year slider floors its lower
+# bound at this percentile instead (handle at min = "and older"); its upper bound
+# stays the true max, since recent build years aren't outliers.
+_FLOOR_PCTILE = 0.03
 
 # Fallbacks when the pool is empty (or a dimension is entirely missing) so the
 # Browse sliders still have a sane span to render against.
@@ -89,7 +95,7 @@ def pool_facets(homes: list[dict] | None) -> dict:
     bounds = {
         "price": list(price_bounds),
         "sqft": list(_round_bounds(sqfts, 100, _SQFT_FALLBACK, cap_pct=_CAP_PCTILE)),
-        "year": list(_minmax(years, _YEAR_FALLBACK)),
+        "year": list(_round_bounds(years, 1, _YEAR_FALLBACK, floor_pct=_FLOOR_PCTILE)),
     }
 
     statuses: dict[str, int] = {}
@@ -125,12 +131,6 @@ def _as_int(value, default: int = 10**9) -> int:
     return default if n is None else n
 
 
-def _minmax(vals: list[int], fallback: tuple[int, int]) -> tuple[int, int]:
-    if not vals:
-        return fallback
-    return (int(min(vals)), int(max(vals)))
-
-
 def _percentile(vals: list[int], q: float) -> int:
     """Nearest-rank percentile (``q`` in 0..1) over numeric ``vals``.
 
@@ -145,17 +145,24 @@ def _percentile(vals: list[int], q: float) -> int:
 
 
 def _round_bounds(
-    vals: list[int], step: int, fallback: tuple[int, int], cap_pct: float | None = None
+    vals: list[int],
+    step: int,
+    fallback: tuple[int, int],
+    cap_pct: float | None = None,
+    floor_pct: float | None = None,
 ) -> tuple[int, int]:
     """Min/max rounded outward to a step, so slider ends land on round numbers.
 
-    When ``cap_pct`` is given, the upper bound is the percentile rather than the
-    raw max — clipping the mansion tail so the bulk of the pool fills the track.
+    ``cap_pct`` replaces the upper bound with that percentile (clipping a high
+    tail, e.g. mansions); ``floor_pct`` replaces the lower bound with that
+    percentile (clipping a low tail, e.g. very old homes). Either end the
+    percentile isn't given for keeps the raw min/max.
     """
     if not vals:
         return fallback
-    lo = (min(vals) // step) * step
+    bottom = _percentile(vals, floor_pct) if floor_pct is not None else min(vals)
     top = _percentile(vals, cap_pct) if cap_pct is not None else max(vals)
+    lo = (bottom // step) * step
     hi = -(-top // step) * step  # ceil to step
     if hi <= lo:
         hi = lo + step

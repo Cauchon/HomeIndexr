@@ -57,9 +57,11 @@ function bxApplyFilters(homes, f, bounds) {
     }
     // The upper price/sqft bounds are capped at a percentile server-side, so a
     // top handle resting at max means "and up" — don't filter out the mansions
-    // (or huge homes) that live above the cap.
+    // (or huge homes) that live above the cap. Year built is floored instead, so
+    // a bottom handle at min means "and older" — keep the pre-cap-era homes.
     const priceUncapped = f.price[1] >= bounds.price[1];
     const sqftUncapped = f.sqft[1] >= bounds.sqft[1];
+    const yearUncappedLo = f.year[0] <= bounds.year[0];
     const price = h.list_price;
     if (price != null) {
       if (price < f.price[0] || (!priceUncapped && price > f.price[1])) return false;
@@ -69,7 +71,10 @@ function bxApplyFilters(homes, f, bounds) {
     if ((h.beds ?? 0) < f.beds) return false;
     if ((h.baths ?? 0) < f.baths) return false;
     if (h.sqft != null && (h.sqft < f.sqft[0] || (!sqftUncapped && h.sqft > f.sqft[1]))) return false;
-    if (h.year_built != null && (h.year_built < f.year[0] || h.year_built > f.year[1])) return false;
+    if (h.year_built != null) {
+      if (!yearUncappedLo && h.year_built < f.year[0]) return false;
+      if (h.year_built > f.year[1]) return false;
+    }
     if (f.status.length && !f.status.includes(h.listing_state || "off_market")) return false;
     return true;
   });
@@ -116,7 +121,7 @@ function BrowsePhoto({ home }) {
 }
 
 // ---------- dual-handle range slider w/ histogram ----------
-function DualRange({ min, max, step = 1000, value, onChange, hist, format }) {
+function DualRange({ min, max, step = 1000, value, onChange, hist, format, loCapLabel }) {
   const [lo, hi] = value;
   const fmtV = format || ((v) => money(v, true));
   const span = max - min || 1;
@@ -147,7 +152,7 @@ function DualRange({ min, max, step = 1000, value, onChange, hist, format }) {
           onChange={(e) => onChange([lo, Math.max(+e.target.value, lo + step)])} />
       </div>
       <div className="bx-range-vals">
-        <span className="v">{fmtV(lo)}</span>
+        <span className="v">{loCapLabel && lo <= min ? fmtV(lo) + " " + loCapLabel : fmtV(lo)}</span>
         <span className="dash">to</span>
         <span className="v">{hi >= max ? fmtV(max) + "+" : fmtV(hi)}</span>
       </div>
@@ -452,7 +457,7 @@ function BrowsePage({ navigate, onChanged }) {
               onChange={(v) => set({ sqft: v })} format={(v) => v.toLocaleString()} />
             <span className="poplab">Year built</span>
             <DualRange min={bounds.year[0]} max={bounds.year[1]} step={1} value={ff.year}
-              onChange={(v) => set({ year: v })} format={(v) => String(v)} />
+              onChange={(v) => set({ year: v })} format={(v) => String(v)} loCapLabel="& older" />
           </FilterPill>
           <span className="spacer" />
           <SortMenu value={sort} onChange={setSort} />

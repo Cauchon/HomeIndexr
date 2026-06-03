@@ -144,6 +144,16 @@ class PoolFacetsTests(unittest.TestCase):
         # Lower bounds stay at the true (rounded) min.
         self.assertEqual(facets["bounds"]["price"][0], 400_000)
 
+    def test_year_lower_bound_floored_at_percentile_not_min(self):
+        # 19 modern homes + one 1890 farmhouse. The raw min would stretch the
+        # year slider's low end; the p3 floor keeps recent homes on-track while
+        # the true max (newest build) stays put.
+        homes = [_listing(i, year_built=1985 + i) for i in range(19)]
+        homes.append(_listing("OLD", year_built=1890))
+        facets = browse.pool_facets(homes)
+        self.assertGreater(facets["bounds"]["year"][0], 1900)
+        self.assertEqual(facets["bounds"]["year"][1], 2003)  # true max preserved
+
     def test_empty_pool_falls_back_to_default_bounds(self):
         facets = browse.pool_facets([])
         self.assertEqual(facets["count"], 0)
