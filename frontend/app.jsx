@@ -36,7 +36,7 @@ function App() {
       const [page, arg] = h.split("/").filter(Boolean);
       if (page === "add") setRoute({ page: "add", arg: null });
       else if (page === "browse") setRoute({ page: "browse", arg: null });
-      else if (page === "admin") setRoute({ page: "admin", arg: null });
+      else if (page === "admin") setRoute({ page: "admin", arg: arg || null });
       else if (page === "property" && arg) setRoute({ page: "detail", arg: Number(arg) });
       else setRoute({ page: "dashboard", arg: null });
       setSidebarOpen(false);
@@ -51,7 +51,7 @@ function App() {
     if (page === "dashboard") h = "";
     else if (page === "browse") h = "#browse";
     else if (page === "add") h = "#add";
-    else if (page === "admin") h = "#admin";
+    else if (page === "admin") h = arg ? `#admin/${arg}` : "#admin";
     else if (page === "detail") h = `#property/${arg}`;
     if (h !== window.location.hash) window.location.hash = h;
     else setRoute({ page, arg });
@@ -108,6 +108,7 @@ function App() {
       properties={properties}
       loading={loading}
       navigate={navigate}
+      initialSection={route.arg}
       onRefreshAll={handleRefreshAll}
       refreshingAll={refreshingAll}
     />;

@@ -378,9 +378,6 @@ function BrowsePage({ navigate, onChanged }) {
             <h1 className="page-title">Browse homes</h1>
             <div className="page-subtitle">Discover for-sale homes in the areas you already track.</div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn" onClick={() => navigate("dashboard")}><Icon name="list" /> My properties</button>
-          </div>
         </div>
         <div className="empty">
           <div className="title">No homes to browse yet</div>
@@ -418,8 +415,10 @@ function BrowsePage({ navigate, onChanged }) {
             {" matching"}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn" onClick={() => navigate("dashboard")}><Icon name="list" /> My properties</button>
+        <div>
+          <button className="btn" onClick={() => navigate("admin", "areas")}>
+            <Icon name="map" /> Manage areas
+          </button>
         </div>
       </div>
 

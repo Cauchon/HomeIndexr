@@ -3151,8 +3151,16 @@ function nextCadenceTarget(cadence, now = new Date()) {
   return fmt.datetime(next.getTime());
 }
 
-function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
-  const [adminSection, setAdminSection] = useState_p("refresh");
+function AdminPage({ properties, loading, navigate, initialSection, onRefreshAll, refreshingAll }) {
+  const validSection = (s) => (ADMIN_SECTIONS.some((x) => x.key === s) ? s : null);
+  const [adminSection, setAdminSection] = useState_p(() => validSection(initialSection) || "refresh");
+
+  // Follow deep links into a specific section (e.g. Browse's "Manage areas"
+  // navigating to #admin/areas) when the prop changes while already mounted.
+  useEffect_p(() => {
+    const s = validSection(initialSection);
+    if (s) setAdminSection(s);
+  }, [initialSection]);
   const [jobs, setJobs] = useState_p(loadAdminJobs);
   const [cadence, setCadence] = useState_p(() => localStorage.getItem(CADENCE_STORAGE_KEY) || "biweekly");
   const [progress, setProgress] = useState_p(0);
