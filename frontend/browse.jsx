@@ -112,11 +112,11 @@ function BxStatus({ state, className = "" }) {
   );
 }
 
-// ---------- photo with real listing image (+ status + price overlay) ----------
+// ---------- photo with real listing image (status badge only) ----------
+// The price moved into the card body as the headline (price-led footer), so the
+// photo carries just the listing-status badge — no price overlay.
 function BrowsePhoto({ home }) {
   const url = home.photo_url ? rdcResize(home.photo_url, "x") : null;
-  const tag = home.listing_state === "pending" ? "Pending"
-    : home.listing_state === "sold" ? "Sold" : "Listed";
   return (
     <div className="bx-photo">
       {url
@@ -124,9 +124,6 @@ function BrowsePhoto({ home }) {
             srcSet={`${url} 1x, ${rdcResize(home.photo_url, "od")} 2x`} alt="" loading="lazy" />
         : <Icon name="home" size={32} className="glyph" />}
       <BxStatus state={home.listing_state} className="ph-status" />
-      {home.list_price != null && (
-        <span className="ph-price"><span className="tag">{tag}</span>{money(home.list_price, true)}</span>
-      )}
     </div>
   );
 }
@@ -261,6 +258,15 @@ function BrowseCard({ home, navigate, onChanged }) {
   const { tracked, saving, track } = useTrackComp(home, navigate, onChanged, { navigateOnSuccess: false });
   const cityLine = compCityLine(home);
   const addr = home.line || home.address || "—";
+  // Price-led footer: the asking price is the headline; a quiet reference line
+  // beneath it carries the per-sqft figure and days-on-market that used to sit in
+  // their own row. (Browse pools only for-sale listings, so there's no AVM
+  // estimate to show as the reference line the design uses for off-market homes.)
+  const hasPrice = home.list_price != null;
+  const sub = [
+    home.price_per_sqft != null ? `${fmt.usd(home.price_per_sqft)}/sqft` : null,
+    home.days_on_market != null ? `${home.days_on_market} days on market` : null,
+  ].filter(Boolean).join(" · ");
   return (
     <div className="bx-card">
       <BrowsePhoto home={home} />
@@ -273,9 +279,12 @@ function BrowseCard({ home, navigate, onChanged }) {
           <span>{home.baths != null ? `${fmt.baths(home.baths)} ba` : "— ba"}</span><span className="dot" />
           <span className="mut">{home.sqft != null ? `${fmt.num(home.sqft)} sqft` : "— sqft"}</span>
         </div>
-        <div className="cest">
-          <span className="ev">{home.days_on_market != null ? `${home.days_on_market} days on market` : "On market"}</span>
-          <span className="mut">{home.price_per_sqft != null ? `${fmt.usd(home.price_per_sqft)}/sqft` : "—"}</span>
+        <div className="cprice">
+          <div className="cprice-main">
+            <span className="p">{hasPrice ? money(home.list_price) : "—"}</span>
+            {!hasPrice && <span className="est-tag">price unavailable</span>}
+          </div>
+          {sub && <span className="cprice-sub">{sub}</span>}
         </div>
         <button className={`ctrack ${tracked ? "on" : ""}`} onClick={track} disabled={saving || tracked}
           title={tracked ? "Tracking — added to your properties" : "Add to your tracked properties"}>

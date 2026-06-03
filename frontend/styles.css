@@ -2970,9 +2970,11 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 .bx-card .cspecs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
 .bx-card .cspecs .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-faint); }
 .bx-card .cspecs .mut { color: var(--text-muted); }
-.bx-card .cest { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--text-muted); padding-top: 8px; border-top: 1px solid var(--border); }
-.bx-card .cest .ev { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.bx-card .cest .mut { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.bx-card .cprice { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.bx-card .cprice-main { display: flex; align-items: baseline; gap: 6px; }
+.bx-card .cprice-main .p { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1; color: var(--text); }
+.bx-card .cprice-main .est-tag { font-size: 11px; font-weight: 500; color: var(--text-faint); }
+.bx-card .cprice-sub { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bx-card .ctrack { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12.5px; font-weight: 600; cursor: pointer; width: 100%; }
 .bx-card .ctrack:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .bx-card .ctrack:disabled { cursor: default; }

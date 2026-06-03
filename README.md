@@ -69,8 +69,14 @@ the assistant falls back to local context only.
 | Method | Path                                  | Purpose                                |
 |-------:|---------------------------------------|----------------------------------------|
 | GET    | `/api/properties`                     | List properties with current state     |
+| GET    | `/api/browse`                         | Cache-only Browse pool (untracked area listings) |
 | GET    | `/api/admin/ai-settings`              | AI enabled/key-present status          |
 | PATCH  | `/api/admin/ai-settings`              | Update non-secret AI settings          |
+| GET    | `/api/admin/areas`                    | Tracked-areas coverage (one per cached ZIP) |
+| POST   | `/api/admin/areas`                    | Add a ZIP and crawl it once server-side |
+| POST   | `/api/admin/areas/{zip}/recrawl`      | Re-run the one-time SRP crawl for a ZIP |
+| PATCH  | `/api/admin/areas/{zip}`              | Pause/activate a ZIP (pause hides it from Browse) |
+| DELETE | `/api/admin/areas/{zip}`              | Discard a ZIP's index (unless it backs a tracked property) |
 | GET    | `/api/properties/{id}`                | Property + history + events + taxes + schools |
 | POST   | `/api/properties/{id}/ai/ask`         | Ask an AI question about a property (local context + optional web search) |
 | POST   | `/api/properties`                     | Add property, refresh current state, and backfill history |
@@ -160,6 +166,33 @@ list price. If the property stays on the same active listing and the price
 changes, the app writes an `observed_events` row such as `Price dropped` or
 `Price increased`.
 
+## Browse
+
+The Browse tab (`#browse`) is a cache-only discovery surface for homes you don't
+already track. `GET /api/browse` unions every active (non-paused) per-ZIP
+`area_listings` cache into one pool, deduped by Realtor `property_id`, with homes
+you already track removed and a `price_per_sqft` attached to each card. Opening
+Browse never triggers a Realtor fetch — it only reads caches that property
+refreshes and the Tracked-areas admin tab have already populated.
+
+The server also derives stable filter facets (value bounds, a price histogram,
+the cities present, a per-status count) so the controls don't jump as you filter.
+Filtering and sorting then run client-side over the whole bounded pool — a chip
+filter bar (price, beds & baths, square feet, year built) plus a price-led card
+grid. Each card's **Track home** button reuses the normal add flow, POSTing the
+listing's address through the usual server-side Realtor match.
+
+## Tracked areas
+
+The Admin panel's **Tracked areas** tab manages which ZIPs feed Browse. Each
+cached ZIP shows its city/state, listing count, status, and last-crawl time. A
+ZIP enters the cache two ways: implicitly, when you add or refresh a property in
+it (the whole ZIP is crawled once), or explicitly here, by adding a ZIP to crawl
+on demand. You can re-crawl a ZIP, or **pause** one to keep its index but exclude
+its homes from Browse. A ZIP that backs an active tracked property is locked and
+can't be removed until that property is gone. All crawls run server-side through
+the same single-page SRP fetch (`scraper.fetch_area_listings`).
+
 ## Tests
 
 Run the backend unittest suite from the repo root:
@@ -190,8 +223,8 @@ function is **Refresh jobs**, which shows:
 
 The **Refresh active now** button calls `POST /api/properties/refresh-all` and
 then reloads current property state. The cadence selector is stored in
-`localStorage`; it does not start background work inside FastAPI. Additional
-admin functions can be added alongside Refresh jobs later.
+`localStorage`; it does not start background work inside FastAPI. A second admin
+tab, **Tracked areas**, manages the per-ZIP caches that feed Browse (see above).
 
 ## Scheduled refreshes
 
