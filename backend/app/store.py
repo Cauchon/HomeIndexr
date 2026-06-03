@@ -488,6 +488,36 @@ def get_area_listings(zip_code: str) -> dict:
     return {"zip": row["zip"], "fetched_at": row["fetched_at"], "listings": listings}
 
 
+def get_all_area_listings() -> list[dict]:
+    """Read every cached per-ZIP listing row. Never hits Realtor.
+
+    Returns one dict per ZIP ``{zip, fetched_at, listings}`` (newest cache first).
+    The Browse pool aggregates the whole cache across every ZIP the user has
+    touched via property refresh (rule #14); this is the cache-only read it sits
+    on, the metro-wide sibling of `get_area_listings`.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT zip, listings_json, fetched_at, status FROM area_listings "
+            "ORDER BY fetched_at DESC"
+        ).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        try:
+            listings = json.loads(row["listings_json"])
+        except (TypeError, ValueError):
+            listings = []
+        out.append(
+            {
+                "zip": row["zip"],
+                "fetched_at": row["fetched_at"],
+                "status": row["status"] or "active",
+                "listings": listings,
+            }
+        )
+    return out
+
+
 def refresh_area_for_zip(zip_code: str) -> int:
     """Fetch + cache for-sale listings for a ZIP. Best-effort.
 
@@ -502,6 +532,111 @@ def refresh_area_for_zip(zip_code: str) -> int:
     except Exception:  # noqa: BLE001 — area fetch must never fail the caller
         return 0
     return upsert_area_listings(zip_code, listings)
+
+
+def crawl_area_zip(zip_code: str) -> int:
+    """Crawl + cache a ZIP from a user-initiated Tracked-areas action.
+
+    Unlike `refresh_area_for_zip` (the best-effort sibling invoked during property
+    refresh, which swallows upstream errors so the core refresh never fails), this
+    is the foreground "Add ZIP / Re-crawl" path — it lets a Realtor error
+    propagate so the Admin surface can report the failure honestly. Still one SRP
+    request per ZIP (rule #14). Returns the number of homes indexed.
+    """
+    zip_code = (zip_code or "").strip()
+    if not zip_code:
+        return 0
+    listings = scraper.fetch_area_listings(zip_code)
+    return upsert_area_listings(zip_code, listings)
+
+
+def _area_locality(listings: list[dict]) -> tuple[str | None, str | None]:
+    """Pick the dominant city/state for a ZIP from its cached listings."""
+    city_counts: dict[str, int] = {}
+    state_counts: dict[str, int] = {}
+    for l in listings:
+        c = l.get("city")
+        s = l.get("state")
+        if c:
+            city_counts[c] = city_counts.get(c, 0) + 1
+        if s:
+            state_counts[s] = state_counts.get(s, 0) + 1
+    city = max(city_counts, key=city_counts.get) if city_counts else None
+    state = max(state_counts, key=state_counts.get) if state_counts else None
+    return city, state
+
+
+def list_area_coverage() -> list[dict]:
+    """Per-ZIP Tracked-areas rows for the Admin panel.
+
+    One record per cached ZIP: ``{zip, city, state, count, status, fetched_at,
+    origin, locked}``. ``origin``/``locked`` are derived *live* from current
+    property membership — a ZIP that backs an active tracked property is
+    ``origin="property"`` and locked (can't be removed without first dropping
+    that property), otherwise ``origin="manual"``. Newest crawl first.
+    """
+    property_zips = {
+        (p.get("zip") or "").strip()
+        for p in list_properties()
+        if p.get("active") and (p.get("zip") or "").strip()
+    }
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT zip, listings_json, fetched_at, status FROM area_listings "
+            "ORDER BY fetched_at DESC"
+        ).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        try:
+            listings = json.loads(row["listings_json"])
+        except (TypeError, ValueError):
+            listings = []
+        city, state = _area_locality(listings)
+        locked = row["zip"] in property_zips
+        out.append(
+            {
+                "zip": row["zip"],
+                "city": city,
+                "state": state,
+                "count": len(listings),
+                "status": row["status"] or "active",
+                "fetched_at": row["fetched_at"],
+                "origin": "property" if locked else "manual",
+                "locked": locked,
+            }
+        )
+    return out
+
+
+def area_zip_exists(zip_code: str) -> bool:
+    zip_code = (zip_code or "").strip()
+    if not zip_code:
+        return False
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM area_listings WHERE zip = ?", (zip_code,)
+        ).fetchone()
+    return row is not None
+
+
+def set_area_status(zip_code: str, status: str) -> bool:
+    """Pause/resume a tracked ZIP. Returns False if the ZIP isn't cached."""
+    zip_code = (zip_code or "").strip()
+    if status not in ("active", "paused"):
+        raise ValueError(f"invalid status: {status!r}")
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE area_listings SET status = ? WHERE zip = ?", (status, zip_code)
+        )
+    return cur.rowcount > 0
+
+
+def delete_area_listings(zip_code: str) -> bool:
+    """Drop a ZIP's cached index. Returns False if it wasn't tracked."""
+    zip_code = (zip_code or "").strip()
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM area_listings WHERE zip = ?", (zip_code,))
+    return cur.rowcount > 0
 
 
 def replace_historical(property_id: int, records: list[dict]) -> int:

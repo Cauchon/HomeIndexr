@@ -804,7 +804,11 @@ function compCityLine(comp) {
 // user explicitly picked. On success it refreshes the dashboard list (so the new
 // property + its detail page appear) and routes to the freshly created PDP.
 // Returns the button state shared by both comp card layouts.
-function useTrackComp(comp, navigate, onChanged) {
+// `opts.navigateOnSuccess` (default true) routes to the new PDP after tracking —
+// the Browse grid passes false so it can flip the card to "Tracking" in place
+// and let the user keep adding homes without leaving the page.
+function useTrackComp(comp, navigate, onChanged, opts = {}) {
+  const navigateOnSuccess = opts.navigateOnSuccess !== false;
   const [tracked, setTracked] = useState_p(false);
   const [saving, setSaving] = useState_p(false);
   const toast = useToast();
@@ -829,7 +833,7 @@ function useTrackComp(comp, navigate, onChanged) {
         const line1 = splitAddress(displayAddress(res.property)).line1;
         toast.push({ kind: "ok", text: `Now tracking ${line1}` });
         if (onChanged) onChanged();
-        if (navigate) navigate("detail", res.property.id);
+        if (navigateOnSuccess && navigate) navigate("detail", res.property.id);
       } else if (res && res.status === "no_candidates") {
         toast.push({ kind: "err", text: `Couldn't find ${addr} on Realtor.com.` });
       } else {
@@ -3110,6 +3114,7 @@ const CADENCE_LABEL = Object.fromEntries(CADENCE_OPTIONS.map((o) => [o.key, o.la
 // plus its render branch below.
 const ADMIN_SECTIONS = [
   { key: "refresh", label: "Refresh jobs", icon: "activity" },
+  { key: "areas", label: "Tracked areas", icon: "map" },
   { key: "ai", label: "AI", icon: "sparkles" },
 ];
 
@@ -3146,8 +3151,16 @@ function nextCadenceTarget(cadence, now = new Date()) {
   return fmt.datetime(next.getTime());
 }
 
-function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll }) {
-  const [adminSection, setAdminSection] = useState_p("refresh");
+function AdminPage({ properties, loading, navigate, initialSection, onRefreshAll, refreshingAll }) {
+  const validSection = (s) => (ADMIN_SECTIONS.some((x) => x.key === s) ? s : null);
+  const [adminSection, setAdminSection] = useState_p(() => validSection(initialSection) || "refresh");
+
+  // Follow deep links into a specific section (e.g. Browse's "Manage areas"
+  // navigating to #admin/areas) when the prop changes while already mounted.
+  useEffect_p(() => {
+    const s = validSection(initialSection);
+    if (s) setAdminSection(s);
+  }, [initialSection]);
   const [jobs, setJobs] = useState_p(loadAdminJobs);
   const [cadence, setCadence] = useState_p(() => localStorage.getItem(CADENCE_STORAGE_KEY) || "biweekly");
   const [progress, setProgress] = useState_p(0);
@@ -3456,6 +3469,8 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
             <CadencePanel cadence={cadence} setCadence={setCadence} latestJob={latestJob} />
           </div>
             </>
+          ) : adminSection === "areas" ? (
+            <CoverageSection />
           ) : (
             <AiSection
               settings={aiSettings}
@@ -3658,3 +3673,8 @@ window.AddPropertyPage = AddPropertyPage;
 window.AreaListingsCard = AreaListingsCard;
 window.PropertyDetailPage = PropertyDetailPage;
 window.AdminPage = AdminPage;
+// Shared with the Browse page (browse.jsx) — same Track flow, photo CDN resizer,
+// and city/state/zip line the comp cards use.
+window.useTrackComp = useTrackComp;
+window.rdcResize = rdcResize;
+window.compCityLine = compCityLine;

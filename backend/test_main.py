@@ -432,5 +432,116 @@ class AreaListingsTests(unittest.TestCase):
         self.assertEqual(called_zips, ["77002", "77041"])
 
 
+class TrackedAreasTest(unittest.TestCase):
+    """Admin → Tracked areas: coverage list, add/recrawl crawl, pause, remove."""
+
+    def setUp(self):
+        _reset_db()
+
+    def _seed(self, property_id="12345", zip_code="77041"):
+        return store.create_property(
+            f"addr {property_id}",
+            _fetched(property_id=property_id, zip=zip_code, matched_address=f"addr {property_id}"),
+        )
+
+    def test_coverage_lists_zip_with_count_and_locality(self):
+        store.upsert_area_listings("77041", [
+            {"property_id": "a", "city": "Houston", "state": "TX"},
+            {"property_id": "b", "city": "Houston", "state": "TX"},
+        ])
+        rows = main.list_areas()
+        self.assertEqual(len(rows), 1)
+        rec = rows[0]
+        self.assertEqual(rec["zip"], "77041")
+        self.assertEqual(rec["count"], 2)
+        self.assertEqual(rec["city"], "Houston")
+        self.assertEqual(rec["state"], "TX")
+        self.assertEqual(rec["status"], "active")
+        # No tracked property in this ZIP → manual origin, removable.
+        self.assertEqual(rec["origin"], "manual")
+        self.assertFalse(rec["locked"])
+
+    def test_zip_backing_active_property_is_locked(self):
+        self._seed(property_id="12345", zip_code="77041")
+        store.upsert_area_listings("77041", [{"property_id": "x", "city": "Houston", "state": "TX"}])
+        rec = main.list_areas()[0]
+        self.assertEqual(rec["origin"], "property")
+        self.assertTrue(rec["locked"])
+        # Locked ZIP can't be removed.
+        with self.assertRaises(main.HTTPException) as ctx:
+            main.remove_area("77041")
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertTrue(store.area_zip_exists("77041"))
+
+    @patch.object(store.scraper, "fetch_area_listings",
+                  return_value=[{"property_id": "n1", "city": "Austin", "state": "TX"}])
+    def test_add_area_crawls_and_returns_record(self, fetch_area):
+        rec = main.add_area(main.AddZipBody(zip="78704"))
+        fetch_area.assert_called_once_with("78704")
+        self.assertEqual(rec["zip"], "78704")
+        self.assertEqual(rec["count"], 1)
+        self.assertEqual(rec["city"], "Austin")
+        self.assertTrue(store.area_zip_exists("78704"))
+
+    def test_add_area_rejects_bad_and_duplicate_zip(self):
+        with self.assertRaises(main.HTTPException) as bad:
+            main.add_area(main.AddZipBody(zip="78"))
+        self.assertEqual(bad.exception.status_code, 400)
+
+        store.upsert_area_listings("78704", [{"property_id": "z"}])
+        with self.assertRaises(main.HTTPException) as dup:
+            main.add_area(main.AddZipBody(zip="78704"))
+        self.assertEqual(dup.exception.status_code, 409)
+
+    @patch.object(store.scraper, "fetch_area_listings",
+                  side_effect=RuntimeError("blocked"))
+    def test_add_area_surfaces_crawl_failure(self, _fetch):
+        with self.assertRaises(main.HTTPException) as ctx:
+            main.add_area(main.AddZipBody(zip="78704"))
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertFalse(store.area_zip_exists("78704"))
+
+    @patch.object(store.scraper, "fetch_area_listings",
+                  return_value=[{"property_id": "r1"}, {"property_id": "r2"}])
+    def test_recrawl_refreshes_count(self, _fetch):
+        store.upsert_area_listings("78704", [{"property_id": "old"}])
+        rec = main.recrawl_area("78704")
+        self.assertEqual(rec["count"], 2)
+
+    def test_recrawl_unknown_zip_404(self):
+        with self.assertRaises(main.HTTPException) as ctx:
+            main.recrawl_area("00000")
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_pause_hides_zip_from_browse_but_keeps_index(self):
+        store.upsert_area_listings("78704", [
+            {"property_id": "h1", "city": "Austin", "state": "TX",
+             "list_price": 500000, "listing_state": "for_sale"},
+        ])
+        self.assertEqual(main.get_browse()["total"], 1)
+
+        rec = main.update_area("78704", main.AreaStatusBody(status="paused"))
+        self.assertEqual(rec["status"], "paused")
+        # Index is retained, but Browse drops the paused ZIP.
+        self.assertTrue(store.area_zip_exists("78704"))
+        self.assertEqual(main.get_browse()["total"], 0)
+
+        # Resume restores it without a re-crawl.
+        main.update_area("78704", main.AreaStatusBody(status="active"))
+        self.assertEqual(main.get_browse()["total"], 1)
+
+    def test_update_area_rejects_bad_status(self):
+        store.upsert_area_listings("78704", [{"property_id": "z"}])
+        with self.assertRaises(main.HTTPException) as ctx:
+            main.update_area("78704", main.AreaStatusBody(status="bogus"))
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_remove_manual_zip_discards_index(self):
+        store.upsert_area_listings("78704", [{"property_id": "z"}])
+        res = main.remove_area("78704")
+        self.assertEqual(res["zip"], "78704")
+        self.assertFalse(store.area_zip_exists("78704"))
+
+
 if __name__ == "__main__":
     unittest.main()
