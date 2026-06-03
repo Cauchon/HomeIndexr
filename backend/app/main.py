@@ -60,6 +60,17 @@ class AIQuestionBody(BaseModel):
     question: str
 
 
+class AddZipBody(BaseModel):
+    zip: str
+
+
+class AreaStatusBody(BaseModel):
+    status: str
+
+
+ZIP_RE = re.compile(r"^\d{5}$")
+
+
 @app.get("/api/properties")
 def get_properties():
     return store.list_properties()
@@ -312,7 +323,11 @@ def get_browse():
     traffic. Filtering and sorting happen client-side over the whole pool; `bounds`
     + `price_hist` give the filter sliders a stable span, `total` the pool size,
     and `zips`/`cities` describe which areas the pool spans."""
-    area_rows = store.get_all_area_listings()
+    # Paused ZIPs keep their crawled index but drop out of the Browse pool
+    # (Tracked areas → pause). Everything else unions as usual (rule #16).
+    area_rows = [
+        r for r in store.get_all_area_listings() if r.get("status") != "paused"
+    ]
     tracked_ids = {
         str(p.get("property_id"))
         for p in store.list_properties()
@@ -330,6 +345,85 @@ def get_browse():
         "bounds": facets["bounds"],
         "price_hist": facets["price_hist"],
     }
+
+
+# ---------- Tracked areas (Browse coverage) ----------
+# The ZIP codes we've crawled from Realtor.com — the pool Browse draws from.
+# A ZIP enters this set either automatically (adding/refreshing a property
+# crawls its whole ZIP, rule #14) or manually here. Listed/added/re-crawled/
+# paused/removed from Admin → Tracked areas.
+
+
+def _area_record(zip_code: str) -> dict | None:
+    return next(
+        (r for r in store.list_area_coverage() if r["zip"] == zip_code), None
+    )
+
+
+@app.get("/api/admin/areas")
+def list_areas():
+    return store.list_area_coverage()
+
+
+@app.post("/api/admin/areas")
+def add_area(body: AddZipBody):
+    """Add a ZIP and crawl it once from Realtor.com (user-initiated; rule #14).
+
+    Synchronous: the crawl runs server-side (rule #1) before the response, so the
+    caller gets the real indexed-home count back. Rejects malformed or
+    already-tracked ZIPs and surfaces an upstream failure as a 502."""
+    zip_code = (body.zip or "").strip()
+    if not ZIP_RE.match(zip_code):
+        raise HTTPException(400, "Enter a full 5-digit ZIP code")
+    if store.area_zip_exists(zip_code):
+        raise HTTPException(409, f"{zip_code} is already tracked")
+    try:
+        store.crawl_area_zip(zip_code)
+    except Exception as e:  # noqa: BLE001 — report the crawl failure to the user
+        raise HTTPException(502, f"Couldn't crawl {zip_code}: {e}") from e
+    return _area_record(zip_code)
+
+
+@app.post("/api/admin/areas/{zip_code}/recrawl")
+def recrawl_area(zip_code: str):
+    """Re-run the one-time SRP crawl for an already-tracked ZIP (rule #14)."""
+    zip_code = (zip_code or "").strip()
+    if not store.area_zip_exists(zip_code):
+        raise HTTPException(404, "ZIP is not tracked")
+    try:
+        store.crawl_area_zip(zip_code)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Couldn't re-crawl {zip_code}: {e}") from e
+    return _area_record(zip_code)
+
+
+@app.patch("/api/admin/areas/{zip_code}")
+def update_area(zip_code: str, body: AreaStatusBody):
+    """Pause/resume a tracked ZIP. Paused ZIPs keep their index but drop from
+    Browse (the index stays so resume is instant)."""
+    zip_code = (zip_code or "").strip()
+    if body.status not in ("active", "paused"):
+        raise HTTPException(400, "status must be 'active' or 'paused'")
+    if not store.set_area_status(zip_code, body.status):
+        raise HTTPException(404, "ZIP is not tracked")
+    return _area_record(zip_code)
+
+
+@app.delete("/api/admin/areas/{zip_code}")
+def remove_area(zip_code: str):
+    """Drop a ZIP's crawled index. A ZIP backing an active tracked property is
+    locked (delete that property first); tracked properties are never touched."""
+    zip_code = (zip_code or "").strip()
+    record = _area_record(zip_code)
+    if not record:
+        raise HTTPException(404, "ZIP is not tracked")
+    if record["locked"]:
+        raise HTTPException(
+            409,
+            "This ZIP backs a property you track — remove that property first",
+        )
+    store.delete_area_listings(zip_code)
+    return {"ok": True, "zip": zip_code}
 
 
 @app.post("/api/properties/{pid}/refresh")

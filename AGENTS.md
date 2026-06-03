@@ -29,6 +29,7 @@ frontend/
   chart.jsx      PriceChart (AVM lines; event rows/ownership strip live in pages.jsx)
   pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
   browse.jsx     Browse page — chip filter bar + card grid over /api/browse (rule #16)
+  coverage.jsx   Tracked areas admin tab — CoverageSection/AddZipModal/RemoveZipModal over /api/admin/areas (rule #14)
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
 extension/       MV3 Chrome extension — thin client over the API (see below)
@@ -128,15 +129,25 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
     `BRAVE_API_KEY` for web search) must come from the server environment or
     ignored local `.env`. API responses may report key presence/source, never
     the key value.
-14. **Area listings are a per-ZIP cache, written only by user-initiated
-    property refresh.** `scraper.fetch_area_listings` runs Realtor's
-    `home_search` (SRP) for one ZIP, single page, no pagination. Refresh writes
-    the result to `area_listings` keyed by ZIP; `refresh-all` dedupes so each
-    unique ZIP is fetched once, not once per property. `GET /api/properties/{id}/area`
-    serves this cache only and must never trigger a Realtor fetch — opening a
-    detail page adds no upstream traffic. The area fetch is best-effort
-    (`store.refresh_area_for_zip` swallows errors) so a block or hiccup never
-    fails the core property refresh; the last good cache row stays in place.
+14. **Area listings are a per-ZIP cache, written only by explicit user action.**
+    `scraper.fetch_area_listings` runs Realtor's `home_search` (SRP) for one ZIP,
+    single page, no pagination. Two user-initiated paths write `area_listings`
+    (keyed by ZIP): (a) **property refresh** — adding/refreshing a property crawls
+    its whole ZIP, and `refresh-all` dedupes so each unique ZIP is fetched once,
+    not once per property; (b) **Tracked areas** (Admin) — a user can add a ZIP or
+    re-crawl one directly via `POST /api/admin/areas` / `…/recrawl`. Both go
+    through `scraper.fetch_area_listings`, server-side (rule #1). What stays
+    forbidden is *implicit* fetching: `GET /api/properties/{id}/area` and
+    `GET /api/browse` serve the cache only and must never trigger a Realtor fetch —
+    opening a detail or Browse page adds no upstream traffic. The refresh-time area
+    fetch is best-effort (`store.refresh_area_for_zip` swallows errors) so a block
+    never fails the core property refresh; the foreground Tracked-areas crawl
+    (`store.crawl_area_zip`) lets the error propagate so the Admin UI reports it.
+    Each cache row carries a `status` (`active`/`paused`); a paused ZIP keeps its
+    index but is excluded from Browse (rule #16). Tracked areas are managed via
+    `store.list_area_coverage` / `set_area_status` / `delete_area_listings`; a ZIP
+    that backs an active tracked property is **locked** (origin/lock derived live
+    from property membership) and can't be removed until that property is gone.
 15. **Comparables are derived at read time, not cached.** `comps.rank_comparables`
     (pure, in `backend/app/comps.py`) gates the cached ZIP listings to strict
     appraisal-style comps (same `property_type`, living area within ±25%, beds
@@ -155,8 +166,8 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
    frontend sliders stay stable across filter changes. Still cache-only — applying
    a filter re-ranks the cache and never triggers a Realtor fetch.
 16. **Browse is a cache-only discovery pool, never a new fetch.** `GET /api/browse`
-    unions the *whole* `area_listings` cache (every ZIP, populated by property
-    refresh — rule #14) into one pool via `browse.build_pool` (pure, in
+    unions the *active* (non-paused) `area_listings` cache (every ZIP, populated
+    per rule #14) into one pool via `browse.build_pool` (pure, in
     `backend/app/browse.py`): deduped by Realtor `property_id` (newest ZIP cache
     wins), with homes already tracked removed (matched against
     `properties.property_id`) and a `price_per_sqft` attached. `browse.pool_facets`
@@ -183,7 +194,8 @@ rather than duplicating the schema here. The shape at a glance:
 - `property_events` — sparse Realtor market events (`Listed`, `Sold`, …) (rule #7).
 - `observed_events` — same-listing list-price changes the app itself saw (rule #7).
 - `tax_history` — yearly tax + county assessment/market/appraisal values.
-- `area_listings` — per-ZIP SRP cache, one row per ZIP (rule #14).
+- `area_listings` — per-ZIP SRP cache, one row per ZIP, with an `active`/`paused`
+  `status` for Tracked-areas management (rule #14).
 - `app_settings` — non-secret key/value flags (rule #13).
 
 `status` is one of: `matched`, `candidate_mismatch`, `no_candidates`, `error`.
@@ -205,6 +217,11 @@ the frontend formatters.
 | GET    | `/api/browse`                     | Cache-only Browse pool: all `area_listings` deduped, tracked homes excluded, each with `price_per_sqft`. Returns `{homes, total, zips, fetched_at, cities, statuses, bounds, price_hist}` (rule #16). Never calls Realtor. |
 | GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
 | PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
+| GET    | `/api/admin/areas`                | Tracked-areas coverage: one record per cached ZIP `{zip, city, state, count, status, fetched_at, origin, locked}` (rule #14) |
+| POST   | `/api/admin/areas`                | `{zip}` — add a ZIP and crawl it once server-side (synchronous; 400 bad ZIP, 409 dup, 502 crawl error). Returns the new record |
+| POST   | `/api/admin/areas/{zip}/recrawl`  | Re-run the one-time SRP crawl for a tracked ZIP. Returns the updated record |
+| PATCH  | `/api/admin/areas/{zip}`          | `{status}` (`active`\|`paused`) — pause hides the ZIP's homes from Browse but keeps its index |
+| DELETE | `/api/admin/areas/{zip}`          | Discard a ZIP's index (409 if it backs an active tracked property) |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools + `photos` (`[{href, label}]`, derived from `raw_json`) |
 | GET    | `/api/properties/{id}/area`       | Comparable for-sale homes in this property's ZIP (cache-only; excludes the subject; strict gating + similarity ranking). Optional filter query params (`min_price`, `max_price`, `min_beds`, `min_baths`, `min_sqft`, `max_sqft`) narrow the candidate pool *before* ranking. `{zip, fetched_at, comps, relaxed, limited, subject_price_per_sqft, domain}` where `domain` (`{prices, sqfts, count}`) describes the unfiltered comp spread for stable filter sliders. |
 | POST   | `/api/properties/{id}/ai/ask`     | `{question}` — server-side DeepSeek answer grounded in local property context; may call web-search/geocoding tools. Returns `tools_used` |

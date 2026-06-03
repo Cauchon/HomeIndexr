@@ -61,6 +61,22 @@
       req(`/api/properties/${id}/restore`, { method: "POST" }),
     deleteProperty: (id) =>
       req(`/api/properties/${id}`, { method: "DELETE" }),
+    // Tracked areas (Browse coverage) — Admin → Tracked areas.
+    listAreas: () => req("/api/admin/areas"),
+    addArea: (zip) =>
+      req("/api/admin/areas", {
+        method: "POST",
+        body: JSON.stringify({ zip }),
+      }),
+    recrawlArea: (zip) =>
+      req(`/api/admin/areas/${encodeURIComponent(zip)}/recrawl`, { method: "POST" }),
+    setAreaStatus: (zip, status) =>
+      req(`/api/admin/areas/${encodeURIComponent(zip)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+    removeArea: (zip) =>
+      req(`/api/admin/areas/${encodeURIComponent(zip)}`, { method: "DELETE" }),
   };
 
   window.API = API;

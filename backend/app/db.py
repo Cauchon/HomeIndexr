@@ -195,7 +195,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
 CREATE TABLE IF NOT EXISTS area_listings (
     zip TEXT PRIMARY KEY,
     listings_json TEXT NOT NULL,
-    fetched_at INTEGER NOT NULL
+    fetched_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
 );
 """
 
@@ -329,8 +330,23 @@ def _migrate_properties_current_state(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE snapshots")
 
 
+def _migrate_area_listings(conn: sqlite3.Connection) -> None:
+    """Add the pause/active `status` column to pre-existing area_listings caches.
+
+    The Tracked areas admin surface lets a user pause a ZIP (keep its crawled
+    index but hide its homes from Browse). Older databases predate the column —
+    backfill it so the Browse pool can filter on it.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(area_listings)")}
+    if "status" not in cols:
+        conn.execute(
+            "ALTER TABLE area_listings ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
+        )
+
+
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
         conn.execute("DELETE FROM app_settings WHERE key = 'deepseek_api_key'")
         _migrate_properties_current_state(conn)
+        _migrate_area_listings(conn)

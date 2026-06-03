@@ -3114,6 +3114,7 @@ const CADENCE_LABEL = Object.fromEntries(CADENCE_OPTIONS.map((o) => [o.key, o.la
 // plus its render branch below.
 const ADMIN_SECTIONS = [
   { key: "refresh", label: "Refresh jobs", icon: "activity" },
+  { key: "areas", label: "Tracked areas", icon: "map" },
   { key: "ai", label: "AI", icon: "sparkles" },
 ];
 
@@ -3460,6 +3461,8 @@ function AdminPage({ properties, loading, navigate, onRefreshAll, refreshingAll 
             <CadencePanel cadence={cadence} setCadence={setCadence} latestJob={latestJob} />
           </div>
             </>
+          ) : adminSection === "areas" ? (
+            <CoverageSection />
           ) : (
             <AiSection
               settings={aiSettings}
