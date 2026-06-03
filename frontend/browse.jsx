@@ -47,6 +47,17 @@ function statusLabel(s) {
 }
 const toggleIn = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 
+// Compact chip summary for a dual-range filter. When a handle rests at its
+// capped end it collapses to a one-sided form (≤hi / lo+) instead of repeating
+// the bound; otherwise it shows the lo–hi span. Empty when neither handle moved.
+function rangeSummary(lo, hi, min, max, fmtV) {
+  const atLo = lo <= min, atHi = hi >= max;
+  if (atLo && atHi) return "";
+  if (atLo) return `≤${fmtV(hi)}`;
+  if (atHi) return `${fmtV(lo)}+`;
+  return `${fmtV(lo)}–${fmtV(hi)}`;
+}
+
 // ---------- filter + sort over the real card shape ----------
 function bxApplyFilters(homes, f, bounds) {
   const q = (f.q || "").trim().toLowerCase();
@@ -392,8 +403,8 @@ function BrowsePage({ navigate, onChanged }) {
   const priceActive = ff.price[0] !== bounds.price[0] || ff.price[1] !== bounds.price[1];
   const bedActive = ff.beds > 0 || ff.baths > 0;
   const statusActive = ff.status.length !== statusOptions.length;
-  const moreActive = ff.sqft[0] !== bounds.sqft[0] || ff.sqft[1] !== bounds.sqft[1]
-    || ff.year[0] !== bounds.year[0] || ff.year[1] !== bounds.year[1];
+  const sqftActive = ff.sqft[0] !== bounds.sqft[0] || ff.sqft[1] !== bounds.sqft[1];
+  const yearActive = ff.year[0] !== bounds.year[0] || ff.year[1] !== bounds.year[1];
 
   return (
     <div className="browse-page">
@@ -420,7 +431,7 @@ function BrowsePage({ navigate, onChanged }) {
           </div>
           <FilterPill
             label="Price" active={priceActive}
-            summary={`${money(ff.price[0], true)}–${ff.price[1] >= bounds.price[1] ? money(bounds.price[1], true) + "+" : money(ff.price[1], true)}`}
+            summary={rangeSummary(ff.price[0], ff.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true))}
             onClear={() => set({ price: [bounds.price[0], bounds.price[1]] })} wide
           >
             <span className="poplab">Price range</span>
@@ -449,12 +460,19 @@ function BrowsePage({ navigate, onChanged }) {
             </FilterPill>
           )}
           <FilterPill
-            label="More" active={moreActive} summary={moreActive ? "on" : ""}
-            onClear={() => set({ sqft: [bounds.sqft[0], bounds.sqft[1]], year: [bounds.year[0], bounds.year[1]] })} wide
+            label="Square feet" active={sqftActive}
+            summary={rangeSummary(ff.sqft[0], ff.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString())}
+            onClear={() => set({ sqft: [bounds.sqft[0], bounds.sqft[1]] })} wide
           >
             <span className="poplab">Square feet</span>
             <DualRange min={bounds.sqft[0]} max={bounds.sqft[1]} step={50} value={ff.sqft}
               onChange={(v) => set({ sqft: v })} format={(v) => v.toLocaleString()} />
+          </FilterPill>
+          <FilterPill
+            label="Year built" active={yearActive}
+            summary={rangeSummary(ff.year[0], ff.year[1], bounds.year[0], bounds.year[1], (v) => String(v))}
+            onClear={() => set({ year: [bounds.year[0], bounds.year[1]] })} wide
+          >
             <span className="poplab">Year built</span>
             <DualRange min={bounds.year[0]} max={bounds.year[1]} step={1} value={ff.year}
               onChange={(v) => set({ year: v })} format={(v) => String(v)} loCapLabel="& older" />
