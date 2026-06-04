@@ -34,6 +34,7 @@ const Icon = ({ name, size = 14, ...rest }) => {
     trash: <><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v5" /><path d="M14 11v5" /></>,
     eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" /><circle cx="12" cy="12" r="3" /></>,
     bell: <><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10 21a2 2 0 0 0 4 0" /></>,
+    bookmark: <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />,
     play: <path d="M6 4l14 8-14 8z" />,
     menu: <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>,
     pin: <><path d="M12 17v5" /><path d="M8 3h8" /><path d="M10 3v5.2c0 .7-.25 1.38-.72 1.9L6.4 13.3A2 2 0 0 0 5.88 15H18.12a2 2 0 0 0-.52-1.7l-2.88-3.2A2.8 2.8 0 0 1 14 8.2V3" /><path d="M7 17h10" /></>,

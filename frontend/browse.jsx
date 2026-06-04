@@ -12,7 +12,44 @@
 // All visuals use the bx- classes from styles.css. Hooks are aliased (…_bx) to
 // avoid colliding with the other no-module scripts sharing global scope.
 
-const { useState: useS_bx, useEffect: useE_bx, useMemo: useM_bx, useRef: useR_bx } = React;
+const { useState: useS_bx, useEffect: useE_bx, useMemo: useM_bx, useRef: useR_bx, useLayoutEffect: useLE_bx } = React;
+
+// Position an open popover with `position: fixed` so it escapes the ancestor
+// `overflow` clipping (.main is overflow:hidden, .page overflow:auto) and never
+// runs off-screen — the chip bar wraps on narrow widths, so a control can sit
+// anywhere and a fixed left/right anchor would spill past an edge. `align`
+// picks the preferred edge to line up under; both axes are clamped to the
+// viewport. Re-runs on resize/scroll while open. Returns a ref for the popover.
+function usePopoverPosition(open, anchorRef, align = "left") {
+  const popRef = useR_bx(null);
+  useLE_bx(() => {
+    if (!open) return;
+    const place = () => {
+      const a = anchorRef.current, p = popRef.current;
+      if (!a || !p) return;
+      const ar = a.getBoundingClientRect();
+      const m = 8;
+      const pw = p.offsetWidth, ph = p.offsetHeight;
+      let left = align === "right" ? ar.right - pw : ar.left;
+      left = Math.max(m, Math.min(left, window.innerWidth - m - pw));
+      let top = ar.bottom + 6;
+      if (top + ph > window.innerHeight - m) top = Math.max(m, window.innerHeight - m - ph);
+      p.style.position = "fixed";
+      p.style.left = `${left}px`;
+      p.style.top = `${top}px`;
+      p.style.right = "auto";
+      p.style.bottom = "auto";
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+  return popRef;
+}
 
 const money = (n, compact) => fmt.usd(n, { compact: !!compact });
 
@@ -56,6 +93,119 @@ function rangeSummary(lo, hi, min, max, fmtV) {
   if (atLo) return `≤${fmtV(hi)}`;
   if (atHi) return `${fmtV(lo)}+`;
   return `${fmtV(lo)}–${fmtV(hi)}`;
+}
+
+// ---------- Save search ----------
+// Mirrors the chip-bar pills: a compact list of [label, value] for the active
+// filters, used both for the "what you're saving" summary and to decide whether
+// the Save-search button arms (it stays unmounted until ≥1 filter is set).
+function ssActiveChips(f, bounds, statusOptions) {
+  const c = [];
+  if (f.q && f.q.trim()) c.push(["Search", f.q.trim()]);
+  if (f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1])
+    c.push(["Price", rangeSummary(f.price[0], f.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true)) || `${money(f.price[0], true)}+`]);
+  if (f.beds) c.push(["Beds", `${f.beds}+`]);
+  if (f.baths) c.push(["Baths", `${f.baths}+`]);
+  if (f.status.length !== statusOptions.length)
+    c.push(["Status", f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} types`]);
+  if (f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1])
+    c.push(["Sqft", rangeSummary(f.sqft[0], f.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString())]);
+  if (f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1])
+    c.push(["Built", rangeSummary(f.year[0], f.year[1], bounds.year[0], bounds.year[1], (v) => String(v))]);
+  return c;
+}
+
+// Reduce a filter set to only its *active* (narrowed) fields. Saved searches
+// store this minimal shape rather than the full slider values: the Browse pool's
+// slider bounds are data-driven, so an untouched range pinned to today's bounds
+// would later read as a filter once the pool (and its bounds) shift. Omitting
+// full-range fields lets apply re-seed them from the current bounds, so an
+// untouched filter always re-applies as unfiltered.
+function ssActiveFilters(f, bounds, statusOptions) {
+  const out = {};
+  if (f.q && f.q.trim()) out.q = f.q.trim();
+  if (f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1]) out.price = f.price;
+  if (f.beds) out.beds = f.beds;
+  if (f.baths) out.baths = f.baths;
+  if (f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1]) out.sqft = f.sqft;
+  if (f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1]) out.year = f.year;
+  if (f.status.length !== statusOptions.length) out.status = f.status;
+  return out;
+}
+
+// Suggest a human name for a saved search from its active filters.
+function ssAutoName(f, bounds, statusOptions) {
+  const parts = [];
+  if (f.q && f.q.trim()) parts.push(f.q.trim());
+  if (f.beds) parts.push(`${f.beds}+ bd`);
+  if (f.baths) parts.push(`${f.baths}+ ba`);
+  const pLo = f.price[0] !== bounds.price[0], pHi = f.price[1] !== bounds.price[1];
+  if (pLo && pHi) parts.push(`${money(f.price[0], true)}–${money(f.price[1], true)}`);
+  else if (pHi) parts.push(`under ${money(f.price[1], true)}`);
+  else if (pLo) parts.push(`${money(f.price[0], true)}+`);
+  if (f.status.length !== statusOptions.length)
+    parts.push(f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} statuses`);
+  if (f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1]) parts.push(`${f.sqft[0].toLocaleString()}+ sqft`);
+  if (f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1]) parts.push(`built ${f.year[0]}+`);
+  return parts.length ? parts.join(" · ") : "All browse homes";
+}
+
+// The name + alert form inside the Save-search popover.
+function SaveSearchForm({ f, bounds, statusOptions, chips, onSave, onCancel }) {
+  const [name, setName] = useS_bx(() => ssAutoName(f, bounds, statusOptions));
+  const commit = () => onSave({ name: name.trim() || ssAutoName(f, bounds, statusOptions) });
+  return (
+    <>
+      <div className="poptitle"><span className="ic"><Icon name="bookmark" size={14} /></span>Save this search</div>
+      {chips.length > 0 && (
+        <div className="sf-summary">
+          {chips.map(([k, v]) => <span key={k} className="sf-sumchip">{k} <b>{v}</b></span>)}
+        </div>
+      )}
+      <div>
+        <span className="poplab" style={{ display: "block", marginBottom: 6 }}>Name</span>
+        <input className="sf-input" value={name} autoFocus
+               onChange={(e) => setName(e.target.value)}
+               onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
+      </div>
+      <div className="popfoot">
+        <button className="btn" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-primary" onClick={commit}><Icon name="check" size={13} />Save search</button>
+      </div>
+    </>
+  );
+}
+
+// The chip-bar Save-search button — hidden until a filter is active, then it
+// slides in (outline treatment) and opens the name/alert popover.
+function SaveSearchButton({ f, bounds, statusOptions, onSave }) {
+  const [open, setOpen] = useS_bx(false);
+  const ref = useR_bx(null);
+  const popRef = usePopoverPosition(open, ref, "left");
+  useE_bx(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  const chips = ssActiveChips(f, bounds, statusOptions);
+  const armed = chips.length > 0;
+  if (!armed && !open) return <span className="sf-anchor" ref={ref} />;
+
+  return (
+    <span className="sf-anchor" ref={ref}>
+      <button className="sf-savebtn armed" onClick={() => setOpen((o) => !o)}>
+        <Icon name="bookmark" size={13} /><span className="lab">Save search</span>
+      </button>
+      {open && (
+        <div className="bx-pop sf-savepop" ref={popRef} style={{ minWidth: 272 }} onClick={(e) => e.stopPropagation()}>
+          <SaveSearchForm f={f} bounds={bounds} statusOptions={statusOptions} chips={chips}
+                          onCancel={() => setOpen(false)}
+                          onSave={(v) => { onSave(v); setOpen(false); }} />
+        </div>
+      )}
+    </span>
+  );
 }
 
 // ---------- filter + sort over the real card shape ----------
@@ -202,6 +352,7 @@ function CheckList({ options, selected, onToggle, counts }) {
 function SortMenu({ value, onChange }) {
   const [open, setOpen] = useS_bx(false);
   const ref = useR_bx(null);
+  const popRef = usePopoverPosition(open, ref, "right");
   useE_bx(() => {
     const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", fn);
@@ -215,7 +366,7 @@ function SortMenu({ value, onChange }) {
         <Icon name="chevronDown" size={12} />
       </button>
       {open && (
-        <div className="bx-pop" style={{ right: 0, left: "auto", minWidth: 210 }}>
+        <div className="bx-pop" ref={popRef} style={{ minWidth: 210 }}>
           {BX_SORTS.map((s) => (
             <button key={s.v} className="bx-popopt" data-on={s.v === value ? "1" : "0"}
               onClick={() => { onChange(s.v); setOpen(false); }}>
@@ -232,6 +383,7 @@ function SortMenu({ value, onChange }) {
 function FilterPill({ label, summary, active, onClear, children, wide }) {
   const [open, setOpen] = useS_bx(false);
   const ref = useR_bx(null);
+  const popRef = usePopoverPosition(open, ref, "left");
   useE_bx(() => {
     const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", fn);
@@ -245,7 +397,7 @@ function FilterPill({ label, summary, active, onClear, children, wide }) {
         ? <span className="clr" onClick={(e) => { e.stopPropagation(); onClear(); setOpen(false); }}><Icon name="x" size={11} /></span>
         : <span className="chev"><Icon name="chevronDown" size={12} /></span>}
       {open && (
-        <div className={`bx-pop ${wide ? "wide" : ""}`} onClick={(e) => e.stopPropagation()}>
+        <div className={`bx-pop ${wide ? "wide" : ""}`} ref={popRef} onClick={(e) => e.stopPropagation()}>
           {children}
         </div>
       )}
@@ -309,11 +461,12 @@ function makeBxDefault(bounds, statusVs) {
   };
 }
 
-function BrowsePage({ navigate, onChanged }) {
+function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   const [load, setLoad] = useS_bx({ loading: true, err: null, data: null });
   const [f, setF] = useS_bx(null);
   const [sort, setSort] = useS_bx("relevance");
   const [visible, setVisible] = useS_bx(BX_PAGE);
+  const toast = useToast();
 
   // Reset to the first page whenever the filters, search, or sort change.
   useE_bx(() => { setVisible(BX_PAGE); }, [f, sort]);
@@ -341,6 +494,21 @@ function BrowsePage({ navigate, onChanged }) {
 
   const ff = f || makeBxDefault(bounds, statusOptions.map((o) => o.v));
   const set = (patch) => setF((p) => ({ ...(p || makeBxDefault(bounds, statusOptions.map((o) => o.v))), ...patch }));
+
+  // Apply a saved search picked from the sidebar: replace the active filter set
+  // with the stored one. Keyed on both the search's nonce and `data` so it still
+  // lands when Browse is opened fresh (the pool loads after this page mounts).
+  const lastAppliedRef = useR_bx(0);
+  useE_bx(() => {
+    if (!data || !applied || !applied.filters || applied.nonce === lastAppliedRef.current) return;
+    lastAppliedRef.current = applied.nonce;
+    setF({ ...makeBxDefault(bounds, statusOptions.map((o) => o.v)), ...applied.filters });
+  }, [applied && applied.nonce, data]);
+
+  function handleSaveSearch({ name }) {
+    if (onSaveSearch) onSaveSearch({ name, filters: ssActiveFilters(ff, bounds, statusOptions) });
+    toast.push({ kind: "ok", text: "Search saved" });
+  }
 
   const rows = useM_bx(
     () => (data ? bxSortHomes(bxApplyFilters(data.homes, ff, bounds), sort) : []),
@@ -486,6 +654,7 @@ function BrowsePage({ navigate, onChanged }) {
               onChange={(v) => set({ year: v })} format={(v) => String(v)} loCapLabel="& older" />
           </FilterPill>
           <span className="spacer" />
+          <SaveSearchButton f={ff} bounds={bounds} statusOptions={statusOptions} onSave={handleSaveSearch} />
           <SortMenu value={sort} onChange={setSort} />
         </div>
       </div>

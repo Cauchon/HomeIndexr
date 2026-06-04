@@ -10,6 +10,16 @@ function App() {
   const [theme, setTheme] = useS(() => localStorage.getItem("hi_theme") || localStorage.getItem("ht_theme") || "light");
   const [sidebarOpen, setSidebarOpen] = useS(false);
 
+  // Saved Browse searches — a named filter set, optionally alerting on new
+  // matches. Local-first: persisted to localStorage and surfaced in the sidebar.
+  const [savedSearches, setSavedSearches] = useS(() => {
+    try { return JSON.parse(localStorage.getItem("hi_saved_searches") || "[]"); } catch (e) { return []; }
+  });
+  const [appliedSearch, setAppliedSearch] = useS(null);
+  useE(() => {
+    localStorage.setItem("hi_saved_searches", JSON.stringify(savedSearches.map(({ just, ...s }) => s)));
+  }, [savedSearches]);
+
   useE(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("hi_theme", theme);
@@ -58,6 +68,20 @@ function App() {
     setSidebarOpen(false);
   }
 
+  function saveSearch({ name, filters }) {
+    const id = `ss_${Date.now()}_${Math.round(Math.random() * 1e4)}`;
+    setSavedSearches((list) => [{ id, name, filters, created_at: Date.now(), just: true }, ...list]);
+    // Clear the just-saved highlight once its animation has run.
+    setTimeout(() => setSavedSearches((l) => l.map((s) => (s.id === id ? { ...s, just: false } : s))), 2000);
+  }
+  function removeSearch(id) {
+    setSavedSearches((l) => l.filter((s) => s.id !== id));
+  }
+  function applySearch(s) {
+    setAppliedSearch({ id: s.id, filters: s.filters, nonce: Date.now() });
+    navigate("browse");
+  }
+
   async function handleRefreshAll() {
     setRefreshingAll(true);
     try {
@@ -100,7 +124,8 @@ function App() {
       onChanged={reload}
     />;
   } else if (route.page === "browse") {
-    pageEl = <BrowsePage navigate={navigate} onChanged={reload} />;
+    pageEl = <BrowsePage navigate={navigate} onChanged={reload}
+      onSaveSearch={saveSearch} applied={appliedSearch} />;
   } else if (route.page === "add") {
     pageEl = <AddPropertyPage navigate={navigate} onAdded={reload} />;
   } else if (route.page === "admin") {
@@ -178,6 +203,24 @@ function App() {
             <Icon name="eye" /> All properties
             {counts.archived > 0 && <span className="count">{counts.active + counts.archived}</span>}
           </div>
+
+          {savedSearches.length > 0 && (
+            <>
+              <div className="nav-group-label">Saved searches</div>
+              {savedSearches.map((s) => (
+                <div key={s.id}
+                     className={`nav-item saved-search ${route.page === "browse" && appliedSearch && appliedSearch.id === s.id ? "active" : ""} ${s.just ? "just" : ""}`}
+                     onClick={() => applySearch(s)} title={s.name}>
+                  <Icon name="bookmark" />
+                  <span className="ss-nm">{s.name}</span>
+                  <span className="ss-rm" title="Remove saved search"
+                        onClick={(e) => { e.stopPropagation(); removeSearch(s.id); }}>
+                    <Icon name="x" size={12} />
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
 
 
           <div className="sidebar-footer">
