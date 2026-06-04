@@ -461,12 +461,264 @@ function makeBxDefault(bounds, statusVs) {
   };
 }
 
+// ============================================================
+//   Mobile treatment — bottom sheets for Filters · Sort · Save
+//   At ≤880px the desktop chip row (anchored popovers) is replaced
+//   by a horizontally scrollable pill row + a toolbar; tapping any
+//   control raises a bottom sheet instead of a popover. Same filter
+//   model, summaries, and save flow as desktop — just re-housed.
+// ============================================================
+
+// Track the 880px breakpoint that the rest of the app's mobile CSS keys on,
+// so Browse swaps to sheets at the same width the shell goes single-column.
+function useBxIsMobile() {
+  const probe = () => !!(window.matchMedia && window.matchMedia("(max-width: 880px)").matches);
+  const [m, setM] = useS_bx(probe);
+  useE_bx(() => {
+    const on = () => setM(probe());
+    // matchMedia 'change' covers rotation/resize in real browsers; the window
+    // 'resize' fallback also catches environments that don't fire it.
+    const mq = window.matchMedia && window.matchMedia("(max-width: 880px)");
+    if (mq) mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    window.addEventListener("resize", on);
+    return () => {
+      if (mq) mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on);
+      window.removeEventListener("resize", on);
+    };
+  }, []);
+  return m;
+}
+
+// The pill row, derived from the active filter set — same fields, order, and
+// summaries as the desktop chip row. Status only appears when the pool spans
+// >1 listing state (mirrors the desktop pill's mount condition).
+function mobilePills(f, bounds, statusOptions) {
+  const pills = [
+    { id: "price", label: "Price",
+      active: f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1],
+      summary: rangeSummary(f.price[0], f.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true)) },
+    { id: "bb", label: "Beds & baths",
+      active: f.beds > 0 || f.baths > 0,
+      summary: `${f.beds ? f.beds + "+ bd" : ""}${f.beds && f.baths ? " · " : ""}${f.baths ? f.baths + "+ ba" : ""}` },
+  ];
+  if (statusOptions.length > 1) {
+    pills.push({ id: "status", label: "Status",
+      active: f.status.length !== statusOptions.length,
+      summary: f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} types` });
+  }
+  pills.push({ id: "sqft", label: "Square feet",
+    active: f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1],
+    summary: rangeSummary(f.sqft[0], f.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString()) });
+  pills.push({ id: "year", label: "Year built",
+    active: f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1],
+    summary: rangeSummary(f.year[0], f.year[1], bounds.year[0], bounds.year[1], (v) => String(v)) });
+  return pills;
+}
+
+// Bottom-sheet shell: scrim + slide-up panel. Stays mounted so the transform
+// can animate both directions; while open it locks body scroll and closes on
+// Escape or a scrim tap.
+function BxSheet({ open, tall, onClose, labelledBy, children }) {
+  useE_bx(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return (
+    <>
+      <div className={`bx-scrim ${open ? "on" : ""}`} onClick={onClose} />
+      <div className={`bx-sheet ${tall ? "tall" : ""} ${open ? "on" : ""}`}
+           role="dialog" aria-modal="true" aria-labelledby={labelledBy}
+           onClick={(e) => e.stopPropagation()}>
+        <div className="grab" />
+        {children}
+      </div>
+    </>
+  );
+}
+
+// One labelled filter group inside the sheet. Kept at module scope (not inlined
+// in the sheet's render) so its identity is stable — otherwise a slider drag
+// would remount the group mid-gesture and drop the drag.
+function MfGroup({ id, label, summary, focus, groupsRef, children }) {
+  return (
+    <div className={`mf-grp ${focus === id ? "hot" : ""}`} ref={(n) => { groupsRef.current[id] = n; }}>
+      <span className="mf-lab">{label}{summary ? <span className="mf-labval">{summary}</span> : null}</span>
+      {children}
+    </div>
+  );
+}
+
+// Filters sheet — all groups in one scroll, opened scrolled to (and briefly
+// highlighting) the group the tapped pill maps to. Reset / Show N homes pinned
+// at the bottom with the live match count.
+function MobileFilterSheet({ open, focus, f, set, bounds, statusOptions, statusCounts, data, count, onClose, onReset }) {
+  const bodyRef = useR_bx(null);
+  const groups = useR_bx({});
+  useE_bx(() => {
+    if (!open || !focus) return;
+    // Wait out the sheet's slide-up before jumping to the focused group.
+    const t = setTimeout(() => {
+      const el = groups.current[focus], body = bodyRef.current;
+      if (el && body) body.scrollTop = Math.max(0, el.offsetTop - 12);
+    }, 360);
+    return () => clearTimeout(t);
+  }, [open, focus]);
+
+  const statusSummary = f.status.length !== statusOptions.length
+    ? (f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} types`) : null;
+
+  return (
+    <BxSheet open={open} tall onClose={onClose} labelledBy="mf-filters-title">
+      <div className="shead">
+        <h3 id="mf-filters-title">Filters</h3>
+        <button className="clear" onClick={onReset}>Clear all</button>
+      </div>
+      <div className="sbody" ref={bodyRef}>
+        <MfGroup id="price" label="Price" focus={focus} groupsRef={groups}
+          summary={rangeSummary(f.price[0], f.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true))}>
+          <DualRange min={bounds.price[0]} max={bounds.price[1]} step={10000} value={f.price}
+            hist={data.price_hist} onChange={(v) => set({ price: v })} />
+        </MfGroup>
+        <MfGroup id="bb" label="Beds & baths" focus={focus} groupsRef={groups}
+          summary={`${f.beds ? f.beds + "+ bd" : ""}${f.beds && f.baths ? " · " : ""}${f.baths ? f.baths + "+ ba" : ""}` || null}>
+          <span className="mf-sublab">Bedrooms</span>
+          <PillRow options={BX_BEDS} value={f.beds} onChange={(v) => set({ beds: v })} />
+          <span className="mf-sublab" style={{ marginTop: 10 }}>Bathrooms</span>
+          <PillRow options={BX_BATHS} value={f.baths} onChange={(v) => set({ baths: v })} />
+        </MfGroup>
+        {statusOptions.length > 1 && (
+          <MfGroup id="status" label="Status" summary={statusSummary} focus={focus} groupsRef={groups}>
+            <CheckList options={statusOptions} selected={f.status} counts={statusCounts}
+              onToggle={(v) => set({ status: toggleIn(f.status, v) })} />
+          </MfGroup>
+        )}
+        <MfGroup id="sqft" label="Square feet" focus={focus} groupsRef={groups}
+          summary={rangeSummary(f.sqft[0], f.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString())}>
+          <DualRange min={bounds.sqft[0]} max={bounds.sqft[1]} step={50} value={f.sqft}
+            onChange={(v) => set({ sqft: v })} format={(v) => v.toLocaleString()} />
+        </MfGroup>
+        <MfGroup id="year" label="Year built" focus={focus} groupsRef={groups}
+          summary={rangeSummary(f.year[0], f.year[1], bounds.year[0], bounds.year[1], (v) => String(v))}>
+          <DualRange min={bounds.year[0]} max={bounds.year[1]} step={1} value={f.year}
+            onChange={(v) => set({ year: v })} format={(v) => String(v)} loCapLabel="& older" />
+        </MfGroup>
+      </div>
+      <div className="sfoot">
+        <button className="btn" onClick={onReset}>Reset</button>
+        <button className="btn btn-primary" onClick={onClose}>
+          Show {count.toLocaleString()} {count === 1 ? "home" : "homes"}
+        </button>
+      </div>
+    </BxSheet>
+  );
+}
+
+// Sort sheet — single-select radio list; tapping a row applies and dismisses.
+function MobileSortSheet({ open, value, onChange, onClose }) {
+  return (
+    <BxSheet open={open} onClose={onClose} labelledBy="mf-sort-title">
+      <div className="shead"><h3 id="mf-sort-title">Sort</h3></div>
+      <div className="sbody mf-sortbody">
+        {BX_SORTS.map((s) => (
+          <button key={s.v} className={`mf-sortrow ${s.v === value ? "on" : ""}`} onClick={() => onChange(s.v)}>
+            <span className="rad"><i /></span>
+            <span className="t">{s.label}</span>
+            {s.v === value && <Icon name="check" size={15} />}
+          </button>
+        ))}
+      </div>
+    </BxSheet>
+  );
+}
+
+// Save-search sheet — names the search from its active filters, shows what's
+// being saved as chips, and saves on confirm. Name-only (no alert toggle),
+// matching the localStorage-backed saved searches the sidebar lists.
+function MobileSaveSheet({ open, f, bounds, statusOptions, onSave, onClose }) {
+  const [name, setName] = useS_bx("");
+  // Re-seed the auto-name each time the sheet opens — filters may have changed.
+  useE_bx(() => { if (open) setName(ssAutoName(f, bounds, statusOptions)); }, [open]);
+  const chips = ssActiveChips(f, bounds, statusOptions);
+  const commit = () => { onSave({ name: name.trim() || ssAutoName(f, bounds, statusOptions) }); onClose(); };
+  return (
+    <BxSheet open={open} onClose={onClose} labelledBy="mf-save-title">
+      <div className="shead"><h3 id="mf-save-title">Save this search</h3></div>
+      <div className="sbody mf-savebody">
+        {chips.length > 0
+          ? <div className="sf-summary">{chips.map(([k, v]) => <span key={k} className="sf-sumchip">{k} <b>{v}</b></span>)}</div>
+          : <div className="mf-nofilters">No filters set — this saves every home in your tracked areas.</div>}
+        <div>
+          <span className="mf-sublab" style={{ display: "block", marginBottom: 6 }}>Name</span>
+          <input className="sf-input" value={name} autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
+        </div>
+      </div>
+      <div className="sfoot">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={commit}><Icon name="bookmark" size={13} />Save search</button>
+      </div>
+    </BxSheet>
+  );
+}
+
+// Mobile chip bar — full-width search, a scrollable pill row (Filters + the five
+// filters), and a toolbar with the live count, Sort, and Save. Each pill opens
+// the Filters sheet scrolled to its group; Sort/Save open their own sheets.
+function MobileChipBar({ f, set, bounds, statusOptions, sort, rowsCount, onOpenFilters, onOpenSort, onOpenSave }) {
+  const pills = mobilePills(f, bounds, statusOptions);
+  const activeN = pills.filter((p) => p.active).length;
+  const saveArmed = activeN > 0 || !!(f.q && f.q.trim());
+  const sortLabel = (BX_SORTS.find((s) => s.v === sort) || BX_SORTS[0]).label;
+  return (
+    <>
+      <div className="field mf-search">
+        <Icon name="search" size={14} />
+        <input placeholder="City, ZIP, or address" value={f.q} onChange={(e) => set({ q: e.target.value })} />
+      </div>
+      <div className="bx-mchips">
+        <button className={`bx-fpill mf-allbtn ${activeN ? "on" : ""}`} onClick={() => onOpenFilters(null)}>
+          <Icon name="filter" size={13} />Filters{activeN > 0 && <span className="mf-badge">{activeN}</span>}
+        </button>
+        {pills.map((p) => (
+          <button key={p.id} className={`bx-fpill ${p.active && p.summary ? "on" : ""}`} onClick={() => onOpenFilters(p.id)}>
+            {p.label}{p.active && p.summary
+              ? <span className="v">{p.summary}</span>
+              : <Icon name="chevronDown" size={12} className="chev" />}
+          </button>
+        ))}
+      </div>
+      <div className="mf-toolbar">
+        <span className="cnt"><b>{rowsCount.toLocaleString()}</b> {rowsCount === 1 ? "home" : "homes"}</span>
+        <span className="sp" />
+        <button className="mf-tbtn" onClick={onOpenSort}>
+          <Icon name="sort" size={13} /><span className="k">Sort:</span> {sortLabel}
+        </button>
+        <button className={`mf-savebtn ${saveArmed ? "armed" : ""}`} onClick={onOpenSave}>
+          <Icon name="bookmark" size={13} />Save
+        </button>
+      </div>
+    </>
+  );
+}
+
 function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   const [load, setLoad] = useS_bx({ loading: true, err: null, data: null });
   const [f, setF] = useS_bx(null);
   const [sort, setSort] = useS_bx("relevance");
   const [visible, setVisible] = useS_bx(BX_PAGE);
   const toast = useToast();
+
+  // Mobile (≤880px) swaps the desktop chip row for bottom sheets.
+  const isMobile = useBxIsMobile();
+  const [sheet, setSheet] = useS_bx(null);   // null | "filters" | "sort" | "save"
+  const [focus, setFocus] = useS_bx(null);   // which group the Filters sheet scrolls to
+  // Leaving mobile (rotate / resize to desktop) dismisses any open sheet.
+  useE_bx(() => { if (!isMobile) setSheet(null); }, [isMobile]);
 
   // Reset to the first page whenever the filters, search, or sort change.
   useE_bx(() => { setVisible(BX_PAGE); }, [f, sort]);
@@ -600,6 +852,15 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
       </div>
 
       <div className="bx-chipbar">
+        {isMobile ? (
+          <MobileChipBar
+            f={ff} set={set} bounds={bounds} statusOptions={statusOptions}
+            sort={sort} rowsCount={rows.length}
+            onOpenFilters={(id) => { setFocus(id || null); setSheet("filters"); }}
+            onOpenSort={() => setSheet("sort")}
+            onOpenSave={() => setSheet("save")}
+          />
+        ) : (
         <div className="bx-chiprow">
           <div className="field">
             <Icon name="search" size={14} />
@@ -657,7 +918,24 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
           <SaveSearchButton f={ff} bounds={bounds} statusOptions={statusOptions} onSave={handleSaveSearch} />
           <SortMenu value={sort} onChange={setSort} />
         </div>
+        )}
       </div>
+
+      {isMobile && (
+        <>
+          <MobileFilterSheet
+            open={sheet === "filters"} focus={focus}
+            f={ff} set={set} bounds={bounds} statusOptions={statusOptions}
+            statusCounts={statusCounts} data={data} count={rows.length}
+            onClose={() => setSheet(null)}
+            onReset={() => setF(makeBxDefault(bounds, statusOptions.map((o) => o.v)))}
+          />
+          <MobileSortSheet open={sheet === "sort"} value={sort}
+            onChange={(v) => { setSort(v); setSheet(null); }} onClose={() => setSheet(null)} />
+          <MobileSaveSheet open={sheet === "save"} f={ff} bounds={bounds} statusOptions={statusOptions}
+            onSave={handleSaveSearch} onClose={() => setSheet(null)} />
+        </>
+      )}
 
       {rows.length === 0 ? (
         <div className="empty">
