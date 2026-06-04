@@ -3136,3 +3136,70 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   100% { background: transparent; }
 }
 .nav-item.saved-search.just { animation: ss-justsaved 1.8s ease forwards; }
+
+/* ============================================================
+   Browse — mobile (≤880px) Filters · Sort · Save
+   The desktop chip row (anchored popovers) is replaced in JS by a
+   scrollable pill row + toolbar; controls raise bottom sheets. These
+   classes only mount on mobile, so they live behind the same 880px
+   breakpoint the rest of the shell keys on.
+   ============================================================ */
+@media (max-width: 880px) {
+  /* ---- mobile chip bar: search · pill row · toolbar ---- */
+  .mf-search { width: 100%; height: 36px; }
+  .mf-search input { font-size: 13px; }
+
+  .bx-mchips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .bx-mchips::-webkit-scrollbar { display: none; }
+  .bx-mchips .bx-fpill { height: 32px; flex-shrink: 0; }
+  .mf-allbtn { gap: 5px; font-weight: 600; }
+  .mf-badge { background: var(--accent); color: var(--accent-fg); border-radius: 8px; font-size: 10px; font-weight: 700; padding: 0 5px; min-width: 15px; height: 15px; display: inline-grid; place-items: center; }
+
+  .mf-toolbar { display: flex; align-items: center; gap: 8px; }
+  .mf-toolbar .cnt { font-size: 12px; color: var(--text-muted); }
+  .mf-toolbar .cnt b { color: var(--text); font-weight: 600; }
+  .mf-toolbar .sp { flex: 1; }
+  .mf-tbtn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); font: inherit; font-size: 12px; font-weight: 500; color: var(--text); cursor: pointer; white-space: nowrap; box-shadow: var(--shadow-sm); }
+  .mf-tbtn .k { color: var(--text-muted); }
+  .mf-tbtn:hover { border-color: var(--border-strong); }
+  .mf-savebtn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; color: var(--text-muted); border: 1px solid var(--border); background: var(--bg-elev); box-shadow: var(--shadow-sm); }
+  .mf-savebtn.armed { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 42%, var(--border)); background: color-mix(in oklab, var(--accent) 9%, var(--bg-elev)); }
+
+  /* ---- bottom-sheet shell ---- */
+  .bx-scrim { position: fixed; inset: 0; background: rgba(15,15,15,.35); backdrop-filter: blur(1px); z-index: 90; opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+  .bx-scrim.on { opacity: 1; pointer-events: auto; }
+  .bx-sheet { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-radius: 18px 18px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,.18); z-index: 91; transform: translateY(105%); transition: transform .26s cubic-bezier(.32,.72,0,1); max-height: 88%; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .bx-sheet.on { transform: translateY(0); }
+  .bx-sheet .grab { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 8px auto 4px; flex-shrink: 0; }
+  .bx-sheet .shead { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 18px 12px; border-bottom: 1px solid var(--border); }
+  .bx-sheet .shead h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .bx-sheet .shead .clear { font: inherit; font-size: 11px; color: var(--accent); background: none; border: 0; cursor: pointer; font-weight: 500; }
+  .bx-sheet .sbody { padding: 14px 18px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+  .bx-sheet .sfoot { padding: 10px 14px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; background: var(--bg); }
+  .bx-sheet .sfoot .btn { flex: 1; justify-content: center; }
+  .bx-sheet.tall { height: 88%; }
+  .bx-sheet.tall .sbody { flex: 1; }
+
+  /* ---- filter sheet groups + focus highlight ---- */
+  .mf-grp { display: flex; flex-direction: column; gap: 8px; padding: 4px; scroll-margin-top: 12px; border-radius: 10px; transition: background .2s, box-shadow .2s; }
+  .mf-grp.hot { background: color-mix(in oklab, var(--accent) 8%, var(--bg)); box-shadow: 0 0 0 8px color-mix(in oklab, var(--accent) 8%, var(--bg)); }
+  .mf-lab { display: flex; align-items: baseline; gap: 8px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .mf-labval { font-size: 11px; font-weight: 600; color: var(--accent); text-transform: none; letter-spacing: 0; }
+  .mf-sublab { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); display: block; margin-bottom: 6px; }
+
+  /* ---- sort sheet ---- */
+  .mf-sortbody { gap: 2px; padding: 8px 10px 14px; }
+  .mf-sortrow { display: flex; align-items: center; gap: 12px; padding: 12px 8px; border: 0; background: none; cursor: pointer; font: inherit; text-align: left; border-radius: 8px; color: var(--text); width: 100%; }
+  .mf-sortrow:hover { background: var(--bg-sunken); }
+  .mf-sortrow .rad { width: 19px; height: 19px; flex-shrink: 0; border: 1.5px solid var(--border-strong); border-radius: 50%; display: grid; place-items: center; }
+  .mf-sortrow .rad i { width: 9px; height: 9px; border-radius: 50%; background: transparent; }
+  .mf-sortrow.on .rad { border-color: var(--accent); }
+  .mf-sortrow.on .rad i { background: var(--accent); }
+  .mf-sortrow .t { flex: 1; font-size: 13.5px; }
+  .mf-sortrow.on .t { font-weight: 600; }
+  .mf-sortrow svg { color: var(--accent); }
+
+  /* ---- save sheet ---- */
+  .mf-savebody { gap: 14px; }
+  .mf-nofilters { font-size: 12px; color: var(--text-muted); padding: 10px 12px; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: 8px; }
+}
