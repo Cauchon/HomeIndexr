@@ -3072,3 +3072,67 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 /* solid danger button for the destructive remove confirm */
 .btn-danger-solid { background: var(--neg); color: #fff; border-color: color-mix(in oklab, var(--neg) 80%, black); }
 .btn-danger-solid:hover { background: color-mix(in oklab, var(--neg) 88%, black); }
+
+/* ============================================================
+   Save search — Browse chip-bar button + popover form, and the
+   sidebar saved-search items. Outline button treatment; the button
+   stays unmounted until ≥1 filter is active, then slides in.
+   ============================================================ */
+
+/* shared popover footer (used by the Save-search popover) */
+.bx-pop .popfoot { display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--border); margin: 2px -4px -2px; padding: 8px 4px 0; }
+
+.sf-anchor { position: relative; display: inline-flex; }
+
+/* the button slides in when a filter becomes active */
+@keyframes sf-btnin {
+  from { opacity: 0; transform: translateX(6px) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+.sf-savebtn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+  border-radius: 8px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  box-shadow: var(--shadow-sm); white-space: nowrap;
+  color: var(--accent);
+  border: 1px solid color-mix(in oklab, var(--accent) 42%, var(--border));
+  background: color-mix(in oklab, var(--accent) 9%, var(--bg-elev));
+  transition: color .14s, border-color .14s, background .14s;
+  animation: sf-btnin .2s cubic-bezier(.2, .7, .3, 1) both;
+}
+.sf-savebtn:hover { background: color-mix(in oklab, var(--accent) 16%, var(--bg-elev)); }
+
+/* popover */
+.sf-savepop { gap: 11px; }
+.sf-savepop .poptitle { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 7px; color: var(--text); }
+.sf-savepop .poptitle .ic { color: var(--accent); display: inline-flex; }
+
+.sf-input {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 13px;
+  padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 7px;
+  background: var(--bg); color: var(--text);
+}
+.sf-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* summary of what's being saved */
+.sf-summary { display: flex; flex-wrap: wrap; gap: 5px; }
+.sf-sumchip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
+  padding: 2px 8px; border-radius: 999px; background: var(--bg-sunken);
+  border: 1px solid var(--border); color: var(--text-muted);
+}
+.sf-sumchip b { color: var(--text); font-weight: 600; }
+
+/* ---- sidebar saved-search items ---- */
+.nav-item.saved-search { gap: 8px; }
+.nav-item.saved-search .ss-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.nav-item.saved-search .ss-rm {
+  width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0; display: none;
+  place-items: center; color: var(--text-faint);
+}
+.nav-item.saved-search:hover .ss-rm { display: grid; }
+.nav-item.saved-search .ss-rm:hover { background: var(--neg-soft); color: var(--neg); }
+@keyframes ss-justsaved {
+  0%   { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
+.nav-item.saved-search.just { animation: ss-justsaved 1.8s ease forwards; }
