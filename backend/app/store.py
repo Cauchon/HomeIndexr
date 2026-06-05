@@ -163,6 +163,55 @@ def get_geocoder_user_agent() -> str:
     )
 
 
+def _fred_key_source() -> str | None:
+    if os.environ.get("FRED_API_KEY"):
+        return "environment"
+    if _dotenv_value("FRED_API_KEY"):
+        return "dotenv"
+    return None
+
+
+def get_fred_api_key() -> str | None:
+    """FRED (St. Louis Fed) API key for live Freddie Mac mortgage averages. Optional."""
+    return os.environ.get("FRED_API_KEY") or _dotenv_value("FRED_API_KEY")
+
+
+def get_fred_api_base() -> str:
+    return (
+        os.environ.get("FRED_API_BASE")
+        or _dotenv_value("FRED_API_BASE")
+        or "https://api.stlouisfed.org/fred"
+    ).rstrip("/")
+
+
+_RATES_CACHE_KEY = "mortgage_rates_cache"
+
+
+def get_cached_mortgage_rates() -> dict | None:
+    """Last fetched FRED rate payload, or None. Non-secret, so it lives in app_settings."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (_RATES_CACHE_KEY,)
+        ).fetchone()
+    if not row or not row["value"]:
+        return None
+    try:
+        return json.loads(row["value"])
+    except (TypeError, ValueError):
+        return None
+
+
+def save_mortgage_rates_cache(payload: dict) -> None:
+    now = _now()
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO app_settings (key, value, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
+            (_RATES_CACHE_KEY, json.dumps(payload), now),
+        )
+
+
 def _date_from_ms(ms: int | None) -> str | None:
     if ms is None:
         return None
