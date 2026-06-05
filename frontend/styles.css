@@ -3390,6 +3390,12 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   margin-left: auto; white-space: nowrap;
 }
 .m-rate-note .link:hover { text-decoration: underline; }
+.m-rate-src {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
 
 /* ---------- Summary / results ---------- */
 .m-summary { display: grid; gap: 0; }

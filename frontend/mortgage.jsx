@@ -44,9 +44,30 @@ const M_TAX_RATE = 1.1;  // %/yr of home price
 const M_INS_RATE = 0.40; // %/yr of home price
 const M_PMI_RATE = 0.5;  // %/yr of loan amount (only below 20% down)
 
-function suggestedRate(term, creditBand) {
+// `rates` (optional) is the live FRED payload from /api/mortgage-rates. When
+// present we anchor on the real Freddie Mac average — the 15-yr term uses the
+// real 15-yr series directly; 20/10-yr (no FRED series) synthesize off the
+// 30-yr anchor. Credit-band/term spreads stay illustrative on top either way.
+// "2026-05-29" → "May 29, 2026" (parse parts to avoid UTC/local off-by-one).
+function fmtWeekOf(isoDate) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate || "");
+  if (!m) return isoDate;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function suggestedRate(term, creditBand, rates) {
   const band = CREDIT_BANDS.find((b) => b.v === creditBand) || CREDIT_BANDS[0];
-  return +(BASE_RATE_30 + (TERM_RATE_ADJ[term] || 0) + band.adj).toFixed(2);
+  const base30 = (rates && rates.rate_30) || BASE_RATE_30;
+  let base;
+  if (term === 15 && rates && rates.rate_15) {
+    base = rates.rate_15;
+  } else if (term === 30) {
+    base = base30;
+  } else {
+    base = base30 + (TERM_RATE_ADJ[term] || 0);
+  }
+  return +(base + band.adj).toFixed(2);
 }
 
 // ---------- Core math ----------
@@ -403,18 +424,19 @@ function CurrencyInput({ value, onChange, placeholder }) {
 }
 
 // ---------- The form ----------
-function MortgageForm({ inp, set, result }) {
+function MortgageForm({ inp, set, result, rates }) {
   const [advOpen, setAdvOpen] = useS_m(false);
-  const sugg = suggestedRate(inp.term, inp.creditBand);
+  const sugg = suggestedRate(inp.term, inp.creditBand, rates);
   const rateOff = Math.abs(inp.rate - sugg) > 0.001;
+  const live = rates && rates.available;
 
   const monthly = (key) => fmt.usd(Math.round(result.parts[key]));
 
   function setTerm(t) {
-    set((s) => ({ ...s, term: t, ...(s.rateAuto ? { rate: suggestedRate(t, s.creditBand) } : {}) }));
+    set((s) => ({ ...s, term: t, ...(s.rateAuto ? { rate: suggestedRate(t, s.creditBand, rates) } : {}) }));
   }
   function setCredit(v) {
-    set((s) => ({ ...s, creditBand: v, ...(s.rateAuto ? { rate: suggestedRate(s.term, v) } : {}) }));
+    set((s) => ({ ...s, creditBand: v, ...(s.rateAuto ? { rate: suggestedRate(s.term, v, rates) } : {}) }));
   }
 
   return (
@@ -520,10 +542,17 @@ function MortgageForm({ inp, set, result }) {
                    onChange={(e) => set((s) => ({ ...s, rate: +e.target.value, rateAuto: false }))} />
           </div>
           <div className="m-rate-note">
-            <span>Suggested for {inp.creditBand} credit · {inp.term}-yr: <strong>{sugg}%</strong></span>
+            <span>
+              {live ? "Live" : "Suggested"} for {inp.creditBand} credit · {inp.term}-yr: <strong>{sugg}%</strong>
+            </span>
             {rateOff && (
               <span className="link" onClick={() => set((s) => ({ ...s, rate: sugg, rateAuto: true }))}>Use {sugg}%</span>
             )}
+          </div>
+          <div className="m-rate-src">
+            {live
+              ? `${rates.source}${rates.observation_date ? ` · week of ${fmtWeekOf(rates.observation_date)}` : ""}, with an illustrative credit-band spread.`
+              : "Illustrative estimate — national-average anchor with a credit-band spread."}
           </div>
         </div>
 
@@ -701,6 +730,22 @@ function SummaryCard({ result }) {
 function MortgagePage({ properties, navigate }) {
   const [inp, set] = useS_m(() => ({ ...M_DEFAULTS, rateAuto: true }));
   const [loaded, setLoaded] = useS_m(null); // splitAddress of the loaded property
+  const [rates, setRates] = useS_m(null);   // live FRED anchor (null until loaded)
+
+  // Pull the live Freddie Mac anchor once. If it arrives and the user hasn't
+  // overridden the rate, re-snap the auto rate to the live suggestion. Failure
+  // is silent — the calculator keeps its static anchor.
+  useE_m(() => {
+    let alive = true;
+    API.getMortgageRates().then((r) => {
+      if (!alive || !r) return;
+      setRates(r);
+      if (r.available) {
+        set((s) => (s.rateAuto ? { ...s, rate: suggestedRate(s.term, s.creditBand, r) } : s));
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const result = useM_m(() => computeMortgage(inp), [inp]);
 
@@ -729,7 +774,7 @@ function MortgagePage({ properties, navigate }) {
       </div>
 
       <div className="m-split">
-        <div><MortgageForm inp={inp} set={set} result={result} /></div>
+        <div><MortgageForm inp={inp} set={set} result={result} rates={rates} /></div>
         <div className="m-summary-col"><SummaryCard result={result} /></div>
       </div>
       <div style={{ marginTop: 16 }}>

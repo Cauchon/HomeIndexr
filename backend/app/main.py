@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.types import Scope
 
-from . import ai, browse, comps, scraper, store
+from . import ai, browse, comps, rates, scraper, store
 from .db import init_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,6 +74,16 @@ ZIP_RE = re.compile(r"^\d{5}$")
 @app.get("/api/properties")
 def get_properties():
     return store.list_properties()
+
+
+@app.get("/api/mortgage-rates")
+def get_mortgage_rates():
+    """Live national mortgage-rate anchor (Freddie Mac PMMS via FRED), cached daily.
+
+    Cache-only when fresh; falls back to a static anchor on the frontend when no
+    FRED_API_KEY is configured. Never blocks the calculator.
+    """
+    return rates.get_mortgage_rates()
 
 
 @app.get("/api/admin/ai-settings")

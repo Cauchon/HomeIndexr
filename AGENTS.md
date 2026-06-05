@@ -19,9 +19,10 @@ backend/app/
   comps.py       pure comparable ranking/gating over cached ZIP listings (rule #15)
   browse.py      pure Browse-pool aggregation over the whole area-listings cache (rule #16)
   ai.py          DeepSeek chat + tool-calling loop (web_search/geocode); MAX_TOOL_STEPS / MAX_WEB_SEARCHES caps
+  rates.py       Live mortgage-rate anchor from FRED (Freddie Mac PMMS); daily app_settings cache (rule #17)
   db.py          schema + connection helper (data/app.db) — authoritative table definitions
   models.py      pydantic types (currently unused by routes)
-backend/test_*.py unittest coverage: scraper state, API/store flows, comps ranking, AI tool loop, Browse pool
+backend/test_*.py unittest coverage: scraper state, API/store flows, comps ranking, AI tool loop, Browse pool, FRED rate fetch/cache
 frontend/
   index.html     loads /static/* via UMD React + Babel
   styles.css     all visual tokens; from the design bundle
@@ -30,7 +31,7 @@ frontend/
   pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
   browse.jsx     Browse page — chip filter bar + card grid over /api/browse (rule #16)
   coverage.jsx   Tracked areas admin tab — CoverageSection/AddZipModal/RemoveZipModal over /api/admin/areas (rule #14)
-  mortgage.jsx   Mortgage calculator page — client-side P&I/tax/insurance/PMI/HOA estimate, donut + amortization, optional load-from-property prefill (no backend; reads tracked-property fields)
+  mortgage.jsx   Mortgage calculator page — client-side P&I/tax/insurance/PMI/HOA estimate, donut + amortization, optional load-from-property prefill; suggested-rate anchor is live from /api/mortgage-rates (FRED) when keyed, else a static anchor (rule #17)
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
 extension/       MV3 Chrome extension — thin client over the API (see below)
@@ -70,6 +71,13 @@ The AI research assistant can call tools to answer questions the stored data
 doesn't cover. `web_search` (Brave) is enabled when `BRAVE_API_KEY` is present;
 `geocode_address`/`reverse_geocode` (Nominatim) need no key. Treat `BRAVE_API_KEY`
 like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
+
+The mortgage calculator's suggested-rate anchor can be sourced live from the
+St. Louis Fed's FRED API (Freddie Mac PMMS) when `FRED_API_KEY` is set. The key
+is optional and follows the same rule as the others (environment or ignored
+`.env`, never SQLite); the *fetched rate values* are non-secret and are cached
+in `app_settings` (rule #17). With no key the calculator falls back to its
+hardcoded national-average anchor — fully functional, just not live.
 
 ## Architectural rules
 
@@ -181,6 +189,18 @@ like `DEEPSEEK_API_KEY`: environment or ignored `.env` only, never SQLite.
     per-card "Track home" reuses the comp-card add flow (`useTrackComp`,
     `navigateOnSuccess: false`), so tracking POSTs the listing's address through
     the normal server-side Realtor match.
+17. **The mortgage rate anchor is live-optional and never blocks the calculator.**
+    `backend/app/rates.py` fetches the Freddie Mac PMMS 30-/15-yr averages from
+    FRED (`MORTGAGE30US`/`MORTGAGE15US`) when `FRED_API_KEY` is configured and
+    caches them daily in `app_settings` (PMMS publishes weekly). `GET
+    /api/mortgage-rates` serves that cache; on a missing key, a fetch error, or
+    a parse miss it reports `available: false` (serving stale cache first if any)
+    and the frontend (`frontend/mortgage.jsx` `suggestedRate`) falls back to the
+    static `BASE_RATE_30` anchor. The live value only replaces the *anchor*: the
+    credit-band (`CREDIT_BANDS[].adj`) and 20/10-yr term spreads stay illustrative
+    on top, and the 15-yr term uses the real `MORTGAGE15US` series directly rather
+    than the synthetic offset. Keep the fetch+cache logic in `rates.py`; the rate
+    values are non-secret (so they live in `app_settings`), but the key is not.
 
 ## Data model
 
@@ -216,6 +236,7 @@ the frontend formatters.
 |-------:|-----------------------------------|-------------------------------------------------|
 | GET    | `/api/properties`                 | List properties with current state              |
 | GET    | `/api/browse`                     | Cache-only Browse pool: all `area_listings` deduped, tracked homes excluded, each with `price_per_sqft`. Returns `{homes, total, zips, fetched_at, cities, statuses, bounds, price_hist}` (rule #16). Never calls Realtor. |
+| GET    | `/api/mortgage-rates`             | Live national mortgage-rate anchor (Freddie Mac PMMS via FRED), cached daily in `app_settings`. Returns `{available, source, rate_30, rate_15, observation_date, fetched_at, key_present, key_env_var}`. `available: false` when no `FRED_API_KEY` is set; the calculator then falls back to its static anchor (rule #17). |
 | GET    | `/api/admin/ai-settings`          | AI enabled/key-present status                   |
 | PATCH  | `/api/admin/ai-settings`          | Update non-secret AI settings                   |
 | GET    | `/api/admin/areas`                | Tracked-areas coverage: one record per cached ZIP `{zip, city, state, count, status, fetched_at, origin, locked}` (rule #14) |

@@ -28,6 +28,7 @@
       return req(`/api/properties/${id}/area${s ? `?${s}` : ""}`);
     },
     browse: () => req("/api/browse"),
+    getMortgageRates: () => req("/api/mortgage-rates"),
     addProperty: (address, confirm_mismatch = false) =>
       req("/api/properties", {
         method: "POST",
