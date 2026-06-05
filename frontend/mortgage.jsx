@@ -14,7 +14,7 @@
 // colliding in the shared global lexical scope, and shared globals (fmt, Icon,
 // splitAddress, displayAddress, displayName) are referenced directly.
 
-const { useState: useS_m, useEffect: useE_m, useMemo: useM_m, useRef: useR_m } = React;
+const { useState: useS_m, useEffect: useE_m, useMemo: useM_m, useRef: useR_m, useLayoutEffect: useLE_m } = React;
 
 // ---------- Category model ----------
 const M_CATS = [
@@ -234,65 +234,94 @@ function AmortizationSection({ result }) {
 }
 
 function AmortChart({ sched, result }) {
-  const W = 760, H = 220, padL = 8, padR = 8, padT = 14, padB = 22;
-  if (!sched.length || result.loan <= 0) {
-    return <div className="empty" style={{ padding: "40px 16px" }}>No loan to amortize — your down payment covers the full price.</div>;
+  // Responsive, 1:1-scaled SVG (width measured from the container) so axis
+  // labels never distort on narrow viewports — mirrors PriceChart in chart.jsx.
+  // y-axis labels live in a left gutter instead of overlapping the curve.
+  const wrapRef = useR_m(null);
+  const [w, setW] = useS_m(0);
+  useLE_m(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      const px = parseFloat(cs.paddingLeft || 0) + parseFloat(cs.paddingRight || 0);
+      setW(Math.max(0, el.clientWidth - px));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, []);
+
+  const H = 220;
+  const pad = { l: 48, r: 14, t: 14, b: 24 };
+  const innerW = Math.max(60, w - pad.l - pad.r);
+  const innerH = H - pad.t - pad.b;
+  const noLoan = !sched.length || result.loan <= 0;
+  const grids = [0, 0.25, 0.5, 0.75, 1]; // 0/25/50/75/100%
+
+  let balLine = "", balArea = "", xticks = [], x = (i) => i, maxBal = result.loan, N = 0;
+  if (!noLoan) {
+    maxBal = result.loan;
+    const pts = [{ balance: result.loan }, ...sched];
+    N = pts.length - 1;
+    x = (i) => pad.l + (i / N) * innerW;
+    const y = (v) => pad.t + (1 - v / maxBal) * innerH;
+    balLine = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.balance).toFixed(1)}`).join(" ");
+    balArea = `${balLine} L${x(N).toFixed(1)} ${y(0).toFixed(1)} L${x(0).toFixed(1)} ${y(0).toFixed(1)} Z`;
+    // Width-aware x-tick spacing: keep ~58px between labels so "Yr NN" marks
+    // never collide on narrow (mobile) widths; denser on wide screens.
+    const maxTicks = Math.max(2, Math.floor(innerW / 58) + 1);
+    const niceSteps = result.term <= 10 ? [2, 5] : [5, 10, 15];
+    let stepYears = niceSteps[niceSteps.length - 1];
+    for (const s of niceSteps) { if (result.term / s + 1 <= maxTicks) { stepYears = s; break; } }
+    for (let yr = 0; yr <= result.term; yr += stepYears) xticks.push(yr);
+    if (xticks[xticks.length - 1] !== result.term) xticks.push(result.term);
   }
-  const innerW = W - padL - padR;
-  const innerH = H - padT - padB;
-  const maxBal = result.loan;
-  const pts = [{ year: 0, balance: result.loan, principalPaid: 0 }, ...sched];
-  const N = pts.length - 1;
-  const x = (i) => padL + (i / N) * innerW;
-  const y = (v) => padT + (1 - v / maxBal) * innerH;
-
-  // remaining-balance line
-  const balLine = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.balance).toFixed(1)}`).join(" ");
-  // balance area (down to baseline) = remaining principal
-  const balArea = `${balLine} L${x(N).toFixed(1)} ${y(0).toFixed(1)} L${x(0).toFixed(1)} ${y(0).toFixed(1)} Z`;
-
-  // gridlines at 0/25/50/75/100%
-  const grids = [0, 0.25, 0.5, 0.75, 1];
-  // x ticks ~ every 5 years
-  const stepYears = result.term <= 10 ? 2 : 5;
-  const xticks = [];
-  for (let yr = 0; yr <= result.term; yr += stepYears) xticks.push(yr);
-  if (xticks[xticks.length - 1] !== result.term) xticks.push(result.term);
 
   return (
     <>
-      <div className="m-chart-wrap">
-        <svg className="m-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-          {grids.map((g) => (
-            <line key={g} className="grid-line"
-                  x1={padL} x2={W - padR}
-                  y1={padT + g * innerH} y2={padT + g * innerH} />
-          ))}
-          <path className="principal-area" d={balArea} />
-          <path className="bal-line" d={balLine} />
-          {xticks.map((yr) => (
-            <text key={yr} className="axis-label"
-                  x={x((yr / result.term) * N)} y={H - 6}
-                  textAnchor={yr === 0 ? "start" : yr === result.term ? "end" : "middle"}>
-              {yr === 0 ? "Now" : `Yr ${yr}`}
-            </text>
-          ))}
-          {grids.map((g) => (
-            <text key={"y" + g} className="axis-label" x={W - padR} y={padT + g * innerH - 3}
-                  textAnchor="end">
-              {fmt.usd(Math.round(maxBal * (1 - g)), { compact: true })}
-            </text>
-          ))}
-        </svg>
+      <div className="m-chart-wrap" ref={wrapRef}>
+        {noLoan ? (
+          <div className="empty" style={{ padding: "28px 0" }}>No loan to amortize — your down payment covers the full price.</div>
+        ) : (
+          <svg className="m-chart" width={w} height={H}>
+            {grids.map((g) => (
+              <line key={g} className="grid-line"
+                    x1={pad.l} x2={w - pad.r}
+                    y1={pad.t + g * innerH} y2={pad.t + g * innerH} />
+            ))}
+            <path className="principal-area" d={balArea} />
+            <path className="bal-line" d={balLine} />
+            {grids.map((g) => (
+              <text key={"y" + g} className="axis-label" x={pad.l - 6} y={pad.t + g * innerH + 3}
+                    textAnchor="end">
+                {fmt.usd(Math.round(maxBal * (1 - g)), { compact: true })}
+              </text>
+            ))}
+            {xticks.map((yr) => (
+              <text key={yr} className="axis-label"
+                    x={x(yr)} y={H - 6}
+                    textAnchor={yr === 0 ? "start" : yr === result.term ? "end" : "middle"}>
+                {yr === 0 ? "Now" : `Yr ${yr}`}
+              </text>
+            ))}
+          </svg>
+        )}
       </div>
-      <div className="m-chart-legend">
-        <span className="item"><span className="sw" style={{ background: "color-mix(in oklab, var(--m-pi) 16%, transparent)" }} /> Remaining balance</span>
-        <span className="item"><span className="sw" style={{ background: "var(--accent)", height: 2, borderRadius: 1 }} /> Balance curve</span>
-      </div>
-      <div className="m-chart-hint">
-        Over {result.term} years you'll pay {fmt.usd(Math.round(sched[sched.length - 1].cumInterest))} in
-        interest on a {fmt.usd(result.loan)} loan.
-      </div>
+      {!noLoan && (
+        <div className="m-chart-legend">
+          <span className="item"><span className="sw" style={{ background: "color-mix(in oklab, var(--m-pi) 16%, transparent)" }} /> Remaining balance</span>
+          <span className="item"><span className="sw" style={{ background: "var(--accent)", height: 2, borderRadius: 1 }} /> Balance curve</span>
+        </div>
+      )}
+      {!noLoan && (
+        <div className="m-chart-hint">
+          Over {result.term} years you'll pay {fmt.usd(Math.round(sched[sched.length - 1].cumInterest))} in
+          interest on a {fmt.usd(result.loan)} loan.
+        </div>
+      )}
     </>
   );
 }

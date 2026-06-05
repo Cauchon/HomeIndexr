@@ -3493,7 +3493,7 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 .m-amort .tab { padding: 6px 10px; }
 
 .m-chart-wrap { padding: 16px; }
-.m-chart { width: 100%; height: 220px; display: block; }
+.m-chart { display: block; }
 .m-chart .grid-line { stroke: var(--border); stroke-width: 1; }
 .m-chart .axis-label {
   fill: var(--text-faint); font-size: 10px;
