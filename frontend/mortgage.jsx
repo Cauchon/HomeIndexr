@@ -712,13 +712,21 @@ function PropertyPicker({ properties, loaded, onLoad, onClear }) {
 }
 
 // ---------- Summary card ----------
-function SummaryCard({ result }) {
+function SummaryCard({ result, inp }) {
+  // Reflect any real listing figures in play (tax from county records, HOA from
+  // the listing). Tracked via the src flags so it survives clearing the pill.
+  const realParts = [];
+  if (inp.taxSrc) realParts.push("tax");
+  if (inp.hoaSrc) realParts.push("HOA");
+  const basis = realParts.length
+    ? `Using this home's actual ${realParts.join(" & ")} · ${result.term}-yr fixed`
+    : `Based on national-average assumptions · ${result.term}-yr fixed`;
   return (
     <div className="card m-summary">
       <div className="m-total">
         <div className="cap">Estimated monthly payment</div>
         <div className="amt">{fmt.usd(Math.round(result.total))}<span className="per"> /mo</span></div>
-        <div className="meta">Based on national-average assumptions · {result.term}-yr fixed</div>
+        <div className="meta">{basis}</div>
       </div>
       <div className="m-donut-row">
         <PaymentDonut result={result} size={132} stroke={14} />
@@ -800,7 +808,7 @@ function MortgagePage({ properties, navigate }) {
 
       <div className="m-split">
         <div><MortgageForm inp={inp} set={set} result={result} rates={rates} /></div>
-        <div className="m-summary-col"><SummaryCard result={result} /></div>
+        <div className="m-summary-col"><SummaryCard result={result} inp={inp} /></div>
       </div>
       <div style={{ marginTop: 16 }}>
         <AmortizationSection result={result} />
