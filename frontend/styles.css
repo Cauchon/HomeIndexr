@@ -3572,7 +3572,7 @@ table.m-sched .prin { color: var(--m-pi); }
 /* property dropdown */
 .m-picker { position: relative; }
 .m-picker-pop {
-  position: absolute; top: calc(100% + 6px); left: 0;
+  position: absolute; top: calc(100% + 6px); right: 0;
   z-index: 40;
   width: 360px; max-width: calc(100vw - 32px);
   max-height: 380px; overflow-y: auto;
