@@ -405,7 +405,10 @@ function prefillFromProperty(p) {
   } else if (p.last_sold_price != null) {
     price = p.last_sold_price; src = "last sold";
   }
-  return { price: price ? Math.round(price / 1000) * 1000 : null, src };
+  // HOA is a real current field on the property row (monthly). Property tax is
+  // not on the list payload — it lives in tax_history, pulled in loadProperty.
+  const hoaMonthly = p.hoa_fee != null && p.hoa_fee > 0 ? p.hoa_fee : null;
+  return { price: price ? Math.round(price / 1000) * 1000 : null, src, hoaMonthly };
 }
 
 // ---------- Small inputs ----------
@@ -578,13 +581,14 @@ function MortgageForm({ inp, set, result, rates }) {
                 <div className="m-field-head">
                   <span className="m-field-label">Property tax</span>
                   <span className="m-field-sub">
-                    {!result.taxAuto && <button type="button" className="m-auto-reset" title="Reset to estimate" onClick={() => set((s) => ({ ...s, taxAnnual: null }))}>auto</button>}
+                    {inp.taxSrc && <span className="m-src-tag" title={`From county tax records · ${inp.taxSrc}`}>actual</span>}
+                    {!result.taxAuto && <button type="button" className="m-auto-reset" title="Reset to estimate" onClick={() => set((s) => ({ ...s, taxAnnual: null, taxSrc: null }))}>auto</button>}
                     {monthly("tax")}/mo
                   </span>
                 </div>
                 <div className="m-num sm">
                   <span className="pre">$</span>
-                  <CurrencyInput value={Math.round(result.taxAnnual)} onChange={(v) => set((s) => ({ ...s, taxAnnual: v }))} />
+                  <CurrencyInput value={Math.round(result.taxAnnual)} onChange={(v) => set((s) => ({ ...s, taxAnnual: v, taxSrc: null }))} />
                   <span className="post">/ yr</span>
                 </div>
               </div>
@@ -619,11 +623,14 @@ function MortgageForm({ inp, set, result, rates }) {
               <div className="m-field">
                 <div className="m-field-head">
                   <span className="m-field-label">HOA dues</span>
-                  <span className="m-field-sub">{fmt.usd(Math.round(inp.hoaMonthly || 0))}/mo</span>
+                  <span className="m-field-sub">
+                    {inp.hoaSrc && <span className="m-src-tag" title="From the listing">actual</span>}
+                    {fmt.usd(Math.round(inp.hoaMonthly || 0))}/mo
+                  </span>
                 </div>
                 <div className="m-num sm">
                   <span className="pre">$</span>
-                  <CurrencyInput value={inp.hoaMonthly} onChange={(v) => set((s) => ({ ...s, hoaMonthly: v }))} />
+                  <CurrencyInput value={inp.hoaMonthly} onChange={(v) => set((s) => ({ ...s, hoaMonthly: v, hoaSrc: null }))} />
                   <span className="post">/ mo</span>
                 </div>
               </div>
@@ -731,6 +738,7 @@ function MortgagePage({ properties, navigate }) {
   const [inp, set] = useS_m(() => ({ ...M_DEFAULTS, rateAuto: true }));
   const [loaded, setLoaded] = useS_m(null); // splitAddress of the loaded property
   const [rates, setRates] = useS_m(null);   // live FRED anchor (null until loaded)
+  const loadReq = useR_m(0);                 // guards against out-of-order detail fetches
 
   // Pull the live Freddie Mac anchor once. If it arrives and the user hasn't
   // overridden the rate, re-snap the auto rate to the live suggestion. Failure
@@ -751,7 +759,24 @@ function MortgagePage({ properties, navigate }) {
 
   function loadProperty(p, sp, pre) {
     setLoaded(sp);
-    set((s) => ({ ...s, price: pre.price }));
+    const reqId = ++loadReq.current;
+    // Price + real HOA apply immediately; reset tax to auto-estimate until the
+    // detail fetch confirms a real county figure for this specific home.
+    set((s) => ({
+      ...s,
+      price: pre.price,
+      hoaMonthly: pre.hoaMonthly != null ? pre.hoaMonthly : 0,
+      hoaSrc: pre.hoaMonthly != null ? "listing" : null,
+      taxAnnual: null,
+      taxSrc: null,
+    }));
+    // Latest actual property tax lives in tax_history (detail endpoint only).
+    API.getProperty(p.id).then((full) => {
+      if (loadReq.current !== reqId) return; // a newer load superseded this one
+      const taxes = (full.tax_history || []).filter((t) => t.tax != null && t.tax > 0);
+      const latest = taxes.length ? taxes[taxes.length - 1] : null; // list is year ASC
+      if (latest) set((s) => ({ ...s, taxAnnual: latest.tax, taxSrc: String(latest.year) }));
+    }).catch(() => {});
   }
 
   return (

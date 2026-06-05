@@ -3279,6 +3279,18 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
   cursor: pointer;
 }
 .m-auto-reset:hover { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+.m-src-tag {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pos);
+  background: var(--pos-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 6px;
+  cursor: default;
+}
 
 /* number field with leading/trailing affordance */
 .m-num {
