@@ -46,6 +46,7 @@ function App() {
       const [page, arg] = h.split("/").filter(Boolean);
       if (page === "add") setRoute({ page: "add", arg: null });
       else if (page === "browse") setRoute({ page: "browse", arg: null });
+      else if (page === "mortgage") setRoute({ page: "mortgage", arg: null });
       else if (page === "admin") setRoute({ page: "admin", arg: arg || null });
       else if (page === "property" && arg) setRoute({ page: "detail", arg: Number(arg) });
       else setRoute({ page: "dashboard", arg: null });
@@ -60,6 +61,7 @@ function App() {
     let h = "";
     if (page === "dashboard") h = "";
     else if (page === "browse") h = "#browse";
+    else if (page === "mortgage") h = "#mortgage";
     else if (page === "add") h = "#add";
     else if (page === "admin") h = arg ? `#admin/${arg}` : "#admin";
     else if (page === "detail") h = `#property/${arg}`;
@@ -104,6 +106,7 @@ function App() {
   const crumbs = useM(() => {
     if (route.page === "dashboard") return ["Properties"];
     if (route.page === "browse") return ["Browse"];
+    if (route.page === "mortgage") return ["Mortgage calculator"];
     if (route.page === "add") return ["Properties", "Add property"];
     if (route.page === "admin") return ["Admin"];
     if (route.page === "detail") {
@@ -128,6 +131,8 @@ function App() {
       onSaveSearch={saveSearch} applied={appliedSearch} />;
   } else if (route.page === "add") {
     pageEl = <AddPropertyPage navigate={navigate} onAdded={reload} />;
+  } else if (route.page === "mortgage") {
+    pageEl = <MortgagePage properties={properties} navigate={navigate} />;
   } else if (route.page === "admin") {
     pageEl = <AdminPage
       properties={properties}
@@ -192,6 +197,10 @@ function App() {
           <div className={`nav-item ${route.page === "add" ? "active" : ""}`}
                onClick={() => navigate("add")}>
             <Icon name="plus" /> Add property
+          </div>
+          <div className={`nav-item ${route.page === "mortgage" ? "active" : ""}`}
+               onClick={() => navigate("mortgage")}>
+            <Icon name="calculator" /> Mortgage calculator
           </div>
           <div className={`nav-item ${route.page === "admin" ? "active" : ""}`}
                onClick={() => navigate("admin")}>

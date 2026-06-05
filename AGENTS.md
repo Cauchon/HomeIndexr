@@ -30,6 +30,7 @@ frontend/
   pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
   browse.jsx     Browse page — chip filter bar + card grid over /api/browse (rule #16)
   coverage.jsx   Tracked areas admin tab — CoverageSection/AddZipModal/RemoveZipModal over /api/admin/areas (rule #14)
+  mortgage.jsx   Mortgage calculator page — client-side P&I/tax/insurance/PMI/HOA estimate, donut + amortization, optional load-from-property prefill (no backend; reads tracked-property fields)
   app.jsx        app shell, hash router, data fetching
   api.js         tiny fetch wrapper exposed as window.API
 extension/       MV3 Chrome extension — thin client over the API (see below)
