@@ -95,7 +95,9 @@ const fmt = {
     const d = Math.round(h / 24);
     if (d < 30) return `${d}d ago`;
     const mo = Math.round(d / 30);
-    return `${mo}mo ago`;
+    if (mo < 12) return `${mo}mo ago`;
+    const y = Math.round(d / 365);
+    return `~${y} year${y === 1 ? "" : "s"} ago`;
   },
   num(n) {
     if (n == null) return "—";

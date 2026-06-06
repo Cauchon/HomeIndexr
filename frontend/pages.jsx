@@ -2696,8 +2696,12 @@ function buildMarketEvents(current = null, historical = [], marketEvents = []) {
     } else if ((row.subkind === "listed" || row.subkind === "sold") && row.estimateAtTime != null) {
       row.vsPrior = row.price - row.estimateAtTime;
       row.vsPriorPct = row.estimateAtTime ? row.vsPrior / row.estimateAtTime : null;
+    } else if ((row.subkind === "listed" || row.subkind === "sold") && row.price && prevMarketPrice != null) {
+      row.vsPrior = row.price - prevMarketPrice;
+      row.vsPriorPct = prevMarketPrice ? row.vsPrior / prevMarketPrice : null;
+      row.changeLabel = "vs prior sale";
     }
-    if (row.price != null) prevMarketPrice = row.price;
+    if (row.price) prevMarketPrice = row.price;
   }
 
   return sortedMarket.sort((a, b) => {
@@ -2875,7 +2879,9 @@ function ActivityRow({ row }) {
     <tr className={row.origin === "historical" ? "historical-bg" : ""} style={{ cursor: "default" }}>
       <td className="date-cell">
         <div>{fmt.date(row.ts)}</div>
-        <div className="rel">{row.origin === "historical" ? "Historical AVM" : row.origin === "current" ? "Current data" : fmt.relative(row.ts)}</div>
+        {(row.origin === "historical" || row.origin === "current") && (
+          <div className="rel">{row.origin === "historical" ? "Historical AVM" : "Current data"}</div>
+        )}
       </td>
       <td><TimelineBadge row={row} /></td>
       <td className="value-cell"><TimelineValue row={row} /></td>
@@ -2961,8 +2967,8 @@ function TimelineValue({ row }) {
   if (row.kind === "market") {
     return (
       <div>
-        <div className="main">{fmt.usd(row.price)}</div>
-        <div className="sub">{row.eventSource === "observed" ? "Observed during refresh" : "Realtor market event"}</div>
+        <div className="main">{row.price ? fmt.usd(row.price) : <span className="faint">—</span>}</div>
+        {row.eventSource === "observed" && <div className="sub">Observed during refresh</div>}
       </div>
     );
   }
@@ -2987,7 +2993,7 @@ function TimelineChange({ row }) {
     );
   }
   if (row.kind === "market") {
-    if (row.vsPrior == null) return <span className="delta-sub">no nearby comparison</span>;
+    if (row.vsPrior == null) return <span className="delta-sub">—</span>;
     const label = row.changeLabel || (row.subkind === "price" ? "vs prior market price" : "vs nearest estimate");
     return (
       <div>
