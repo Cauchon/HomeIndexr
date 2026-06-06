@@ -78,6 +78,15 @@
       }),
     removeArea: (zip) =>
       req(`/api/admin/areas/${encodeURIComponent(zip)}`, { method: "DELETE" }),
+    // Saved Browse searches — named filter sets, persisted server-side.
+    listSavedSearches: () => req("/api/saved-searches"),
+    createSavedSearch: (name, filters) =>
+      req("/api/saved-searches", {
+        method: "POST",
+        body: JSON.stringify({ name, filters }),
+      }),
+    deleteSavedSearch: (id) =>
+      req(`/api/saved-searches/${encodeURIComponent(id)}`, { method: "DELETE" }),
   };
 
   window.API = API;

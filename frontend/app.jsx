@@ -10,15 +10,38 @@ function App() {
   const [theme, setTheme] = useS(() => localStorage.getItem("hi_theme") || localStorage.getItem("ht_theme") || "light");
   const [sidebarOpen, setSidebarOpen] = useS(false);
 
-  // Saved Browse searches — a named filter set, optionally alerting on new
-  // matches. Local-first: persisted to localStorage and surfaced in the sidebar.
-  const [savedSearches, setSavedSearches] = useS(() => {
-    try { return JSON.parse(localStorage.getItem("hi_saved_searches") || "[]"); } catch (e) { return []; }
-  });
+  // Saved Browse searches — a named filter set surfaced in the sidebar.
+  // Persisted server-side (was localStorage; that lost data on origin/browser
+  // changes). On first load we migrate any leftover localStorage entries up to
+  // the server so existing users don't lose what they still have locally.
+  const [savedSearches, setSavedSearches] = useS([]);
   const [appliedSearch, setAppliedSearch] = useS(null);
-  useE(() => {
-    localStorage.setItem("hi_saved_searches", JSON.stringify(savedSearches.map(({ just, ...s }) => s)));
-  }, [savedSearches]);
+  useE(() => { loadSavedSearches(); }, []);
+
+  async function loadSavedSearches() {
+    try {
+      let list = await API.listSavedSearches();
+      if (list.length === 0) list = await migrateLocalSavedSearches();
+      setSavedSearches(list);
+    } catch (e) {
+      console.error("Failed to load saved searches", e);
+    }
+  }
+
+  // One-time lift of pre-server saved searches out of localStorage. Only runs
+  // when the server has none; clears the local key once everything is uploaded.
+  async function migrateLocalSavedSearches() {
+    let legacy;
+    try { legacy = JSON.parse(localStorage.getItem("hi_saved_searches") || "[]"); } catch (e) { legacy = []; }
+    if (!Array.isArray(legacy) || legacy.length === 0) return [];
+    // Re-create oldest-first so server created_at ordering matches the old order.
+    for (const s of [...legacy].reverse()) {
+      try { await API.createSavedSearch(s.name, s.filters || {}); } catch (e) { /* keep going */ }
+    }
+    const list = await API.listSavedSearches();
+    if (list.length > 0) localStorage.removeItem("hi_saved_searches");
+    return list;
+  }
 
   useE(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -70,14 +93,26 @@ function App() {
     setSidebarOpen(false);
   }
 
-  function saveSearch({ name, filters }) {
-    const id = `ss_${Date.now()}_${Math.round(Math.random() * 1e4)}`;
-    setSavedSearches((list) => [{ id, name, filters, created_at: Date.now(), just: true }, ...list]);
+  async function saveSearch({ name, filters }) {
+    let record;
+    try {
+      record = await API.createSavedSearch(name, filters);
+    } catch (e) {
+      console.error("Failed to save search", e);
+      return;
+    }
+    setSavedSearches((list) => [{ ...record, just: true }, ...list]);
     // Clear the just-saved highlight once its animation has run.
-    setTimeout(() => setSavedSearches((l) => l.map((s) => (s.id === id ? { ...s, just: false } : s))), 2000);
+    setTimeout(() => setSavedSearches((l) => l.map((s) => (s.id === record.id ? { ...s, just: false } : s))), 2000);
   }
   function removeSearch(id) {
-    setSavedSearches((l) => l.filter((s) => s.id !== id));
+    // Optimistic removal; restore the list if the server rejects the delete.
+    let prev;
+    setSavedSearches((l) => { prev = l; return l.filter((s) => s.id !== id); });
+    API.deleteSavedSearch(id).catch((e) => {
+      console.error("Failed to remove saved search", e);
+      if (prev) setSavedSearches(prev);
+    });
   }
   function applySearch(s) {
     setAppliedSearch({ id: s.id, filters: s.filters, nonce: Date.now() });

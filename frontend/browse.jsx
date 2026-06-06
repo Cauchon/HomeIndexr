@@ -637,7 +637,7 @@ function MobileSortSheet({ open, value, onChange, onClose }) {
 
 // Save-search sheet — names the search from its active filters, shows what's
 // being saved as chips, and saves on confirm. Name-only (no alert toggle),
-// matching the localStorage-backed saved searches the sidebar lists.
+// matching the server-persisted saved searches the sidebar lists (rule #18).
 function MobileSaveSheet({ open, f, bounds, statusOptions, onSave, onClose }) {
   const [name, setName] = useS_bx("");
   // Re-seed the auto-name each time the sheet opens — filters may have changed.

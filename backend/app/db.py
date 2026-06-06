@@ -198,6 +198,15 @@ CREATE TABLE IF NOT EXISTS area_listings (
     fetched_at INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'active'
 );
+
+CREATE TABLE IF NOT EXISTS saved_searches (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    filters_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_searches_created ON saved_searches(created_at);
 """
 
 

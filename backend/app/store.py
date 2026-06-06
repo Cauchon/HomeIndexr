@@ -9,6 +9,7 @@ import json
 import os
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -685,6 +686,60 @@ def delete_area_listings(zip_code: str) -> bool:
     zip_code = (zip_code or "").strip()
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM area_listings WHERE zip = ?", (zip_code,))
+    return cur.rowcount > 0
+
+
+def _row_to_saved_search(row: Any) -> dict:
+    try:
+        filters = json.loads(row["filters_json"])
+    except (TypeError, ValueError):
+        filters = {}
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "filters": filters,
+        "created_at": row["created_at"],
+    }
+
+
+def list_saved_searches() -> list[dict]:
+    """Every saved Browse search, newest first (matches the sidebar's order)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, name, filters_json, created_at FROM saved_searches "
+            "ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+    return [_row_to_saved_search(r) for r in rows]
+
+
+def create_saved_search(name: str, filters: dict | None) -> dict:
+    """Persist a named Browse filter set. The id is minted server-side."""
+    now = _now()
+    record = {
+        "id": f"ss_{uuid.uuid4().hex[:12]}",
+        "name": (name or "").strip() or "Saved search",
+        "filters": filters or {},
+        "created_at": now,
+    }
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO saved_searches (id, name, filters_json, created_at) "
+            "VALUES (?,?,?,?)",
+            (
+                record["id"],
+                record["name"],
+                json.dumps(record["filters"], default=str),
+                now,
+            ),
+        )
+    return record
+
+
+def delete_saved_search(search_id: str) -> bool:
+    """Remove a saved search. Returns False if the id wasn't found."""
+    search_id = (search_id or "").strip()
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM saved_searches WHERE id = ?", (search_id,))
     return cur.rowcount > 0
 
 

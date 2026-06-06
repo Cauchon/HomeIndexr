@@ -201,6 +201,17 @@ hardcoded national-average anchor — fully functional, just not live.
     on top, and the 15-yr term uses the real `MORTGAGE15US` series directly rather
     than the synthetic offset. Keep the fetch+cache logic in `rates.py`; the rate
     values are non-secret (so they live in `app_settings`), but the key is not.
+18. **Saved Browse searches are server-persisted, not localStorage.** A saved
+    search is just a named Browse filter set (`{id, name, filters, created_at}`)
+    listed in the sidebar. It lives in the `saved_searches` table and is managed
+    through `/api/saved-searches` (`store.list_saved_searches` /
+    `create_saved_search` / `delete_saved_search`); the id is minted server-side.
+    It was originally localStorage-only, which silently lost data on an
+    origin/browser change — the frontend now loads from the API and performs a
+    one-time migration of any leftover `hi_saved_searches` localStorage entries
+    up to the server (then clears the key). The `filters` blob is opaque to the
+    backend (stored as JSON); Browse owns its shape. Single-user app, so no user
+    scoping (see *Auth*, deliberately not built).
 
 ## Data model
 
@@ -217,6 +228,9 @@ rather than duplicating the schema here. The shape at a glance:
 - `tax_history` — yearly tax + county assessment/market/appraisal values.
 - `area_listings` — per-ZIP SRP cache, one row per ZIP, with an `active`/`paused`
   `status` for Tracked-areas management (rule #14).
+- `saved_searches` — named Browse filter sets surfaced in the sidebar; one row
+  per search (`id`, `name`, `filters_json`, `created_at`). Single-user, so no
+  scoping (rule #18).
 - `app_settings` — non-secret key/value flags (rule #13).
 
 `status` is one of: `matched`, `candidate_mismatch`, `no_candidates`, `error`.
@@ -244,6 +258,9 @@ the frontend formatters.
 | POST   | `/api/admin/areas/{zip}/recrawl`  | Re-run the one-time SRP crawl for a tracked ZIP. Returns the updated record |
 | PATCH  | `/api/admin/areas/{zip}`          | `{status}` (`active`\|`paused`) — pause hides the ZIP's homes from Browse but keeps its index |
 | DELETE | `/api/admin/areas/{zip}`          | Discard a ZIP's index (409 if it backs an active tracked property) |
+| GET    | `/api/saved-searches`             | Saved Browse filter sets, newest first: `[{id, name, filters, created_at}]` (rule #18) |
+| POST   | `/api/saved-searches`             | `{name, filters}` — persist a named filter set; id minted server-side. Returns the record |
+| DELETE | `/api/saved-searches/{id}`        | Remove a saved search (404 if the id is unknown) |
 | GET    | `/api/properties/{id}`            | Full property + historical + events + taxes + schools + `photos` (`[{href, label}]`, derived from `raw_json`) |
 | GET    | `/api/properties/{id}/area`       | Comparable for-sale homes in this property's ZIP (cache-only; excludes the subject; strict gating + similarity ranking). Optional filter query params (`min_price`, `max_price`, `min_beds`, `min_baths`, `min_sqft`, `max_sqft`) narrow the candidate pool *before* ranking. `{zip, fetched_at, comps, relaxed, limited, subject_price_per_sqft, domain}` where `domain` (`{prices, sqfts, count}`) describes the unfiltered comp spread for stable filter sliders. |
 | POST   | `/api/properties/{id}/ai/ask`     | `{question}` — server-side DeepSeek answer grounded in local property context; may call web-search/geocoding tools. Returns `tools_used` |

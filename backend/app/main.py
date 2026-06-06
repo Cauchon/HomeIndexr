@@ -68,6 +68,11 @@ class AreaStatusBody(BaseModel):
     status: str
 
 
+class SavedSearchBody(BaseModel):
+    name: str
+    filters: dict = {}
+
+
 ZIP_RE = re.compile(r"^\d{5}$")
 
 
@@ -434,6 +439,26 @@ def remove_area(zip_code: str):
         )
     store.delete_area_listings(zip_code)
     return {"ok": True, "zip": zip_code}
+
+
+@app.get("/api/saved-searches")
+def list_saved_searches():
+    """Every saved Browse search, newest first. Single-user, so no scoping."""
+    return store.list_saved_searches()
+
+
+@app.post("/api/saved-searches")
+def create_saved_search(body: SavedSearchBody):
+    """Persist a named Browse filter set; returns the stored record (id minted
+    server-side)."""
+    return store.create_saved_search(body.name, body.filters)
+
+
+@app.delete("/api/saved-searches/{search_id}")
+def delete_saved_search(search_id: str):
+    if not store.delete_saved_search(search_id):
+        raise HTTPException(404, "Saved search not found")
+    return {"ok": True, "id": search_id}
 
 
 @app.post("/api/properties/{pid}/refresh")
