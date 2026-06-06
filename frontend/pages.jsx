@@ -890,11 +890,6 @@ function CompCard({ comp, navigate, onChanged }) {
           <span>{comp.baths != null ? `${fmt.baths(comp.baths)} ba` : "— ba"}</span><span className="dot"></span>
           <span>{comp.sqft != null ? `${fmt.num(comp.sqft)} sqft` : "— sqft"}</span>
         </div>
-        {comp.is_price_reduced && (
-          <div className="cmpA-flags">
-            <span className="badge warn">Price reduced</span>
-          </div>
-        )}
         <div className="cmpA-foot">
           <button
             className={"cmp-track" + (tracked ? " on" : "")}
@@ -926,7 +921,7 @@ function CompCard({ comp, navigate, onChanged }) {
 // than CompCard: a 4:3 photo with the days-on-market badge, then price, address,
 // a single specs line, and a meta row pairing distance · days-on-market against
 // $/sqft. Keeps the same footer as the desktop card (full-width Track button +
-// open-listing link); only the "price reduced" flag is dropped to save room.
+// open-listing link).
 function CompCardCompact({ comp, navigate, onChanged }) {
   const { tracked, saving, track } = useTrackComp(comp, navigate, onChanged);
   const addr = comp.line || comp.address || "—";
