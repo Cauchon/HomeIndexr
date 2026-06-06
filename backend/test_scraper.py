@@ -49,6 +49,21 @@ class NormalizeListingStateTests(unittest.TestCase):
             "pending",
         )
 
+    def test_active_status_overrides_stale_pending_date(self):
+        # A relisted home keeps its old pending_date but is for sale again.
+        raw = {
+            "status": "for_sale",
+            "mls_status": "Active",
+            "pending_date": "2026-05-04T08:12:47Z",
+            "list_price": 799900,
+            "listing_id": "2989203598",
+        }
+
+        self.assertEqual(
+            scraper.normalize_listing_state(raw, now_ms=ms("2026-06-05")),
+            "for_sale",
+        )
+
     def test_old_explicit_sold_status_becomes_off_market(self):
         raw = {
             "status": "sold",
