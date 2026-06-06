@@ -332,7 +332,9 @@ def normalize_listing_state(raw: dict | None, now_ms: int | None = None) -> str:
     Precedence:
       1. Explicit sold / closed current-status cues, but only for
          SOLD_TO_OFF_MARKET_DAYS after sale date.
-      2. Pending / contingent / under-contract cues.
+      2. Pending / contingent / under-contract status cues (a bare
+         `pending_date` only counts when there's no active cue — it lingers
+         after a fallen-through deal relists).
       3. Active for-sale cues.
       4. Other sold cues, but only for SOLD_TO_OFF_MARKET_DAYS after sale date.
       5. Off market.
@@ -357,11 +359,17 @@ def normalize_listing_state(raw: dict | None, now_ms: int | None = None) -> str:
         return "off_market"
 
     pending_words = ("pending", "under_contract", "contingent")
-    if raw.get("pending_date") or any(any(word in s for word in pending_words) for s in statuses):
-        return "pending"
+    has_pending_cue = any(any(word in s for word in pending_words) for s in statuses)
 
     active_statuses = {"for_sale", "active", "coming_soon", "new_listing"}
     has_active_cue = bool(statuses & active_statuses)
+
+    # A `pending_date` lingers on the record after a deal falls through and the
+    # home relists, so it alone is not proof the home is currently pending. Only
+    # trust it when the live status isn't telling us it's active again.
+    if has_pending_cue or (raw.get("pending_date") and not has_active_cue):
+        return "pending"
+
     if has_active_cue:
         return "for_sale"
     if raw.get("list_price") is not None and raw.get("listing_id") and not has_sold_status:
