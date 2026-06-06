@@ -121,7 +121,7 @@ function ssActiveChips(f, bounds, statusOptions) {
 // would later read as a filter once the pool (and its bounds) shift. Omitting
 // full-range fields lets apply re-seed them from the current bounds, so an
 // untouched filter always re-applies as unfiltered.
-function ssActiveFilters(f, bounds, statusOptions) {
+function ssActiveFilters(f, bounds, statusOptions, hiddenAreas) {
   const out = {};
   if (f.q && f.q.trim()) out.q = f.q.trim();
   if (f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1]) out.price = f.price;
@@ -130,6 +130,10 @@ function ssActiveFilters(f, bounds, statusOptions) {
   if (f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1]) out.sqft = f.sqft;
   if (f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1]) out.year = f.year;
   if (f.status.length !== statusOptions.length) out.status = f.status;
+  // Area scope lives outside `f`; carry the toggled-off ZIPs along so a saved
+  // search restores the same area scope. Omitted when nothing is hidden, in
+  // keeping with the "only narrowed fields are stored" rule above.
+  if (hiddenAreas && hiddenAreas.length) out.hiddenAreas = hiddenAreas;
   return out;
 }
 
@@ -178,7 +182,7 @@ function SaveSearchForm({ f, bounds, statusOptions, chips, onSave, onCancel }) {
 
 // The chip-bar Save-search button — hidden until a filter is active, then it
 // slides in (outline treatment) and opens the name/alert popover.
-function SaveSearchButton({ f, bounds, statusOptions, onSave }) {
+function SaveSearchButton({ f, bounds, statusOptions, areas, hidden, onSave }) {
   const [open, setOpen] = useS_bx(false);
   const ref = useR_bx(null);
   const popRef = usePopoverPosition(open, ref, "left");
@@ -188,7 +192,10 @@ function SaveSearchButton({ f, bounds, statusOptions, onSave }) {
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
+  // Area scope counts as an active filter too, so the button arms (and lists it
+  // in the summary) even when ZIP scoping is the only thing narrowing the view.
   const chips = ssActiveChips(f, bounds, statusOptions);
+  if (areasHiddenCount(areas, hidden) > 0) chips.push(["Areas", areasSummary(areas, hidden)]);
   const armed = chips.length > 0;
   if (!armed && !open) return <span className="sf-anchor" ref={ref} />;
 
@@ -787,7 +794,7 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   const [visible, setVisible] = useS_bx(BX_PAGE);
   // ZIPs toggled off in the Areas pill. Kept outside `f` because it scopes the
   // view to a subset of your tracked areas rather than describing a portable
-  // filter — so it's left out of saved searches and survives applying one.
+  // filter — but it is saved with a search and restored when one is applied.
   const [hiddenAreas, setHiddenAreas] = useS_bx([]);
   const toast = useToast();
 
@@ -857,11 +864,15 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   useE_bx(() => {
     if (!data || !applied || !applied.filters || applied.nonce === lastAppliedRef.current) return;
     lastAppliedRef.current = applied.nonce;
-    setF({ ...makeBxDefault(bounds, statusOptions.map((o) => o.v)), ...applied.filters });
+    // Area scope rides alongside `f`'s fields in the stored shape; peel it back
+    // out so it lands in its own state rather than leaking into the filter set.
+    const { hiddenAreas: savedAreas, ...filters } = applied.filters;
+    setF({ ...makeBxDefault(bounds, statusOptions.map((o) => o.v)), ...filters });
+    setHiddenAreas(Array.isArray(savedAreas) ? savedAreas : []);
   }, [applied && applied.nonce, data]);
 
   function handleSaveSearch({ name }) {
-    if (onSaveSearch) onSaveSearch({ name, filters: ssActiveFilters(ff, bounds, statusOptions) });
+    if (onSaveSearch) onSaveSearch({ name, filters: ssActiveFilters(ff, bounds, statusOptions, hiddenAreas) });
     toast.push({ kind: "ok", text: "Search saved" });
   }
 
@@ -1029,7 +1040,8 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
               onChange={(v) => set({ year: v })} format={(v) => String(v)} loCapLabel="& older" />
           </FilterPill>
           <span className="spacer" />
-          <SaveSearchButton f={ff} bounds={bounds} statusOptions={statusOptions} onSave={handleSaveSearch} />
+          <SaveSearchButton f={ff} bounds={bounds} statusOptions={statusOptions}
+            areas={areas} hidden={hiddenAreas} onSave={handleSaveSearch} />
           <SortMenu value={sort} onChange={setSort} />
         </div>
         )}
