@@ -2930,6 +2930,20 @@ table.data.timeline tbody tr.historical-bg:hover td { background: var(--bg-hover
 .bx-check input:checked + .box { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .bx-check .ct { margin-left: auto; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 
+/* Browse areas pill internals */
+.cov-pill-zip {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  font-variant-numeric: tabular-nums; font-weight: 500;
+}
+.cov-pill-zip .c { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+.cov-manage {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  margin-top: 8px; padding: 9px 8px 4px; border: none; border-top: 1px solid var(--border);
+  background: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500;
+  color: var(--accent);
+}
+.cov-manage:hover { color: color-mix(in oklab, var(--accent) 80%, var(--text)); }
+
 /* sort menu */
 .bx-sort { position: relative; }
 .bx-sortbtn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; box-shadow: var(--shadow-sm); }

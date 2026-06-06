@@ -405,6 +405,54 @@ function FilterPill({ label, summary, active, onClear, children, wide }) {
   );
 }
 
+// ---------- areas scope ----------
+// How many of the listed areas are toggled off, and the chip summary for it.
+function areasHiddenCount(areas, hidden) {
+  return hidden.filter((z) => areas.some((a) => a.zip === z)).length;
+}
+function areasSummary(areas, hidden) {
+  const hiddenN = areasHiddenCount(areas, hidden);
+  return hiddenN === 0 ? null : `${areas.length - hiddenN} of ${areas.length}`;
+}
+
+// The checklist of tracked ZIPs (each row: ZIP · city · in-view count), shared
+// by the desktop Areas pill and the mobile filter sheet's Areas group. Toggling
+// a row hides/re-shows that ZIP's homes via `onToggle(zip)`.
+function AreaCheckList({ areas, hidden, onToggle }) {
+  return (
+    <div className="bx-checks">
+      {areas.map((a) => {
+        const on = !hidden.includes(a.zip);
+        return (
+          <label key={a.zip} className="bx-check">
+            <input type="checkbox" checked={on} onChange={() => onToggle(a.zip)} />
+            <span className="box"><Icon name="check" size={11} /></span>
+            <span className="cov-pill-zip">{a.zip}{a.city && <span className="c">{a.city}</span>}</span>
+            <span className="ct">{a.count.toLocaleString()}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+// Narrows Browse to a subset of the tracked ZIPs the pool spans. Mirrors the
+// other filter pills (active when ≥1 ZIP is hidden); clearing it (the ×) re-shows
+// everything, and the footer jumps to the area-management surface.
+function AreasPill({ areas, hidden, onToggle, onManage }) {
+  const hiddenN = areasHiddenCount(areas, hidden);
+  return (
+    <FilterPill label="Areas" active={hiddenN > 0} summary={areasSummary(areas, hidden) || "All areas"}
+      onClear={() => onToggle("__all__")} wide>
+      <span className="poplab">Tracked ZIP codes</span>
+      <AreaCheckList areas={areas} hidden={hidden} onToggle={onToggle} />
+      <button className="cov-manage" onClick={(e) => { e.stopPropagation(); onManage(); }}>
+        <Icon name="settings" size={13} /> Manage tracked areas
+      </button>
+    </FilterPill>
+  );
+}
+
 // ---------- home card ----------
 function BrowseCard({ home, navigate, onChanged }) {
   const { tracked, saving, track } = useTrackComp(home, navigate, onChanged, { navigateOnSuccess: false });
@@ -555,7 +603,7 @@ function MfGroup({ id, label, summary, focus, groupsRef, children }) {
 // Filters sheet — all groups in one scroll, opened scrolled to (and briefly
 // highlighting) the group the tapped pill maps to. Reset / Show N homes pinned
 // at the bottom with the live match count.
-function MobileFilterSheet({ open, focus, f, set, bounds, statusOptions, statusCounts, data, count, onClose, onReset }) {
+function MobileFilterSheet({ open, focus, f, set, bounds, statusOptions, statusCounts, areas, hidden, onToggleArea, data, count, onClose, onReset }) {
   const bodyRef = useR_bx(null);
   const groups = useR_bx({});
   useE_bx(() => {
@@ -578,6 +626,12 @@ function MobileFilterSheet({ open, focus, f, set, bounds, statusOptions, statusC
         <button className="clear" onClick={onReset}>Clear all</button>
       </div>
       <div className="sbody" ref={bodyRef}>
+        {areas.length > 1 && (
+          <MfGroup id="areas" label="Areas" focus={focus} groupsRef={groups}
+            summary={areasSummary(areas, hidden)}>
+            <AreaCheckList areas={areas} hidden={hidden} onToggle={onToggleArea} />
+          </MfGroup>
+        )}
         <MfGroup id="price" label="Price" focus={focus} groupsRef={groups}
           summary={rangeSummary(f.price[0], f.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true))}>
           <DualRange min={bounds.price[0]} max={bounds.price[1]} step={10000} value={f.price}
@@ -669,8 +723,12 @@ function MobileSaveSheet({ open, f, bounds, statusOptions, onSave, onClose }) {
 // Mobile chip bar — full-width search, a scrollable pill row (Filters + the five
 // filters), and a toolbar with the live count, Sort, and Save. Each pill opens
 // the Filters sheet scrolled to its group; Sort/Save open their own sheets.
-function MobileChipBar({ f, set, bounds, statusOptions, sort, rowsCount, onOpenFilters, onOpenSort, onOpenSave }) {
+function MobileChipBar({ f, set, bounds, statusOptions, areas, hidden, sort, rowsCount, onOpenFilters, onOpenSort, onOpenSave }) {
   const pills = mobilePills(f, bounds, statusOptions);
+  if (areas.length > 1) {
+    pills.unshift({ id: "areas", label: "Areas",
+      active: areasHiddenCount(areas, hidden) > 0, summary: areasSummary(areas, hidden) || "" });
+  }
   const activeN = pills.filter((p) => p.active).length;
   const saveArmed = activeN > 0 || !!(f.q && f.q.trim());
   const sortLabel = (BX_SORTS.find((s) => s.v === sort) || BX_SORTS[0]).label;
@@ -711,6 +769,10 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   const [f, setF] = useS_bx(null);
   const [sort, setSort] = useS_bx("relevance");
   const [visible, setVisible] = useS_bx(BX_PAGE);
+  // ZIPs toggled off in the Areas pill. Kept outside `f` because it scopes the
+  // view to a subset of your tracked areas rather than describing a portable
+  // filter — so it's left out of saved searches and survives applying one.
+  const [hiddenAreas, setHiddenAreas] = useS_bx([]);
   const toast = useToast();
 
   // Mobile (≤880px) swaps the desktop chip row for bottom sheets.
@@ -720,8 +782,8 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   // Leaving mobile (rotate / resize to desktop) dismisses any open sheet.
   useE_bx(() => { if (!isMobile) setSheet(null); }, [isMobile]);
 
-  // Reset to the first page whenever the filters, search, or sort change.
-  useE_bx(() => { setVisible(BX_PAGE); }, [f, sort]);
+  // Reset to the first page whenever the filters, area scope, or sort change.
+  useE_bx(() => { setVisible(BX_PAGE); }, [f, sort, hiddenAreas]);
 
   useE_bx(() => {
     let active = true;
@@ -744,6 +806,31 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   }, [data]);
   const statusCounts = useM_bx(() => (data && data.statuses) || {}, [data]);
 
+  // Tracked areas the pool spans, derived from the homes themselves: one row per
+  // ZIP with its city and the count of for-sale homes in view. Ordered by the
+  // pool's own ZIP order (newest-cached first). A ZIP with no browseable homes
+  // never appears, so the filter only ever offers areas with something to show.
+  const areas = useM_bx(() => {
+    if (!data) return [];
+    const order = data.zips || [];
+    const byZip = {};
+    for (const h of data.homes) {
+      const z = h.zip;
+      if (!z) continue;
+      if (!byZip[z]) byZip[z] = { zip: z, city: h.city || "", count: 0 };
+      byZip[z].count++;
+      if (!byZip[z].city && h.city) byZip[z].city = h.city;
+    }
+    return Object.values(byZip).sort(
+      (a, b) => order.indexOf(a.zip) - order.indexOf(b.zip)
+    );
+  }, [data]);
+
+  function toggleArea(zip) {
+    if (zip === "__all__") { setHiddenAreas([]); return; }
+    setHiddenAreas((h) => (h.includes(zip) ? h.filter((z) => z !== zip) : [...h, zip]));
+  }
+
   const ff = f || makeBxDefault(bounds, statusOptions.map((o) => o.v));
   const set = (patch) => setF((p) => ({ ...(p || makeBxDefault(bounds, statusOptions.map((o) => o.v))), ...patch }));
 
@@ -762,9 +849,14 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
     toast.push({ kind: "ok", text: "Search saved" });
   }
 
+  // Scope to the in-view areas first (cheap ZIP test), then run the filter model.
+  const inScope = useM_bx(
+    () => (data ? (hiddenAreas.length ? data.homes.filter((h) => !hiddenAreas.includes(h.zip)) : data.homes) : []),
+    [data, hiddenAreas]
+  );
   const rows = useM_bx(
-    () => (data ? bxSortHomes(bxApplyFilters(data.homes, ff, bounds), sort) : []),
-    [data, ff, sort, bounds]
+    () => bxSortHomes(bxApplyFilters(inScope, ff, bounds), sort),
+    [inScope, ff, sort, bounds]
   );
 
   // Auto-reveal the next page as the sentinel nears the viewport. The "Load more"
@@ -831,6 +923,7 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
   const statusActive = ff.status.length !== statusOptions.length;
   const sqftActive = ff.sqft[0] !== bounds.sqft[0] || ff.sqft[1] !== bounds.sqft[1];
   const yearActive = ff.year[0] !== bounds.year[0] || ff.year[1] !== bounds.year[1];
+  const allAreasHidden = areas.length > 0 && areas.every((a) => hiddenAreas.includes(a.zip));
 
   return (
     <div className="browse-page">
@@ -855,6 +948,7 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
         {isMobile ? (
           <MobileChipBar
             f={ff} set={set} bounds={bounds} statusOptions={statusOptions}
+            areas={areas} hidden={hiddenAreas}
             sort={sort} rowsCount={rows.length}
             onOpenFilters={(id) => { setFocus(id || null); setSheet("filters"); }}
             onOpenSort={() => setSheet("sort")}
@@ -866,6 +960,10 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
             <Icon name="search" size={14} />
             <input placeholder="City, ZIP, or address" value={ff.q} onChange={(e) => set({ q: e.target.value })} />
           </div>
+          {areas.length > 1 && (
+            <AreasPill areas={areas} hidden={hiddenAreas} onToggle={toggleArea}
+              onManage={() => navigate("admin", "areas")} />
+          )}
           <FilterPill
             label="Price" active={priceActive}
             summary={rangeSummary(ff.price[0], ff.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true))}
@@ -926,9 +1024,10 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
           <MobileFilterSheet
             open={sheet === "filters"} focus={focus}
             f={ff} set={set} bounds={bounds} statusOptions={statusOptions}
-            statusCounts={statusCounts} data={data} count={rows.length}
+            statusCounts={statusCounts} areas={areas} hidden={hiddenAreas} onToggleArea={toggleArea}
+            data={data} count={rows.length}
             onClose={() => setSheet(null)}
-            onReset={() => setF(makeBxDefault(bounds, statusOptions.map((o) => o.v)))}
+            onReset={() => { setF(makeBxDefault(bounds, statusOptions.map((o) => o.v))); setHiddenAreas([]); }}
           />
           <MobileSortSheet open={sheet === "sort"} value={sort}
             onChange={(v) => { setSort(v); setSheet(null); }} onClose={() => setSheet(null)} />
@@ -939,8 +1038,20 @@ function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
 
       {rows.length === 0 ? (
         <div className="empty">
-          <div className="title">No homes match these filters</div>
-          <div>Try widening the price range or clearing a filter.</div>
+          {allAreasHidden ? (
+            <>
+              <div className="title">All areas are hidden from this view</div>
+              <div>Re-enable a ZIP in the Areas filter to see its homes.</div>
+              <button className="btn" style={{ marginTop: 14 }} onClick={() => setHiddenAreas([])}>
+                Show all areas
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="title">No homes match these filters</div>
+              <div>Try widening the price range or clearing a filter.</div>
+            </>
+          )}
         </div>
       ) : (
         <>
