@@ -486,12 +486,28 @@ function BrowseCard({ home, navigate, onChanged }) {
           </div>
           {sub && <span className="cprice-sub">{sub}</span>}
         </div>
-        <button className={`ctrack ${tracked ? "on" : ""}`} onClick={track} disabled={saving || tracked}
-          title={tracked ? "Tracking — added to your properties" : "Add to your tracked properties"}>
-          {tracked
-            ? <><Icon name="check" size={14} />Tracking</>
-            : <><Icon name="plus" size={14} />{saving ? "Tracking…" : "Track home"}</>}
-        </button>
+        <div className="cfoot">
+          <button
+            className={"cmp-track" + (tracked ? " on" : "")}
+            onClick={track}
+            disabled={saving || tracked}
+            title={tracked ? "Tracking — added to your properties" : "Add to HomeTracker"}
+          >
+            <Icon name={tracked ? "check" : "plus"} size={13} />
+            {saving ? "Tracking…" : tracked ? "Tracking" : "Track"}
+          </button>
+          {home.property_url && (
+            <a
+              className="cmp-link"
+              href={home.property_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open listing on Realtor.com"
+            >
+              <Icon name="arrowUpRight" size={13} />
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
