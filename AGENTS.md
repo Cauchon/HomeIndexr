@@ -4,39 +4,52 @@ Operating notes for AI coding agents working on this repo.
 
 ## What this is
 
-A local-first dashboard for tracking home prices over time. The backend scrapes
+A local-first dashboard for tracking home prices over time. The server scrapes
 Realtor.com directly via their `frontdoor/graphql` endpoint and stores the
-latest fetched state on each property row in SQLite. The frontend is a
-no-build React app (UMD + Babel-standalone) that the backend also serves.
+latest fetched state on each property row in SQLite. It's a **TanStack Start +
+Vite** app (TypeScript): the same process serves the React SPA and the `/api/*`
+routes. It runs on Node only (no Python) — that's what lets it deploy on hosts
+like Poke that can run `vite`/Node but not a raw Python server.
 
 ## Layout
 
 ```
-backend/app/
-  main.py        FastAPI routes + serves the frontend at /
-  scraper.py     Realtor.com GraphQL client; normalizes AVM + history data
-  store.py       SQLite reads/writes (current property state + history/events/taxes)
-  comps.py       pure comparable ranking/gating over cached ZIP listings (rule #15)
-  browse.py      pure Browse-pool aggregation over the whole area-listings cache (rule #16)
-  ai.py          DeepSeek chat + tool-calling loop (web_search/geocode); MAX_TOOL_STEPS / MAX_WEB_SEARCHES caps
-  rates.py       Live mortgage-rate anchor from FRED (Freddie Mac PMMS); daily app_settings cache (rule #17)
-  db.py          schema + connection helper (data/app.db) — authoritative table definitions
-  models.py      pydantic types (currently unused by routes)
-backend/test_*.py unittest coverage: scraper state, API/store flows, comps ranking, AI tool loop, Browse pool, FRED rate fetch/cache
-frontend/
-  index.html     loads /static/* via UMD React + Babel
-  styles.css     all visual tokens; from the design bundle
-  components.jsx shared UI (icons, badges, formatters, JsonViewer)
-  chart.jsx      PriceChart (AVM lines; event rows/ownership strip live in pages.jsx)
-  pages.jsx      Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
-  browse.jsx     Browse page — chip filter bar + card grid over /api/browse (rule #16)
-  coverage.jsx   Tracked areas admin tab — CoverageSection/AddZipModal/RemoveZipModal over /api/admin/areas (rule #14)
-  mortgage.jsx   Mortgage calculator page — client-side P&I/tax/insurance/PMI/HOA estimate, donut + amortization, optional load-from-property prefill; suggested-rate anchor is live from /api/mortgage-rates (FRED) when keyed, else a static anchor (rule #17)
-  app.jsx        app shell, hash router, data fetching
-  api.js         tiny fetch wrapper exposed as window.API
-extension/       MV3 Chrome extension — thin client over the API (see below)
-run.sh           uvicorn dev launcher (port 5173)
-data/app.db      SQLite database, auto-created on first run
+src/
+  router.tsx            TanStack Router factory (getRouter)
+  routeTree.gen.ts      generated route tree (do not edit by hand)
+  routes/
+    __root.tsx          HTML shell: <head> (fonts, favicon), data-theme
+    index.tsx           mounts the SPA client-only (ssr: false) + imports styles.css
+    api/$.ts            catch-all server route → forwards every method to handle_api
+  server/               the ported backend (was backend/app/*.py)
+    api.ts              request dispatcher for the whole /api/* contract (was main.py)
+    scraper.ts          Realtor.com GraphQL client; AVM + history normalization
+                        (Python scraper.fetch() is exported here as fetch_property())
+    store.ts            better-sqlite3 reads/writes + secrets from env/.env
+    db.ts               schema + connect()/db_path()/init_db() — authoritative tables
+    env.ts              get_env(): process.env first, then an ignored local .env
+    comps.ts            pure comparable ranking/gating over cached ZIP listings (rule #15)
+    browse.ts           pure Browse-pool aggregation over the area-listings cache (rule #16)
+    rates.ts            live FRED (Freddie Mac PMMS) rate anchor; daily app_settings cache (rule #17)
+    ai.ts               DeepSeek chat + tool-calling loop; MAX_TOOL_STEPS / MAX_WEB_SEARCHES caps
+    pyround.ts          Python-faithful round-half-to-even (used where a rounded value is API-visible)
+    __tests__/*.test.ts vitest: comps ranking, Browse pool + endpoint, FRED rate fetch/cache
+  app/                  the ported frontend (was frontend/*.jsx), now ES modules
+    styles.css          all visual tokens; from the design bundle
+    components.jsx      shared UI (icons, badges, formatters, JsonViewer, Markdown)
+    chart.jsx           PriceChart (AVM lines; event rows/ownership strip live in pages.jsx)
+    pages.jsx           Dashboard, AddProperty, PropertyDetail, Admin/RefreshJobs
+    browse.jsx          Browse page — chip filter bar + card grid over /api/browse (rule #16)
+    coverage.jsx        Tracked areas admin tab over /api/admin/areas (rule #14)
+    mortgage.jsx        Mortgage calculator (client-side estimate; live rate anchor via /api/mortgage-rates)
+    app.jsx             app shell, hash router, data fetching (exports App; the index route mounts it)
+    api.js              tiny fetch wrapper (exported as `API`)
+public/favicon.svg      static asset served at /favicon.svg
+vite.config.ts          tanstackStart() + viteReact() plugins
+vitest.config.ts        test config (avoids loading the Start plugin)
+extension/              MV3 Chrome extension — thin client over the API (see below)
+data/app.db             SQLite database, auto-created on first run
+backend/                the retired Python app, kept for reference during the port
 ```
 
 ## Browser extension
@@ -58,11 +71,16 @@ Keep this in lockstep with the API contract below. See `extension/README.md`.
 ## Run it
 
 ```bash
-./run.sh                # http://127.0.0.1:5173
-PORT=5180 ./run.sh      # alt port
+npm install             # first time (better-sqlite3 needs its native build)
+npm run dev             # http://localhost:5173
 ```
 
-Server startup creates `data/app.db`. To reset, delete `data/app.db*`.
+`npm run build` produces the client + SSR bundles under `dist/`; `npm start`
+runs the built server. The first request creates `data/app.db` (schema ensured
+lazily on connect). To reset, delete `data/app.db*`.
+
+Node 20+ is required (better-sqlite3 prebuilt binaries, native `fetch`,
+`AbortSignal.timeout`). There is no Python runtime dependency anymore.
 
 Optional AI features use DeepSeek. Put `DEEPSEEK_API_KEY` in the process
 environment or local `.env`; never hardcode it or store it in SQLite.
@@ -82,9 +100,13 @@ hardcoded national-average anchor — fully functional, just not live.
 ## Architectural rules
 
 1. **Realtor scraping runs server-side only.** The frontend never hits
-   realtor.com directly. All scraping flows through `backend/app/scraper.py`,
+   realtor.com directly. All scraping flows through `src/server/scraper.ts`,
    which POSTs GraphQL operations to `https://www.realtor.com/frontdoor/graphql`
-   via the shared `_post_gql` helper.
+   via the shared `_post_gql` helper. (Python's top-level `scraper.fetch()` is
+   exported as `fetch_property()` here to avoid shadowing the global `fetch`;
+   every other function keeps its Python name, and the GraphQL documents are
+   copied verbatim.) `src/server/*` runs only on the server — never import it
+   into `src/app/*`.
 2. **Current Realtor data lives on `properties`.** Refreshing a property
    overwrites the current normalized fields and raw JSON on the existing row.
 3. **Adding the same address must not duplicate the property.** `store.find_property_by_address`
@@ -120,15 +142,18 @@ hardcoded national-average anchor — fully functional, just not live.
    List/sale/price-change events should render as their own rows. Estimate
    rows should keep low/high range visually attached to the estimate value
    instead of spreading it across disconnected columns.
-10. **No build step on the frontend.** JSX is transpiled at runtime by Babel.
-   If you add a file, register it in `index.html` with `type="text/babel"` and
-   expose any new component on `window` so other files can use it.
-11. **Scheduled refreshes stay outside FastAPI.** The Admin panel's Refresh
-   jobs function can run `POST /api/properties/refresh-all`, show latest issue
-   status, and persist the selected cadence in localStorage. There is no
+10. **The frontend is Vite-built ES modules.** JSX under `src/app/` is compiled
+   by Vite (`@vitejs/plugin-react`) — there is no Babel-standalone/`window.X`
+   global mechanism anymore. Add a file as an ES module and `export` what other
+   files need; import it where used. The whole SPA mounts client-only from
+   `src/routes/index.tsx` (`ssr: false`), so render-time `window`/`localStorage`
+   access is safe. Keep browser-only code out of `src/server/*`.
+11. **Scheduled refreshes stay outside the app process.** The Admin panel's
+   Refresh jobs function can run `POST /api/properties/refresh-all`, show latest
+   issue status, and persist the selected cadence in localStorage. There is no
    scheduler script checked into this repo right now. If real scheduling is
    added, wire cron/launchd or another external runner to the API endpoint
-   instead of adding cron/looping work inside the FastAPI process.
+   instead of adding cron/looping work inside the Node server process.
 12. **Archived properties are soft-hidden, not deleted.** `properties.active = 0`
     removes a row from the default dashboard and refresh-all sweeps while
     preserving current state, raw JSON, historical AVMs, events, and taxes.
@@ -158,7 +183,7 @@ hardcoded national-average anchor — fully functional, just not live.
     that backs an active tracked property is **locked** (origin/lock derived live
     from property membership) and can't be removed until that property is gone.
 15. **Comparables are derived at read time, not cached.** `comps.rank_comparables`
-    (pure, in `backend/app/comps.py`) gates the cached ZIP listings to strict
+    (pure, in `src/server/comps.ts`) gates the cached ZIP listings to strict
     appraisal-style comps (same `property_type`, living area within ±25%, beds
     ±1) and ranks survivors by a weighted similarity score (sqft, distance via
     haversine, year, beds, baths, lot). It keeps the strictest rung that yields
@@ -177,12 +202,12 @@ hardcoded national-average anchor — fully functional, just not live.
 16. **Browse is a cache-only discovery pool, never a new fetch.** `GET /api/browse`
     unions the *active* (non-paused) `area_listings` cache (every ZIP, populated
     per rule #14) into one pool via `browse.build_pool` (pure, in
-    `backend/app/browse.py`): deduped by Realtor `property_id` (newest ZIP cache
+    `src/server/browse.ts`): deduped by Realtor `property_id` (newest ZIP cache
     wins), with homes already tracked removed (matched against
     `properties.property_id`) and a `price_per_sqft` attached. `browse.pool_facets`
     derives the filter facets — value bounds (rounded outward to the real pool), a
     24-bucket price histogram, the cities present, and a per-status count.
-    Filtering/sorting run **client-side** in `frontend/browse.jsx` over the whole
+    Filtering/sorting run **client-side** in `src/app/browse.jsx` over the whole
     (bounded) pool — the design's Option B chip bar + card grid — so the server
     just shapes the pool and supplies stable slider bounds. Opening Browse must
     add no upstream traffic; keep the aggregation in this one pure module. The
@@ -190,16 +215,16 @@ hardcoded national-average anchor — fully functional, just not live.
     `navigateOnSuccess: false`), so tracking POSTs the listing's address through
     the normal server-side Realtor match.
 17. **The mortgage rate anchor is live-optional and never blocks the calculator.**
-    `backend/app/rates.py` fetches the Freddie Mac PMMS 30-/15-yr averages from
+    `src/server/rates.ts` fetches the Freddie Mac PMMS 30-/15-yr averages from
     FRED (`MORTGAGE30US`/`MORTGAGE15US`) when `FRED_API_KEY` is configured and
     caches them daily in `app_settings` (PMMS publishes weekly). `GET
     /api/mortgage-rates` serves that cache; on a missing key, a fetch error, or
     a parse miss it reports `available: false` (serving stale cache first if any)
-    and the frontend (`frontend/mortgage.jsx` `suggestedRate`) falls back to the
+    and the frontend (`src/app/mortgage.jsx` `suggestedRate`) falls back to the
     static `BASE_RATE_30` anchor. The live value only replaces the *anchor*: the
     credit-band (`CREDIT_BANDS[].adj`) and 20/10-yr term spreads stay illustrative
     on top, and the 15-yr term uses the real `MORTGAGE15US` series directly rather
-    than the synthetic offset. Keep the fetch+cache logic in `rates.py`; the rate
+    than the synthetic offset. Keep the fetch+cache logic in `rates.ts`; the rate
     values are non-secret (so they live in `app_settings`), but the key is not.
 18. **Saved Browse searches are server-persisted, not localStorage.** A saved
     search is just a named Browse filter set (`{id, name, filters, created_at}`)
@@ -215,7 +240,7 @@ hardcoded national-average anchor — fully functional, just not live.
 
 ## Data model
 
-`db.py` holds the authoritative table definitions — read it for exact columns
+`src/server/db.ts` holds the authoritative table definitions — read it for exact columns
 rather than duplicating the schema here. The shape at a glance:
 
 - `properties` — one row per tracked address with the latest fetched Realtor.com
@@ -285,16 +310,23 @@ the frontend formatters.
 
 ## Conventions
 
-- Backend uses stdlib `sqlite3` directly. No ORM. Keep it that way unless we
-  outgrow SQL strings.
-- Frontend uses `window.X = X` exports because there's no module system. New
-  files must expose anything other modules need on `window`.
+- The server uses `better-sqlite3` directly (synchronous). No ORM. Keep it that
+  way unless we outgrow SQL strings. `db.connect()` resolves the path lazily on
+  every call (`HOMEINDEXR_DB_PATH` → `data/app.db`) and ensures the schema once
+  per path — never freeze the path in a module-level constant (test-DB isolation
+  depends on the lazy resolution).
+- The port keeps the Python snake_case function and result-key names so the
+  `/api/*` JSON stays byte-compatible (the extension is a client). Where Python
+  used `round()` on an API-visible value, use `pyround`/`pyround2` from
+  `src/server/pyround.ts` (round-half-to-even), not `Math.round`.
+- Frontend files are ES modules: `export` what other modules need and `import`
+  it. No `window.X` globals.
 - When `property_name` is set, use it as the primary property display label on
   dashboard/detail surfaces while keeping the full address visible as supporting
   context and searchable for filtering.
 - All currency display goes through `fmt.usd` / `fmt.delta` / `fmt.pct` in
-  [components.jsx](frontend/components.jsx) — don't recompute formatting inline.
-- CSS lives entirely in [styles.css](frontend/styles.css), driven by `--*`
+  [components.jsx](src/app/components.jsx) — don't recompute formatting inline.
+- CSS lives entirely in [styles.css](src/app/styles.css), driven by `--*`
   tokens. Light/dark themes are toggled via `data-theme` on `<html>`.
 - The detail chart should keep AVM sources as continuous monthly lines and
   Realtor listing/sale/price-change history as discrete dated markers.
@@ -303,7 +335,7 @@ the frontend formatters.
 
 - **Scheduled refreshes.** v1 is manual only. The intent is twice/month later;
   the hook is `POST /api/properties/refresh-all`. Wire a cron/launchd job to
-  it — don't bake scheduling into the FastAPI process.
+  it — don't bake scheduling into the Node server process.
 - **Auth.** Local single-user. The backend has no user model so a session
   layer can be added without touching storage.
 
@@ -311,34 +343,39 @@ If you're tempted to add any of these, confirm with the user first.
 
 ## Testing
 
-Run the unittest suite from the repo root:
+Run the vitest suite from the repo root:
 
 ```bash
-PYTHONPATH=backend .venv312/bin/python -m unittest discover -s backend -p 'test_*.py'
+npm test                # vitest run
+npx tsc --noEmit        # typecheck
+npm run build           # client + SSR build must succeed
 ```
 
 **Test DB isolation is mandatory — tests must never touch `data/app.db`.**
-This bit us once: a test module imported `app` (and therefore `app.db`) before
-redirecting the database, the path got bound to the real `data/app.db`, and a
-test reset wiped real user data. Two non-negotiable safeguards:
+This bit us once (in the Python app): the DB path got bound to the real
+`data/app.db` before a test redirected it, and a test reset wiped real user
+data. Two non-negotiable safeguards carry over:
 
-1. `db.db_path()` resolves the SQLite path lazily on every connection — never
-   reintroduce an import-time `DB_PATH` constant that freezes it.
-2. Every test module that imports `app` must set `HOMEINDEXR_DB_PATH` (and
-   `HOMEINDEXR_DOTENV_PATH`) to a throwaway `tempfile` path *before* the
-   `from app import ...` line, exactly as `test_main.py` / `test_ai.py` /
-   `test_scraper.py` do. Any new `test_*.py` must copy that preamble.
+1. `db.db_path()` resolves the SQLite path lazily on every `connect()`, and the
+   schema is ensured per-path — never reintroduce an import-time path constant
+   that freezes it.
+2. Every DB-touching test sets `HOMEINDEXR_DB_PATH` (and `HOMEINDEXR_DOTENV_PATH`)
+   to a throwaway temp path *before the first `connect()`* — use `fresh_db()`
+   from `src/server/__tests__/helpers.ts` in a `beforeEach`, as the Browse and
+   rates tests do. Any new DB-touching test must do the same.
 
 After running the suite, `data/app.db` must be unmodified (check its mtime).
 
-Smoke-test manually when touching live Realtor fetch behavior:
+Smoke-test manually when touching live Realtor fetch behavior. To avoid any risk
+to real data, point the dev server at a copy of the DB:
 
 ```bash
-./run.sh &
+cp data/app.db /tmp/smoke.db
+HOMEINDEXR_DB_PATH=/tmp/smoke.db npm run dev &
 curl -s -X POST -H 'Content-Type: application/json' \
   -d '{"address":"5907 Cape Hatteras Dr, Houston, TX 77041"}' \
-  http://127.0.0.1:5173/api/properties
-curl -s http://127.0.0.1:5173/api/properties
+  http://localhost:5173/api/properties
+curl -s http://localhost:5173/api/properties
 ```
 
 Re-posting the same address should keep `count(*) FROM properties` at 1 and

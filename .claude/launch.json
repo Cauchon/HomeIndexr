@@ -2,17 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "house-price-tracker",
-      "runtimeExecutable": "./run.sh",
-      "runtimeArgs": [],
-      "autoPort": true,
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 5173
-    },
-    {
-      "name": "landing",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4321", "--directory", "docs"],
-      "port": 4321
     }
   ]
 }

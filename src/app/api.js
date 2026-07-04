@@ -1,0 +1,89 @@
+// Tiny API client for HomeIndexr backend.
+// All Realtor.com scraping happens server-side.
+async function req(path, opts) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch (e) {}
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+export const API = {
+  listProperties: () => req("/api/properties"),
+  getProperty: (id) => req(`/api/properties/${id}`),
+  getAreaListings: (id, filters) => {
+    const qs = new URLSearchParams();
+    Object.entries(filters || {}).forEach(([k, v]) => {
+      if (v != null) qs.set(k, v);
+    });
+    const s = qs.toString();
+    return req(`/api/properties/${id}/area${s ? `?${s}` : ""}`);
+  },
+  browse: () => req("/api/browse"),
+  getMortgageRates: () => req("/api/mortgage-rates"),
+  addProperty: (address, confirm_mismatch = false) =>
+    req("/api/properties", {
+      method: "POST",
+      body: JSON.stringify({ address, confirm_mismatch }),
+    }),
+  refresh: (id) =>
+    req(`/api/properties/${id}/refresh`, { method: "POST" }),
+  refreshAll: () =>
+    req("/api/properties/refresh-all", { method: "POST" }),
+  getAISettings: () => req("/api/admin/ai-settings"),
+  updateAISettings: (changes) =>
+    req("/api/admin/ai-settings", {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+  askPropertyAI: (id, question) =>
+    req(`/api/properties/${id}/ai/ask`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+  backfill: (id) =>
+    req(`/api/properties/${id}/backfill`, { method: "POST" }),
+  updateProperty: (id, changes) =>
+    req(`/api/properties/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    }),
+  archiveProperty: (id) =>
+    req(`/api/properties/${id}/archive`, { method: "POST" }),
+  restoreProperty: (id) =>
+    req(`/api/properties/${id}/restore`, { method: "POST" }),
+  deleteProperty: (id) =>
+    req(`/api/properties/${id}`, { method: "DELETE" }),
+  // Tracked areas (Browse coverage) — Admin → Tracked areas.
+  listAreas: () => req("/api/admin/areas"),
+  addArea: (zip) =>
+    req("/api/admin/areas", {
+      method: "POST",
+      body: JSON.stringify({ zip }),
+    }),
+  recrawlArea: (zip) =>
+    req(`/api/admin/areas/${encodeURIComponent(zip)}/recrawl`, { method: "POST" }),
+  setAreaStatus: (zip, status) =>
+    req(`/api/admin/areas/${encodeURIComponent(zip)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  removeArea: (zip) =>
+    req(`/api/admin/areas/${encodeURIComponent(zip)}`, { method: "DELETE" }),
+  // Saved Browse searches — named filter sets, persisted server-side.
+  listSavedSearches: () => req("/api/saved-searches"),
+  createSavedSearch: (name, filters) =>
+    req("/api/saved-searches", {
+      method: "POST",
+      body: JSON.stringify({ name, filters }),
+    }),
+  deleteSavedSearch: (id) =>
+    req(`/api/saved-searches/${encodeURIComponent(id)}`, { method: "DELETE" }),
+};

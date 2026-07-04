@@ -1,3 +1,12 @@
+# Node / TanStack Start / Vite
+node_modules/
+dist/
+.output/
+.nitro/
+.tanstack/
+.vinxi/
+*.tsbuildinfo
+
 .venv/
 .venv312/
 .env

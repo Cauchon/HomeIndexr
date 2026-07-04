@@ -9,38 +9,39 @@ for active listings.
 
 ## Stack
 
-- **Backend**: FastAPI + sqlite3 (stdlib). Scraping is a thin GraphQL client
-  over `requests` in `backend/app/scraper.py`.
-- **Frontend**: React (via UMD + Babel-standalone) served as static files by the
-  backend. No build step.
-- **Storage**: `data/app.db` (SQLite, WAL mode). Auto-created on first run.
+- **App**: [TanStack Start](https://tanstack.com/start) + Vite, in TypeScript.
+  One Node process serves the React SPA and the `/api/*` routes. Scraping is a
+  thin GraphQL client over native `fetch` in `src/server/scraper.ts`.
+- **Frontend**: React (compiled by Vite) under `src/app/`.
+- **Storage**: `data/app.db` (SQLite, WAL mode) via `better-sqlite3`.
+  Auto-created on first run.
+
+Node-only — no Python runtime — so it deploys on hosts (like Poke) that run
+`vite`/Node but not a raw Python server.
 
 ## Setup
 
-Use Python 3.12 for this project.
+Requires Node 20+.
 
 ```bash
-python3.12 -m venv .venv312
-.venv312/bin/python -m pip install \
-  fastapi==0.136.1 \
-  uvicorn==0.47.0 \
-  requests==2.34.1 \
-  pydantic==2.13.4
+npm install   # builds the better-sqlite3 native addon
 ```
 
 ## Run locally
 
 ```bash
-./run.sh
-# or:
-.venv312/bin/python -m uvicorn backend.app.main:app --reload --port 5173
+npm run dev            # http://localhost:5173
 ```
 
-Then open <http://127.0.0.1:5173>.
+For a production build: `npm run build` then `npm start`.
 
-`run.sh` reads `PORT` (default `5173`) and `HOST` (default `127.0.0.1`). Set
-`HOST=0.0.0.0` to reach the app from other devices on your network, e.g. an
-iPhone over Tailscale: `HOST=0.0.0.0 ./run.sh`.
+To run against a copy of the DB (e.g. an experiment that shouldn't touch real
+data), set `HOMEINDEXR_DB_PATH`:
+
+```bash
+cp data/app.db /tmp/smoke.db
+HOMEINDEXR_DB_PATH=/tmp/smoke.db npm run dev
+```
 
 ## Optional AI
 
@@ -139,7 +140,7 @@ the latest Realtor raw JSON. The dashboard buckets are:
 
 The sold window is intentionally finite so old Realtor sold records do not stay
 visually "Sold" forever on the Properties page. Change
-`SOLD_TO_OFF_MARKET_DAYS` in `backend/app/scraper.py` if you want a different
+`SOLD_TO_OFF_MARKET_DAYS` in `src/server/scraper.ts` if you want a different
 threshold.
 
 ## Property timeline
@@ -195,20 +196,26 @@ the same single-page SRP fetch (`scraper.fetch_area_listings`).
 
 ## Tests
 
-Run the backend unittest suite from the repo root:
+Run the vitest suite (and typecheck/build) from the repo root:
 
 ```bash
-PYTHONPATH=backend .venv312/bin/python -m unittest discover -s backend -p 'test_*.py'
+npm test
+npx tsc --noEmit
+npm run build
 ```
 
-Use the manual smoke flow when touching live Realtor fetch behavior:
+Tests use throwaway temp databases and must never touch `data/app.db`.
+
+Use the manual smoke flow when touching live Realtor fetch behavior (point it at
+a copy of the DB so a bad match can't corrupt real data):
 
 ```bash
-./run.sh &
+cp data/app.db /tmp/smoke.db
+HOMEINDEXR_DB_PATH=/tmp/smoke.db npm run dev &
 curl -s -X POST -H 'Content-Type: application/json' \
   -d '{"address":"5907 Cape Hatteras Dr, Houston, TX 77041"}' \
-  http://127.0.0.1:5173/api/properties
-curl -s http://127.0.0.1:5173/api/properties
+  http://localhost:5173/api/properties
+curl -s http://localhost:5173/api/properties
 ```
 
 ## Admin panel
@@ -223,7 +230,7 @@ function is **Refresh jobs**, which shows:
 
 The **Refresh active now** button calls `POST /api/properties/refresh-all` and
 then reloads current property state. The cadence selector is stored in
-`localStorage`; it does not start background work inside FastAPI. A second admin
+`localStorage`; it does not start background work inside the app. A second admin
 tab, **Tracked areas**, manages the per-ZIP caches that feed Browse (see above).
 
 ## Scheduled refreshes
@@ -232,15 +239,15 @@ Scheduled refreshes are not implemented in this checkout. The backend exposes
 the hook that an external scheduler should call:
 
 ```bash
-curl -s -X POST http://127.0.0.1:5173/api/properties/refresh-all
+curl -s -X POST http://localhost:5173/api/properties/refresh-all
 ```
 
 Keep the HomeIndexr server running on the same port the external job calls.
 If scheduling is added later, use cron, launchd, or another runner outside the
-FastAPI process; do not add an internal background loop to the app server.
+Node app process; do not add an internal background loop to the app server.
 
 ## Auth
 
-None. Local-only for v1. The frontend talks to the backend over plain HTTP,
-and the backend has no user model — easy to bolt a session layer on top later
+None. Local-only for v1. The frontend talks to the server over plain HTTP,
+and the server has no user model — easy to bolt a session layer on top later
 without disturbing storage.

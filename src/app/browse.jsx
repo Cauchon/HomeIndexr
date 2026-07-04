@@ -1,0 +1,1111 @@
+import React from 'react';
+import { API } from './api';
+import { Icon, fmt, LISTING_META, useToast } from './components';
+import { useTrackComp, rdcResize, compCityLine } from './pages';
+
+// HomeIndexr — Browse page (design Option B: card gallery + chip filter bar).
+//
+// A cache-only discovery surface: it reads GET /api/browse, which unions the
+// per-ZIP `area_listings` cache (populated by property refresh) into one pool of
+// for-sale homes you don't already track. Filtering and sorting run client-side
+// over the whole (bounded) pool — instant, and faithful to the design — while
+// the server supplies stable slider bounds + a price histogram so the controls
+// don't jump as you filter. The per-card "Track home" button reuses the same add
+// flow as the comp cards (window.useTrackComp), so tracking a home POSTs its
+// address through the normal server-side Realtor match.
+//
+// All visuals use the bx- classes from styles.css. Hooks are aliased (…_bx) to
+// avoid colliding with the other no-module scripts sharing global scope.
+
+const { useState: useS_bx, useEffect: useE_bx, useMemo: useM_bx, useRef: useR_bx, useLayoutEffect: useLE_bx } = React;
+
+// Position an open popover with `position: fixed` so it escapes the ancestor
+// `overflow` clipping (.main is overflow:hidden, .page overflow:auto) and never
+// runs off-screen — the chip bar wraps on narrow widths, so a control can sit
+// anywhere and a fixed left/right anchor would spill past an edge. `align`
+// picks the preferred edge to line up under; both axes are clamped to the
+// viewport. Re-runs on resize/scroll while open. Returns a ref for the popover.
+function usePopoverPosition(open, anchorRef, align = "left") {
+  const popRef = useR_bx(null);
+  useLE_bx(() => {
+    if (!open) return;
+    const place = () => {
+      const a = anchorRef.current, p = popRef.current;
+      if (!a || !p) return;
+      const ar = a.getBoundingClientRect();
+      const m = 8;
+      const pw = p.offsetWidth, ph = p.offsetHeight;
+      let left = align === "right" ? ar.right - pw : ar.left;
+      left = Math.max(m, Math.min(left, window.innerWidth - m - pw));
+      let top = ar.bottom + 6;
+      if (top + ph > window.innerHeight - m) top = Math.max(m, window.innerHeight - m - ph);
+      p.style.position = "fixed";
+      p.style.left = `${left}px`;
+      p.style.top = `${top}px`;
+      p.style.right = "auto";
+      p.style.bottom = "auto";
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
+  return popRef;
+}
+
+const money = (n, compact) => fmt.usd(n, { compact: !!compact });
+
+// Mirror browse.py fallbacks so the sliders have a span before data lands.
+const BX_PRICE_FALLBACK = [200000, 1500000];
+const BX_SQFT_FALLBACK = [800, 3500];
+const BX_YEAR_FALLBACK = [1900, 2026];
+
+const BX_STATUS_ORDER = ["for_sale", "pending", "sold", "off_market"];
+const BX_BEDS = [
+  { v: 0, label: "Any" }, { v: 1, label: "1+" }, { v: 2, label: "2+" },
+  { v: 3, label: "3+" }, { v: 4, label: "4+" }, { v: 5, label: "5+" },
+];
+const BX_BATHS = [
+  { v: 0, label: "Any" }, { v: 1, label: "1+" }, { v: 2, label: "2+" },
+  { v: 3, label: "3+" }, { v: 4, label: "4+" },
+];
+const BX_SORTS = [
+  { v: "relevance", label: "Newest listed" },
+  { v: "price_desc", label: "Price: high to low" },
+  { v: "price_asc", label: "Price: low to high" },
+  { v: "sqft_desc", label: "Largest sqft" },
+  { v: "year_desc", label: "Newest built" },
+  { v: "dom_asc", label: "Fewest days on market" },
+];
+
+// How many cards to render initially / per "Load more" click.
+const BX_PAGE = 24;
+
+function statusLabel(s) {
+  return ((LISTING_META || {})[s] || {}).label || s;
+}
+const toggleIn = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+
+// Compact chip summary for a dual-range filter. When a handle rests at its
+// capped end it collapses to a one-sided form (≤hi / lo+) instead of repeating
+// the bound; otherwise it shows the lo–hi span. Empty when neither handle moved.
+function rangeSummary(lo, hi, min, max, fmtV) {
+  const atLo = lo <= min, atHi = hi >= max;
+  if (atLo && atHi) return "";
+  if (atLo) return `≤${fmtV(hi)}`;
+  if (atHi) return `${fmtV(lo)}+`;
+  return `${fmtV(lo)}–${fmtV(hi)}`;
+}
+
+// ---------- Save search ----------
+// Mirrors the chip-bar pills: a compact list of [label, value] for the active
+// filters, used both for the "what you're saving" summary and to decide whether
+// the Save-search button arms (it stays unmounted until ≥1 filter is set).
+function ssActiveChips(f, bounds, statusOptions) {
+  const c = [];
+  if (f.q && f.q.trim()) c.push(["Search", f.q.trim()]);
+  if (f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1])
+    c.push(["Price", rangeSummary(f.price[0], f.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true)) || `${money(f.price[0], true)}+`]);
+  if (f.beds) c.push(["Beds", `${f.beds}+`]);
+  if (f.baths) c.push(["Baths", `${f.baths}+`]);
+  if (f.status.length !== statusOptions.length)
+    c.push(["Status", f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} types`]);
+  if (f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1])
+    c.push(["Sqft", rangeSummary(f.sqft[0], f.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString())]);
+  if (f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1])
+    c.push(["Built", rangeSummary(f.year[0], f.year[1], bounds.year[0], bounds.year[1], (v) => String(v))]);
+  return c;
+}
+
+// Reduce a filter set to only its *active* (narrowed) fields. Saved searches
+// store this minimal shape rather than the full slider values: the Browse pool's
+// slider bounds are data-driven, so an untouched range pinned to today's bounds
+// would later read as a filter once the pool (and its bounds) shift. Omitting
+// full-range fields lets apply re-seed them from the current bounds, so an
+// untouched filter always re-applies as unfiltered.
+function ssActiveFilters(f, bounds, statusOptions, hiddenAreas) {
+  const out = {};
+  if (f.q && f.q.trim()) out.q = f.q.trim();
+  if (f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1]) out.price = f.price;
+  if (f.beds) out.beds = f.beds;
+  if (f.baths) out.baths = f.baths;
+  if (f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1]) out.sqft = f.sqft;
+  if (f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1]) out.year = f.year;
+  if (f.status.length !== statusOptions.length) out.status = f.status;
+  // Area scope lives outside `f`; carry the toggled-off ZIPs along so a saved
+  // search restores the same area scope. Omitted when nothing is hidden, in
+  // keeping with the "only narrowed fields are stored" rule above.
+  if (hiddenAreas && hiddenAreas.length) out.hiddenAreas = hiddenAreas;
+  return out;
+}
+
+// Suggest a human name for a saved search from its active filters.
+function ssAutoName(f, bounds, statusOptions) {
+  const parts = [];
+  if (f.q && f.q.trim()) parts.push(f.q.trim());
+  if (f.beds) parts.push(`${f.beds}+ bd`);
+  if (f.baths) parts.push(`${f.baths}+ ba`);
+  const pLo = f.price[0] !== bounds.price[0], pHi = f.price[1] !== bounds.price[1];
+  if (pLo && pHi) parts.push(`${money(f.price[0], true)}–${money(f.price[1], true)}`);
+  else if (pHi) parts.push(`under ${money(f.price[1], true)}`);
+  else if (pLo) parts.push(`${money(f.price[0], true)}+`);
+  if (f.status.length !== statusOptions.length)
+    parts.push(f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} statuses`);
+  if (f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1]) parts.push(`${f.sqft[0].toLocaleString()}+ sqft`);
+  if (f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1]) parts.push(`built ${f.year[0]}+`);
+  return parts.length ? parts.join(" · ") : "All browse homes";
+}
+
+// The name + alert form inside the Save-search popover.
+function SaveSearchForm({ f, bounds, statusOptions, chips, onSave, onCancel }) {
+  const [name, setName] = useS_bx(() => ssAutoName(f, bounds, statusOptions));
+  const commit = () => onSave({ name: name.trim() || ssAutoName(f, bounds, statusOptions) });
+  return (
+    <>
+      <div className="poptitle"><span className="ic"><Icon name="bookmark" size={14} /></span>Save this search</div>
+      {chips.length > 0 && (
+        <div className="sf-summary">
+          {chips.map(([k, v]) => <span key={k} className="sf-sumchip">{k} <b>{v}</b></span>)}
+        </div>
+      )}
+      <div>
+        <span className="poplab" style={{ display: "block", marginBottom: 6 }}>Name</span>
+        <input className="sf-input" value={name} autoFocus
+               onChange={(e) => setName(e.target.value)}
+               onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
+      </div>
+      <div className="popfoot">
+        <button className="btn" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-primary" onClick={commit}><Icon name="check" size={13} />Save search</button>
+      </div>
+    </>
+  );
+}
+
+// The chip-bar Save-search button — hidden until a filter is active, then it
+// slides in (outline treatment) and opens the name/alert popover.
+function SaveSearchButton({ f, bounds, statusOptions, areas, hidden, onSave }) {
+  const [open, setOpen] = useS_bx(false);
+  const ref = useR_bx(null);
+  const popRef = usePopoverPosition(open, ref, "left");
+  useE_bx(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  // Area scope counts as an active filter too, so the button arms (and lists it
+  // in the summary) even when ZIP scoping is the only thing narrowing the view.
+  const chips = ssActiveChips(f, bounds, statusOptions);
+  if (areasHiddenCount(areas, hidden) > 0) chips.push(["Areas", areasSummary(areas, hidden)]);
+  const armed = chips.length > 0;
+  if (!armed && !open) return <span className="sf-anchor" ref={ref} />;
+
+  return (
+    <span className="sf-anchor" ref={ref}>
+      <button className="sf-savebtn armed" onClick={() => setOpen((o) => !o)}>
+        <Icon name="bookmark" size={13} /><span className="lab">Save search</span>
+      </button>
+      {open && (
+        <div className="bx-pop sf-savepop" ref={popRef} style={{ minWidth: 272 }} onClick={(e) => e.stopPropagation()}>
+          <SaveSearchForm f={f} bounds={bounds} statusOptions={statusOptions} chips={chips}
+                          onCancel={() => setOpen(false)}
+                          onSave={(v) => { onSave(v); setOpen(false); }} />
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ---------- filter + sort over the real card shape ----------
+function bxApplyFilters(homes, f, bounds) {
+  const q = (f.q || "").trim().toLowerCase();
+  return homes.filter((h) => {
+    if (q) {
+      const hay = `${h.line || ""} ${h.city || ""} ${h.state || ""} ${h.zip || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    // The upper price/sqft bounds are capped at a percentile server-side, so a
+    // top handle resting at max means "and up" — don't filter out the mansions
+    // (or huge homes) that live above the cap. Year built is floored instead, so
+    // a bottom handle at min means "and older" — keep the pre-cap-era homes.
+    const priceUncapped = f.price[1] >= bounds.price[1];
+    const sqftUncapped = f.sqft[1] >= bounds.sqft[1];
+    const yearUncappedLo = f.year[0] <= bounds.year[0];
+    const price = h.list_price;
+    if (price != null) {
+      if (price < f.price[0] || (!priceUncapped && price > f.price[1])) return false;
+    } else if (f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1]) {
+      return false; // unpriced homes drop out once the price filter is narrowed
+    }
+    if ((h.beds ?? 0) < f.beds) return false;
+    if ((h.baths ?? 0) < f.baths) return false;
+    if (h.sqft != null && (h.sqft < f.sqft[0] || (!sqftUncapped && h.sqft > f.sqft[1]))) return false;
+    if (h.year_built != null) {
+      if (!yearUncappedLo && h.year_built < f.year[0]) return false;
+      if (h.year_built > f.year[1]) return false;
+    }
+    if (f.status.length && !f.status.includes(h.listing_state || "off_market")) return false;
+    return true;
+  });
+}
+
+function bxSortHomes(homes, sort) {
+  const a = [...homes];
+  switch (sort) {
+    case "price_desc": return a.sort((x, y) => (y.list_price ?? 0) - (x.list_price ?? 0));
+    case "price_asc": return a.sort((x, y) => (x.list_price ?? Infinity) - (y.list_price ?? Infinity));
+    case "sqft_desc": return a.sort((x, y) => (y.sqft ?? 0) - (x.sqft ?? 0));
+    case "year_desc": return a.sort((x, y) => (y.year_built ?? 0) - (x.year_built ?? 0));
+    case "dom_asc": return a.sort((x, y) => (x.days_on_market ?? 1e9) - (y.days_on_market ?? 1e9));
+    default: return a; // relevance = server order (newest listed first)
+  }
+}
+
+// ---------- status badge ----------
+function BxStatus({ state, className = "" }) {
+  return (
+    <span className={`bx-st ${state || "off_market"} ${className}`}>
+      <i />{statusLabel(state)}
+    </span>
+  );
+}
+
+// ---------- photo with real listing image (status badge only) ----------
+// The price moved into the card body as the headline (price-led footer), so the
+// photo carries just the listing-status badge — no price overlay.
+function BrowsePhoto({ home }) {
+  const url = home.photo_url ? rdcResize(home.photo_url, "x") : null;
+  return (
+    <div className="bx-photo">
+      {url
+        ? <img className="bx-photo-img" src={url}
+            srcSet={`${url} 1x, ${rdcResize(home.photo_url, "od")} 2x`} alt="" loading="lazy" />
+        : <Icon name="home" size={32} className="glyph" />}
+      <BxStatus state={home.listing_state} className="ph-status" />
+    </div>
+  );
+}
+
+// ---------- dual-handle range slider w/ histogram ----------
+function DualRange({ min, max, step = 1000, value, onChange, hist, format, loCapLabel }) {
+  const [lo, hi] = value;
+  const fmtV = format || ((v) => money(v, true));
+  const span = max - min || 1;
+  const pct = (v) => ((v - min) / span) * 100;
+  const n = hist ? hist.length : 0;
+  const inRange = (i) => {
+    const c = min + ((i + 0.5) / n) * span;
+    return c >= lo && c <= hi;
+  };
+  const maxH = hist && hist.length ? Math.max(...hist, 1) : 1;
+  return (
+    <div className="bx-range">
+      {hist && hist.length > 0 && (
+        <div className="bx-hist">
+          {hist.map((b, i) => (
+            <div key={i} className={`b ${inRange(i) ? "in" : ""}`} style={{ height: `${6 + (b / maxH) * 94}%` }} />
+          ))}
+        </div>
+      )}
+      <div className="bx-slider">
+        <div className="track" />
+        <div className="fill" style={{ left: `${pct(lo)}%`, width: `${pct(hi) - pct(lo)}%` }} />
+        <input type="range" min={min} max={max} step={step} value={lo}
+          style={{ zIndex: lo > max - span * 0.12 ? 5 : 3 }}
+          onChange={(e) => onChange([Math.min(+e.target.value, hi - step), hi])} />
+        <input type="range" min={min} max={max} step={step} value={hi}
+          style={{ zIndex: 4 }}
+          onChange={(e) => onChange([lo, Math.max(+e.target.value, lo + step)])} />
+      </div>
+      <div className="bx-range-vals">
+        <span className="v">{loCapLabel && lo <= min ? fmtV(lo) + " " + loCapLabel : fmtV(lo)}</span>
+        <span className="dash">to</span>
+        <span className="v">{hi >= max ? fmtV(max) + "+" : fmtV(hi)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------- pill row (single-select) ----------
+function PillRow({ options, value, onChange }) {
+  return (
+    <div className="bx-pills">
+      {options.map((o) => (
+        <button key={o.v} className={value === o.v ? "on" : ""} onClick={() => onChange(o.v)}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
+// ---------- status checklist (multi) ----------
+function CheckList({ options, selected, onToggle, counts }) {
+  return (
+    <div className="bx-checks">
+      {options.map((o) => {
+        const on = selected.includes(o.v);
+        return (
+          <label key={o.v} className="bx-check">
+            <input type="checkbox" checked={on} onChange={() => onToggle(o.v)} />
+            <span className="box"><Icon name="check" size={11} /></span>
+            <span>{o.label}</span>
+            {counts && <span className="ct">{counts[o.v] ?? 0}</span>}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- sort menu ----------
+function SortMenu({ value, onChange }) {
+  const [open, setOpen] = useS_bx(false);
+  const ref = useR_bx(null);
+  const popRef = usePopoverPosition(open, ref, "right");
+  useE_bx(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+  const cur = BX_SORTS.find((s) => s.v === value) || BX_SORTS[0];
+  return (
+    <div className="bx-sort" ref={ref}>
+      <button className="bx-sortbtn" onClick={() => setOpen((o) => !o)}>
+        <Icon name="sort" size={13} /><span className="k">Sort:</span> {cur.label}
+        <Icon name="chevronDown" size={12} />
+      </button>
+      {open && (
+        <div className="bx-pop" ref={popRef} style={{ minWidth: 210 }}>
+          {BX_SORTS.map((s) => (
+            <button key={s.v} className="bx-popopt" data-on={s.v === value ? "1" : "0"}
+              onClick={() => { onChange(s.v); setOpen(false); }}>
+              {s.label}{s.v === value && <Icon name="check" size={13} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- filter pill + popover ----------
+function FilterPill({ label, summary, active, onClear, children, wide }) {
+  const [open, setOpen] = useS_bx(false);
+  const ref = useR_bx(null);
+  const popRef = usePopoverPosition(open, ref, "left");
+  useE_bx(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+  return (
+    <span className={`bx-fpill ${active ? "on" : ""}`} ref={ref} onClick={() => setOpen((o) => !o)}>
+      <span>{label}{active && summary ? ": " : ""}</span>
+      {active && summary && <span className="v">{summary}</span>}
+      {active
+        ? <span className="clr" onClick={(e) => { e.stopPropagation(); onClear(); setOpen(false); }}><Icon name="x" size={11} /></span>
+        : <span className="chev"><Icon name="chevronDown" size={12} /></span>}
+      {open && (
+        <div className={`bx-pop ${wide ? "wide" : ""}`} ref={popRef} onClick={(e) => e.stopPropagation()}>
+          {children}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ---------- areas scope ----------
+// How many of the listed areas are toggled off, and the chip summary for it.
+function areasHiddenCount(areas, hidden) {
+  return hidden.filter((z) => areas.some((a) => a.zip === z)).length;
+}
+function areasSummary(areas, hidden) {
+  const hiddenN = areasHiddenCount(areas, hidden);
+  return hiddenN === 0 ? null : `${areas.length - hiddenN} of ${areas.length}`;
+}
+
+// The checklist of tracked ZIPs (each row: ZIP · city · in-view count), shared
+// by the desktop Areas pill and the mobile filter sheet's Areas group. Toggling
+// a row hides/re-shows that ZIP's homes via `onToggle(zip)`.
+function AreaCheckList({ areas, hidden, onToggle }) {
+  return (
+    <div className="bx-checks">
+      {areas.map((a) => {
+        const on = !hidden.includes(a.zip);
+        return (
+          <label key={a.zip} className="bx-check">
+            <input type="checkbox" checked={on} onChange={() => onToggle(a.zip)} />
+            <span className="box"><Icon name="check" size={11} /></span>
+            <span className="cov-pill-zip">{a.zip}{a.city && <span className="c">{a.city}</span>}</span>
+            <span className="ct">{a.count.toLocaleString()}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+// Narrows Browse to a subset of the tracked ZIPs the pool spans. Mirrors the
+// other filter pills (active when ≥1 ZIP is hidden); clearing it (the ×) re-shows
+// everything, and the footer jumps to the area-management surface.
+function AreasPill({ areas, hidden, onToggle, onManage }) {
+  const hiddenN = areasHiddenCount(areas, hidden);
+  return (
+    <FilterPill label="Areas" active={hiddenN > 0} summary={areasSummary(areas, hidden) || "All areas"}
+      onClear={() => onToggle("__all__")} wide>
+      <span className="poplab">Tracked ZIP codes</span>
+      <AreaCheckList areas={areas} hidden={hidden} onToggle={onToggle} />
+      <button className="cov-manage" onClick={(e) => { e.stopPropagation(); onManage(); }}>
+        <Icon name="settings" size={13} /> Manage tracked areas
+      </button>
+    </FilterPill>
+  );
+}
+
+// ---------- home card ----------
+function BrowseCard({ home, navigate, onChanged }) {
+  const { tracked, saving, track } = useTrackComp(home, navigate, onChanged, { navigateOnSuccess: false });
+  const cityLine = compCityLine(home);
+  const addr = home.line || home.address || "—";
+  // Price-led footer: the asking price is the headline; a quiet reference line
+  // beneath it carries the per-sqft figure and days-on-market that used to sit in
+  // their own row. (Browse pools only for-sale listings, so there's no AVM
+  // estimate to show as the reference line the design uses for off-market homes.)
+  const hasPrice = home.list_price != null;
+  const sub = [
+    home.price_per_sqft != null ? `${fmt.usd(home.price_per_sqft)}/sqft` : null,
+    home.days_on_market != null ? `${home.days_on_market} days on market` : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <div className="bx-card">
+      <BrowsePhoto home={home} />
+      <div className="cbody">
+        <div className="caddr" title={cityLine ? `${addr}, ${cityLine}` : addr}>
+          {addr}{cityLine && <span className="sub">{cityLine}</span>}
+        </div>
+        <div className="cspecs">
+          <span>{home.beds != null ? `${home.beds} bd` : "— bd"}</span><span className="dot" />
+          <span>{home.baths != null ? `${fmt.baths(home.baths)} ba` : "— ba"}</span><span className="dot" />
+          <span className="mut">{home.sqft != null ? `${fmt.num(home.sqft)} sqft` : "— sqft"}</span>
+        </div>
+        <div className="cprice">
+          <div className="cprice-main">
+            <span className="p">{hasPrice ? money(home.list_price) : "—"}</span>
+            {!hasPrice && <span className="est-tag">price unavailable</span>}
+          </div>
+          {sub && <span className="cprice-sub">{sub}</span>}
+        </div>
+        <div className="cfoot">
+          <button
+            className={"cmp-track" + (tracked ? " on" : "")}
+            onClick={track}
+            disabled={saving || tracked}
+            title={tracked ? "Tracking — added to your properties" : "Add to HomeTracker"}
+          >
+            <Icon name={tracked ? "check" : "plus"} size={13} />
+            {saving ? "Tracking…" : tracked ? "Tracking" : "Track"}
+          </button>
+          {home.property_url && (
+            <a
+              className="cmp-link"
+              href={home.property_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open listing on Realtor.com"
+            >
+              <Icon name="arrowUpRight" size={13} />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- page ----------
+function makeBxDefault(bounds, statusVs) {
+  return {
+    q: "",
+    price: [bounds.price[0], bounds.price[1]],
+    beds: 0, baths: 0,
+    sqft: [bounds.sqft[0], bounds.sqft[1]],
+    year: [bounds.year[0], bounds.year[1]],
+    status: [...statusVs],
+  };
+}
+
+// ============================================================
+//   Mobile treatment — bottom sheets for Filters · Sort · Save
+//   At ≤880px the desktop chip row (anchored popovers) is replaced
+//   by a horizontally scrollable pill row + a toolbar; tapping any
+//   control raises a bottom sheet instead of a popover. Same filter
+//   model, summaries, and save flow as desktop — just re-housed.
+// ============================================================
+
+// Track the 880px breakpoint that the rest of the app's mobile CSS keys on,
+// so Browse swaps to sheets at the same width the shell goes single-column.
+function useBxIsMobile() {
+  const probe = () => !!(window.matchMedia && window.matchMedia("(max-width: 880px)").matches);
+  const [m, setM] = useS_bx(probe);
+  useE_bx(() => {
+    const on = () => setM(probe());
+    // matchMedia 'change' covers rotation/resize in real browsers; the window
+    // 'resize' fallback also catches environments that don't fire it.
+    const mq = window.matchMedia && window.matchMedia("(max-width: 880px)");
+    if (mq) mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    window.addEventListener("resize", on);
+    return () => {
+      if (mq) mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on);
+      window.removeEventListener("resize", on);
+    };
+  }, []);
+  return m;
+}
+
+// The pill row, derived from the active filter set — same fields, order, and
+// summaries as the desktop chip row. Status only appears when the pool spans
+// >1 listing state (mirrors the desktop pill's mount condition).
+function mobilePills(f, bounds, statusOptions) {
+  const pills = [
+    { id: "price", label: "Price",
+      active: f.price[0] !== bounds.price[0] || f.price[1] !== bounds.price[1],
+      summary: rangeSummary(f.price[0], f.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true)) },
+    { id: "bb", label: "Beds & baths",
+      active: f.beds > 0 || f.baths > 0,
+      summary: `${f.beds ? f.beds + "+ bd" : ""}${f.beds && f.baths ? " · " : ""}${f.baths ? f.baths + "+ ba" : ""}` },
+  ];
+  if (statusOptions.length > 1) {
+    pills.push({ id: "status", label: "Status",
+      active: f.status.length !== statusOptions.length,
+      summary: f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} types` });
+  }
+  pills.push({ id: "sqft", label: "Square feet",
+    active: f.sqft[0] !== bounds.sqft[0] || f.sqft[1] !== bounds.sqft[1],
+    summary: rangeSummary(f.sqft[0], f.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString()) });
+  pills.push({ id: "year", label: "Year built",
+    active: f.year[0] !== bounds.year[0] || f.year[1] !== bounds.year[1],
+    summary: rangeSummary(f.year[0], f.year[1], bounds.year[0], bounds.year[1], (v) => String(v)) });
+  return pills;
+}
+
+// Bottom-sheet shell: scrim + slide-up panel. Stays mounted so the transform
+// can animate both directions; while open it locks body scroll and closes on
+// Escape or a scrim tap.
+function BxSheet({ open, tall, onClose, labelledBy, children }) {
+  useE_bx(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return (
+    <>
+      <div className={`bx-scrim ${open ? "on" : ""}`} onClick={onClose} />
+      <div className={`bx-sheet ${tall ? "tall" : ""} ${open ? "on" : ""}`}
+           role="dialog" aria-modal="true" aria-labelledby={labelledBy}
+           onClick={(e) => e.stopPropagation()}>
+        <div className="grab" />
+        {children}
+      </div>
+    </>
+  );
+}
+
+// One labelled filter group inside the sheet. Kept at module scope (not inlined
+// in the sheet's render) so its identity is stable — otherwise a slider drag
+// would remount the group mid-gesture and drop the drag.
+function MfGroup({ id, label, summary, focus, groupsRef, children }) {
+  return (
+    <div className={`mf-grp ${focus === id ? "hot" : ""}`} ref={(n) => { groupsRef.current[id] = n; }}>
+      <span className="mf-lab">{label}{summary ? <span className="mf-labval">{summary}</span> : null}</span>
+      {children}
+    </div>
+  );
+}
+
+// Filters sheet — all groups in one scroll, opened scrolled to (and briefly
+// highlighting) the group the tapped pill maps to. Reset / Show N homes pinned
+// at the bottom with the live match count.
+function MobileFilterSheet({ open, focus, f, set, bounds, statusOptions, statusCounts, areas, hidden, onToggleArea, data, count, onClose, onReset }) {
+  const bodyRef = useR_bx(null);
+  const groups = useR_bx({});
+  useE_bx(() => {
+    if (!open || !focus) return;
+    // Wait out the sheet's slide-up before jumping to the focused group.
+    const t = setTimeout(() => {
+      const el = groups.current[focus], body = bodyRef.current;
+      if (el && body) body.scrollTop = Math.max(0, el.offsetTop - 12);
+    }, 360);
+    return () => clearTimeout(t);
+  }, [open, focus]);
+
+  const statusSummary = f.status.length !== statusOptions.length
+    ? (f.status.length === 1 ? statusLabel(f.status[0]) : `${f.status.length} types`) : null;
+
+  return (
+    <BxSheet open={open} tall onClose={onClose} labelledBy="mf-filters-title">
+      <div className="shead">
+        <h3 id="mf-filters-title">Filters</h3>
+        <button className="clear" onClick={onReset}>Clear all</button>
+      </div>
+      <div className="sbody" ref={bodyRef}>
+        {areas.length > 1 && (
+          <MfGroup id="areas" label="Areas" focus={focus} groupsRef={groups}
+            summary={areasSummary(areas, hidden)}>
+            <AreaCheckList areas={areas} hidden={hidden} onToggle={onToggleArea} />
+          </MfGroup>
+        )}
+        <MfGroup id="price" label="Price" focus={focus} groupsRef={groups}
+          summary={rangeSummary(f.price[0], f.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true))}>
+          <DualRange min={bounds.price[0]} max={bounds.price[1]} step={10000} value={f.price}
+            hist={data.price_hist} onChange={(v) => set({ price: v })} />
+        </MfGroup>
+        <MfGroup id="bb" label="Beds & baths" focus={focus} groupsRef={groups}
+          summary={`${f.beds ? f.beds + "+ bd" : ""}${f.beds && f.baths ? " · " : ""}${f.baths ? f.baths + "+ ba" : ""}` || null}>
+          <span className="mf-sublab">Bedrooms</span>
+          <PillRow options={BX_BEDS} value={f.beds} onChange={(v) => set({ beds: v })} />
+          <span className="mf-sublab" style={{ marginTop: 10 }}>Bathrooms</span>
+          <PillRow options={BX_BATHS} value={f.baths} onChange={(v) => set({ baths: v })} />
+        </MfGroup>
+        {statusOptions.length > 1 && (
+          <MfGroup id="status" label="Status" summary={statusSummary} focus={focus} groupsRef={groups}>
+            <CheckList options={statusOptions} selected={f.status} counts={statusCounts}
+              onToggle={(v) => set({ status: toggleIn(f.status, v) })} />
+          </MfGroup>
+        )}
+        <MfGroup id="sqft" label="Square feet" focus={focus} groupsRef={groups}
+          summary={rangeSummary(f.sqft[0], f.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString())}>
+          <DualRange min={bounds.sqft[0]} max={bounds.sqft[1]} step={50} value={f.sqft}
+            onChange={(v) => set({ sqft: v })} format={(v) => v.toLocaleString()} />
+        </MfGroup>
+        <MfGroup id="year" label="Year built" focus={focus} groupsRef={groups}
+          summary={rangeSummary(f.year[0], f.year[1], bounds.year[0], bounds.year[1], (v) => String(v))}>
+          <DualRange min={bounds.year[0]} max={bounds.year[1]} step={1} value={f.year}
+            onChange={(v) => set({ year: v })} format={(v) => String(v)} loCapLabel="& older" />
+        </MfGroup>
+      </div>
+      <div className="sfoot">
+        <button className="btn" onClick={onReset}>Reset</button>
+        <button className="btn btn-primary" onClick={onClose}>
+          Show {count.toLocaleString()} {count === 1 ? "home" : "homes"}
+        </button>
+      </div>
+    </BxSheet>
+  );
+}
+
+// Sort sheet — single-select radio list; tapping a row applies and dismisses.
+function MobileSortSheet({ open, value, onChange, onClose }) {
+  return (
+    <BxSheet open={open} onClose={onClose} labelledBy="mf-sort-title">
+      <div className="shead"><h3 id="mf-sort-title">Sort</h3></div>
+      <div className="sbody mf-sortbody">
+        {BX_SORTS.map((s) => (
+          <button key={s.v} className={`mf-sortrow ${s.v === value ? "on" : ""}`} onClick={() => onChange(s.v)}>
+            <span className="rad"><i /></span>
+            <span className="t">{s.label}</span>
+            {s.v === value && <Icon name="check" size={15} />}
+          </button>
+        ))}
+      </div>
+    </BxSheet>
+  );
+}
+
+// Save-search sheet — names the search from its active filters, shows what's
+// being saved as chips, and saves on confirm. Name-only (no alert toggle),
+// matching the server-persisted saved searches the sidebar lists (rule #18).
+function MobileSaveSheet({ open, f, bounds, statusOptions, onSave, onClose }) {
+  const [name, setName] = useS_bx("");
+  // Re-seed the auto-name each time the sheet opens — filters may have changed.
+  useE_bx(() => { if (open) setName(ssAutoName(f, bounds, statusOptions)); }, [open]);
+  const chips = ssActiveChips(f, bounds, statusOptions);
+  const commit = () => { onSave({ name: name.trim() || ssAutoName(f, bounds, statusOptions) }); onClose(); };
+  return (
+    <BxSheet open={open} onClose={onClose} labelledBy="mf-save-title">
+      <div className="shead"><h3 id="mf-save-title">Save this search</h3></div>
+      <div className="sbody mf-savebody">
+        {chips.length > 0
+          ? <div className="sf-summary">{chips.map(([k, v]) => <span key={k} className="sf-sumchip">{k} <b>{v}</b></span>)}</div>
+          : <div className="mf-nofilters">No filters set — this saves every home in your tracked areas.</div>}
+        <div>
+          <span className="mf-sublab" style={{ display: "block", marginBottom: 6 }}>Name</span>
+          <input className="sf-input" value={name} autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
+        </div>
+      </div>
+      <div className="sfoot">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={commit}><Icon name="bookmark" size={13} />Save search</button>
+      </div>
+    </BxSheet>
+  );
+}
+
+// Mobile chip bar — full-width search, a scrollable pill row (Filters + the five
+// filters), and a toolbar with the live count, Sort, and Save. Each pill opens
+// the Filters sheet scrolled to its group; Sort/Save open their own sheets.
+function MobileChipBar({ f, set, bounds, statusOptions, areas, hidden, sort, rowsCount, onOpenFilters, onOpenSort, onOpenSave }) {
+  const pills = mobilePills(f, bounds, statusOptions);
+  if (areas.length > 1) {
+    pills.unshift({ id: "areas", label: "Areas",
+      active: areasHiddenCount(areas, hidden) > 0, summary: areasSummary(areas, hidden) || "" });
+  }
+  const activeN = pills.filter((p) => p.active).length;
+  const saveArmed = activeN > 0 || !!(f.q && f.q.trim());
+  const sortLabel = (BX_SORTS.find((s) => s.v === sort) || BX_SORTS[0]).label;
+  return (
+    <>
+      <div className="field mf-search">
+        <Icon name="search" size={14} />
+        <input placeholder="City, ZIP, or address" value={f.q} onChange={(e) => set({ q: e.target.value })} />
+      </div>
+      <div className="bx-mchips">
+        <button className={`bx-fpill mf-allbtn ${activeN ? "on" : ""}`} onClick={() => onOpenFilters(null)}>
+          <Icon name="filter" size={13} />Filters{activeN > 0 && <span className="mf-badge">{activeN}</span>}
+        </button>
+        {pills.map((p) => (
+          <button key={p.id} className={`bx-fpill ${p.active && p.summary ? "on" : ""}`} onClick={() => onOpenFilters(p.id)}>
+            {p.label}{p.active && p.summary
+              ? <span className="v">{p.summary}</span>
+              : <Icon name="chevronDown" size={12} className="chev" />}
+          </button>
+        ))}
+      </div>
+      <div className="mf-toolbar">
+        <span className="cnt"><b>{rowsCount.toLocaleString()}</b> {rowsCount === 1 ? "home" : "homes"}</span>
+        <span className="sp" />
+        <button className="mf-tbtn" onClick={onOpenSort}>
+          <Icon name="sort" size={13} /><span className="k">Sort:</span> {sortLabel}
+        </button>
+        <button className={`mf-savebtn ${saveArmed ? "armed" : ""}`} onClick={onOpenSave}>
+          <Icon name="bookmark" size={13} />Save
+        </button>
+      </div>
+    </>
+  );
+}
+
+export function BrowsePage({ navigate, onChanged, onSaveSearch, applied }) {
+  const [load, setLoad] = useS_bx({ loading: true, err: null, data: null });
+  const [f, setF] = useS_bx(null);
+  const [sort, setSort] = useS_bx("relevance");
+  const [visible, setVisible] = useS_bx(BX_PAGE);
+  // ZIPs toggled off in the Areas pill. Kept outside `f` because it scopes the
+  // view to a subset of your tracked areas rather than describing a portable
+  // filter — but it is saved with a search and restored when one is applied.
+  const [hiddenAreas, setHiddenAreas] = useS_bx([]);
+  const toast = useToast();
+
+  // Mobile (≤880px) swaps the desktop chip row for bottom sheets.
+  const isMobile = useBxIsMobile();
+  const [sheet, setSheet] = useS_bx(null);   // null | "filters" | "sort" | "save"
+  const [focus, setFocus] = useS_bx(null);   // which group the Filters sheet scrolls to
+  // Leaving mobile (rotate / resize to desktop) dismisses any open sheet.
+  useE_bx(() => { if (!isMobile) setSheet(null); }, [isMobile]);
+
+  // Reset to the first page whenever the filters, area scope, or sort change.
+  useE_bx(() => { setVisible(BX_PAGE); }, [f, sort, hiddenAreas]);
+
+  useE_bx(() => {
+    let active = true;
+    setLoad({ loading: true, err: null, data: null });
+    API.browse()
+      .then((d) => { if (active) { setLoad({ loading: false, err: null, data: d }); setF(null); } })
+      .catch((e) => { if (active) setLoad({ loading: false, err: e.message || "Failed to load homes", data: null }); });
+    return () => { active = false; };
+  }, []);
+
+  const data = load.data;
+  const bounds = useM_bx(() => ({
+    price: (data && data.bounds && data.bounds.price) || BX_PRICE_FALLBACK,
+    sqft: (data && data.bounds && data.bounds.sqft) || BX_SQFT_FALLBACK,
+    year: (data && data.bounds && data.bounds.year) || BX_YEAR_FALLBACK,
+  }), [data]);
+  const statusOptions = useM_bx(() => {
+    const present = (data && data.statuses) || {};
+    return BX_STATUS_ORDER.filter((s) => present[s]).map((s) => ({ v: s, label: statusLabel(s) }));
+  }, [data]);
+  const statusCounts = useM_bx(() => (data && data.statuses) || {}, [data]);
+
+  // Tracked areas the pool spans, derived from the homes themselves: one row per
+  // ZIP with its city and the count of for-sale homes in view. Ordered by the
+  // pool's own ZIP order (newest-cached first). A ZIP with no browseable homes
+  // never appears, so the filter only ever offers areas with something to show.
+  const areas = useM_bx(() => {
+    if (!data) return [];
+    const order = data.zips || [];
+    const byZip = {};
+    for (const h of data.homes) {
+      const z = h.zip;
+      if (!z) continue;
+      if (!byZip[z]) byZip[z] = { zip: z, city: h.city || "", count: 0 };
+      byZip[z].count++;
+      if (!byZip[z].city && h.city) byZip[z].city = h.city;
+    }
+    return Object.values(byZip).sort(
+      (a, b) => order.indexOf(a.zip) - order.indexOf(b.zip)
+    );
+  }, [data]);
+
+  function toggleArea(zip) {
+    if (zip === "__all__") { setHiddenAreas([]); return; }
+    setHiddenAreas((h) => (h.includes(zip) ? h.filter((z) => z !== zip) : [...h, zip]));
+  }
+
+  const ff = f || makeBxDefault(bounds, statusOptions.map((o) => o.v));
+  const set = (patch) => setF((p) => ({ ...(p || makeBxDefault(bounds, statusOptions.map((o) => o.v))), ...patch }));
+
+  // Apply a saved search picked from the sidebar: replace the active filter set
+  // with the stored one. Keyed on both the search's nonce and `data` so it still
+  // lands when Browse is opened fresh (the pool loads after this page mounts).
+  const lastAppliedRef = useR_bx(0);
+  useE_bx(() => {
+    if (!data || !applied || !applied.filters || applied.nonce === lastAppliedRef.current) return;
+    lastAppliedRef.current = applied.nonce;
+    // Area scope rides alongside `f`'s fields in the stored shape; peel it back
+    // out so it lands in its own state rather than leaking into the filter set.
+    const { hiddenAreas: savedAreas, ...filters } = applied.filters;
+    setF({ ...makeBxDefault(bounds, statusOptions.map((o) => o.v)), ...filters });
+    setHiddenAreas(Array.isArray(savedAreas) ? savedAreas : []);
+  }, [applied && applied.nonce, data]);
+
+  function handleSaveSearch({ name }) {
+    if (onSaveSearch) onSaveSearch({ name, filters: ssActiveFilters(ff, bounds, statusOptions, hiddenAreas) });
+    toast.push({ kind: "ok", text: "Search saved" });
+  }
+
+  // Scope to the in-view areas first (cheap ZIP test), then run the filter model.
+  const inScope = useM_bx(
+    () => (data ? (hiddenAreas.length ? data.homes.filter((h) => !hiddenAreas.includes(h.zip)) : data.homes) : []),
+    [data, hiddenAreas]
+  );
+  const rows = useM_bx(
+    () => bxSortHomes(bxApplyFilters(inScope, ff, bounds), sort),
+    [inScope, ff, sort, bounds]
+  );
+
+  // Auto-reveal the next page as the sentinel nears the viewport. The "Load more"
+  // button remains as a keyboard/no-observer fallback.
+  const moreRef = useR_bx(null);
+  useE_bx(() => {
+    const el = moreRef.current;
+    if (!el || visible >= rows.length) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries.some((e) => e.isIntersecting)) setVisible((v) => v + BX_PAGE); },
+      { rootMargin: "400px 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visible, rows.length]);
+
+  if (load.loading) {
+    return (
+      <div className="browse-page">
+        <div className="page-header"><div><h1 className="page-title">Browse homes</h1>
+          <div className="page-subtitle">Loading homes from your tracked areas…</div></div></div>
+      </div>
+    );
+  }
+  if (load.err) {
+    return (
+      <div className="browse-page">
+        <div className="page-header"><div><h1 className="page-title">Browse homes</h1></div></div>
+        <div className="empty"><div className="title">Couldn't load homes</div><div>{load.err}</div></div>
+      </div>
+    );
+  }
+
+  // Cache empty: Browse fills in as the user refreshes tracked properties.
+  if (!data.total) {
+    return (
+      <div className="browse-page">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Browse homes</h1>
+            <div className="page-subtitle">Discover for-sale homes in the areas you already track.</div>
+          </div>
+        </div>
+        <div className="empty">
+          <div className="title">No homes to browse yet</div>
+          <div>Browse is built from the for-sale listings cached when you refresh a tracked property —
+            each refresh saves the active homes in that ZIP. Add a property and refresh it to start
+            filling this in.</div>
+          <div style={{ marginTop: 12 }}>
+            <button className="btn btn-primary" onClick={() => navigate("add")}><Icon name="plus" /> Add property</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const cities = data.cities || [];
+  const where = cities.length === 1 ? `in ${cities[0]}`
+    : cities.length > 1 ? `across ${cities.length} areas you track`
+    : "in your tracked areas";
+
+  const priceActive = ff.price[0] !== bounds.price[0] || ff.price[1] !== bounds.price[1];
+  const bedActive = ff.beds > 0 || ff.baths > 0;
+  const statusActive = ff.status.length !== statusOptions.length;
+  const sqftActive = ff.sqft[0] !== bounds.sqft[0] || ff.sqft[1] !== bounds.sqft[1];
+  const yearActive = ff.year[0] !== bounds.year[0] || ff.year[1] !== bounds.year[1];
+  const allAreasHidden = areas.length > 0 && areas.every((a) => hiddenAreas.includes(a.zip));
+
+  return (
+    <div className="browse-page">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Browse homes</h1>
+          <div className="page-subtitle">
+            <b style={{ color: "var(--text)", fontWeight: 600 }}>{data.total.toLocaleString()}</b> homes {where}
+            {" · "}
+            <b style={{ color: "var(--text)", fontWeight: 600 }}>{rows.length.toLocaleString()}</b>
+            {" matching"}
+          </div>
+        </div>
+        <div>
+          <button className="btn" onClick={() => navigate("admin", "areas")}>
+            <Icon name="map" /> Manage areas
+          </button>
+        </div>
+      </div>
+
+      <div className="bx-chipbar">
+        {isMobile ? (
+          <MobileChipBar
+            f={ff} set={set} bounds={bounds} statusOptions={statusOptions}
+            areas={areas} hidden={hiddenAreas}
+            sort={sort} rowsCount={rows.length}
+            onOpenFilters={(id) => { setFocus(id || null); setSheet("filters"); }}
+            onOpenSort={() => setSheet("sort")}
+            onOpenSave={() => setSheet("save")}
+          />
+        ) : (
+        <div className="bx-chiprow">
+          <div className="field">
+            <Icon name="search" size={14} />
+            <input placeholder="City, ZIP, or address" value={ff.q} onChange={(e) => set({ q: e.target.value })} />
+          </div>
+          {areas.length > 1 && (
+            <AreasPill areas={areas} hidden={hiddenAreas} onToggle={toggleArea}
+              onManage={() => navigate("admin", "areas")} />
+          )}
+          <FilterPill
+            label="Price" active={priceActive}
+            summary={rangeSummary(ff.price[0], ff.price[1], bounds.price[0], bounds.price[1], (v) => money(v, true))}
+            onClear={() => set({ price: [bounds.price[0], bounds.price[1]] })} wide
+          >
+            <span className="poplab">Price range</span>
+            <DualRange min={bounds.price[0]} max={bounds.price[1]} step={10000} value={ff.price}
+              hist={data.price_hist} onChange={(v) => set({ price: v })} />
+          </FilterPill>
+          <FilterPill
+            label="Beds & baths" active={bedActive}
+            summary={`${ff.beds ? ff.beds + "+ bd" : ""}${ff.beds && ff.baths ? " · " : ""}${ff.baths ? ff.baths + "+ ba" : ""}`}
+            onClear={() => set({ beds: 0, baths: 0 })} wide
+          >
+            <span className="poplab">Bedrooms</span>
+            <PillRow options={BX_BEDS} value={ff.beds} onChange={(v) => set({ beds: v })} />
+            <span className="poplab">Bathrooms</span>
+            <PillRow options={BX_BATHS} value={ff.baths} onChange={(v) => set({ baths: v })} />
+          </FilterPill>
+          {statusOptions.length > 1 && (
+            <FilterPill
+              label="Status" active={statusActive}
+              summary={ff.status.length === 1 ? statusLabel(ff.status[0]) : `${ff.status.length} types`}
+              onClear={() => set({ status: statusOptions.map((o) => o.v) })}
+            >
+              <span className="poplab">Listing status</span>
+              <CheckList options={statusOptions} selected={ff.status} counts={statusCounts}
+                onToggle={(v) => set({ status: toggleIn(ff.status, v) })} />
+            </FilterPill>
+          )}
+          <FilterPill
+            label="Square feet" active={sqftActive}
+            summary={rangeSummary(ff.sqft[0], ff.sqft[1], bounds.sqft[0], bounds.sqft[1], (v) => v.toLocaleString())}
+            onClear={() => set({ sqft: [bounds.sqft[0], bounds.sqft[1]] })} wide
+          >
+            <span className="poplab">Square feet</span>
+            <DualRange min={bounds.sqft[0]} max={bounds.sqft[1]} step={50} value={ff.sqft}
+              onChange={(v) => set({ sqft: v })} format={(v) => v.toLocaleString()} />
+          </FilterPill>
+          <FilterPill
+            label="Year built" active={yearActive}
+            summary={rangeSummary(ff.year[0], ff.year[1], bounds.year[0], bounds.year[1], (v) => String(v))}
+            onClear={() => set({ year: [bounds.year[0], bounds.year[1]] })} wide
+          >
+            <span className="poplab">Year built</span>
+            <DualRange min={bounds.year[0]} max={bounds.year[1]} step={1} value={ff.year}
+              onChange={(v) => set({ year: v })} format={(v) => String(v)} loCapLabel="& older" />
+          </FilterPill>
+          <span className="spacer" />
+          <SaveSearchButton f={ff} bounds={bounds} statusOptions={statusOptions}
+            areas={areas} hidden={hiddenAreas} onSave={handleSaveSearch} />
+          <SortMenu value={sort} onChange={setSort} />
+        </div>
+        )}
+      </div>
+
+      {isMobile && (
+        <>
+          <MobileFilterSheet
+            open={sheet === "filters"} focus={focus}
+            f={ff} set={set} bounds={bounds} statusOptions={statusOptions}
+            statusCounts={statusCounts} areas={areas} hidden={hiddenAreas} onToggleArea={toggleArea}
+            data={data} count={rows.length}
+            onClose={() => setSheet(null)}
+            onReset={() => { setF(makeBxDefault(bounds, statusOptions.map((o) => o.v))); setHiddenAreas([]); }}
+          />
+          <MobileSortSheet open={sheet === "sort"} value={sort}
+            onChange={(v) => { setSort(v); setSheet(null); }} onClose={() => setSheet(null)} />
+          <MobileSaveSheet open={sheet === "save"} f={ff} bounds={bounds} statusOptions={statusOptions}
+            onSave={handleSaveSearch} onClose={() => setSheet(null)} />
+        </>
+      )}
+
+      {rows.length === 0 ? (
+        <div className="empty">
+          {allAreasHidden ? (
+            <>
+              <div className="title">All areas are hidden from this view</div>
+              <div>Re-enable a ZIP in the Areas filter to see its homes.</div>
+              <button className="btn" style={{ marginTop: 14 }} onClick={() => setHiddenAreas([])}>
+                Show all areas
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="title">No homes match these filters</div>
+              <div>Try widening the price range or clearing a filter.</div>
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="bx-grid">
+            {rows.slice(0, visible).map((h) => (
+              <BrowseCard key={h.property_id} home={h} navigate={navigate} onChanged={onChanged} />
+            ))}
+          </div>
+          {visible < rows.length && (
+            <div className="bx-more" ref={moreRef}>
+              <span className="bx-more-count">
+                Showing {Math.min(visible, rows.length).toLocaleString()} of {rows.length.toLocaleString()}
+              </span>
+              <button className="btn" onClick={() => setVisible((v) => v + BX_PAGE)}>
+                Load more
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
