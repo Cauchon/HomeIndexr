@@ -2,24 +2,26 @@
   "name": "house-price-tracker",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite dev --port 5173",
     "build": "vite build",
-    "start": "node .output/server/index.mjs",
+    "start": "node serve.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@tanstack/react-router": "^1.170.17",
     "@tanstack/react-start": "^1.168.27",
-    "better-sqlite3": "^12.11.1",
     "dompurify": "^3.4.11",
     "marked": "^18.0.5",
+    "node-sqlite3-wasm": "^0.8.59",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -29,7 +31,6 @@
     "vitest": "^3.2.0"
   },
   "allowScripts": {
-    "better-sqlite3@12.11.1": true,
     "esbuild@0.28.1": true
   }
 }

@@ -397,6 +397,19 @@ async function dispatch(method: string, path: string, url: URL, request: Request
   if (path === '/api/mortgage-rates' && method === 'GET') return json(await rates.get_mortgage_rates())
   if (path === '/api/browse' && method === 'GET') return get_browse()
 
+  // Deploy parity tell: a stale/divergent build won't have this route (it 404s),
+  // so hitting it on the live site confirms it's actually this branch. Also
+  // reports the host's Node version, handy on an unfamiliar deploy target.
+  if (path === '/api/version' && method === 'GET') {
+    return json({
+      app: 'homeindexr',
+      stack: 'tanstack-start+vite',
+      driver: 'node-sqlite3-wasm',
+      commit: process.env.GIT_COMMIT || process.env.COMMIT_SHA || null,
+      node: process.version,
+    })
+  }
+
   if (path === '/api/admin/ai-settings') {
     if (method === 'GET') return json(store.get_ai_settings())
     if (method === 'PATCH') return update_ai_settings(request)

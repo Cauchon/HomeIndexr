@@ -25,7 +25,7 @@ src/
     api.ts              request dispatcher for the whole /api/* contract (was main.py)
     scraper.ts          Realtor.com GraphQL client; AVM + history normalization
                         (Python scraper.fetch() is exported here as fetch_property())
-    store.ts            better-sqlite3 reads/writes + secrets from env/.env
+    store.ts            SQLite reads/writes (node-sqlite3-wasm) + secrets from env/.env
     db.ts               schema + connect()/db_path()/init_db() — authoritative tables
     env.ts              get_env(): process.env first, then an ignored local .env
     comps.ts            pure comparable ranking/gating over cached ZIP listings (rule #15)
@@ -71,16 +71,34 @@ Keep this in lockstep with the API contract below. See `extension/README.md`.
 ## Run it
 
 ```bash
-npm install             # first time (better-sqlite3 needs its native build)
+npm install             # first time — no native build (WASM SQLite, pure JS deps)
 npm run dev             # http://localhost:5173
 ```
 
 `npm run build` produces the client + SSR bundles under `dist/`; `npm start`
-runs the built server. The first request creates `data/app.db` (schema ensured
-lazily on connect). To reset, delete `data/app.db*`.
+(`node serve.mjs`) wraps the built fetch-handler in a node:http server that
+serves `dist/client` statics and delegates SSR + `/api/*` to the handler. The
+first request creates `data/app.db` (schema ensured lazily on connect). To
+reset, delete `data/app.db*`.
 
-Node 20+ is required (better-sqlite3 prebuilt binaries, native `fetch`,
-`AbortSignal.timeout`). There is no Python runtime dependency anymore.
+**SQLite driver: `node-sqlite3-wasm` (WASM), not native.** This is deliberate —
+`better-sqlite3` is a native C++ addon that needs a node-gyp toolchain to
+compile, which timed out on the Node-only deploy host (Poke). The WASM driver
+has nothing to compile, so `npm install` + `vite build` are pure JS. Two
+consequences to respect:
+- It's kept **external** in the SSR build (`ssr.external` in `vite.config.ts`)
+  because it loads its `.wasm` via `readFileSync(__dirname/...)`; bundling would
+  break that path. And it's imported as a **default** (`import sqlite3wasm from
+  'node-sqlite3-wasm'`), not a named import — it's CommonJS, and a named ESM
+  import fails in the built bundle.
+- The WASM VFS **cannot open a WAL-mode database.** New DBs are created in the
+  default DELETE journal mode and work fine. A DB created by the old
+  better-sqlite3 build is WAL — convert it once:
+  `sqlite3 data/app.db "PRAGMA journal_mode=DELETE;"`. `connect()` throws a
+  message saying exactly this if it hits a WAL file.
+
+Node 20+ is required (native `fetch`, `AbortSignal.timeout`, `Readable.toWeb`).
+There is no Python runtime dependency anymore.
 
 Optional AI features use DeepSeek. Put `DEEPSEEK_API_KEY` in the process
 environment or local `.env`; never hardcode it or store it in SQLite.
@@ -310,11 +328,13 @@ the frontend formatters.
 
 ## Conventions
 
-- The server uses `better-sqlite3` directly (synchronous). No ORM. Keep it that
-  way unless we outgrow SQL strings. `db.connect()` resolves the path lazily on
-  every call (`HOMEINDEXR_DB_PATH` → `data/app.db`) and ensures the schema once
-  per path — never freeze the path in a module-level constant (test-DB isolation
-  depends on the lazy resolution).
+- The server uses SQLite directly (synchronous) via `node-sqlite3-wasm`, wrapped
+  in a thin better-sqlite3-compatible adapter in `db.ts` (variadic binds, `.get()`
+  null→undefined, statement finalize-on-close) so the rest of `src/server` uses
+  the familiar `prepare().get()/.all()/.run()` API. No ORM. `db.connect()`
+  resolves the path lazily on every call (`HOMEINDEXR_DB_PATH` → `data/app.db`)
+  and ensures the schema once per path — never freeze the path in a module-level
+  constant (test-DB isolation depends on the lazy resolution).
 - The port keeps the Python snake_case function and result-key names so the
   `/api/*` JSON stays byte-compatible (the extension is a client). Where Python
   used `round()` on an API-visible value, use `pyround`/`pyround2` from

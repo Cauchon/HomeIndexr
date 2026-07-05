@@ -13,19 +13,25 @@ for active listings.
   One Node process serves the React SPA and the `/api/*` routes. Scraping is a
   thin GraphQL client over native `fetch` in `src/server/scraper.ts`.
 - **Frontend**: React (compiled by Vite) under `src/app/`.
-- **Storage**: `data/app.db` (SQLite, WAL mode) via `better-sqlite3`.
-  Auto-created on first run.
+- **Storage**: `data/app.db` (SQLite) via `node-sqlite3-wasm` — a WASM build of
+  SQLite, so there's no native addon to compile. Auto-created on first run.
 
-Node-only — no Python runtime — so it deploys on hosts (like Poke) that run
-`vite`/Node but not a raw Python server.
+Node-only, and every dependency is pure JS/WASM (nothing to compile) — so it
+deploys on hosts (like Poke) that run `vite`/Node but can't run a Python server
+or a node-gyp native build.
 
 ## Setup
 
 Requires Node 20+.
 
 ```bash
-npm install   # builds the better-sqlite3 native addon
+npm install   # no native build — pure JS/WASM deps
 ```
+
+> **Migrating an existing database?** `node-sqlite3-wasm` can't open a WAL-mode
+> file. A `data/app.db` created by an older build is WAL; convert it once with
+> `sqlite3 data/app.db "PRAGMA journal_mode=DELETE;"`. Fresh databases are
+> created in a compatible mode automatically.
 
 ## Run locally
 

@@ -3,10 +3,73 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import Database from 'better-sqlite3'
+// node-sqlite3-wasm is CommonJS. A NAMED ESM import (`import { Database }`) works
+// in vite dev but FAILS in the built ESM server bundle — Node can't statically
+// resolve named exports off a CJS module ("Named export 'Database' not found").
+// Import the default and destructure: the interop-safe form that survives build.
+import sqlite3wasm from 'node-sqlite3-wasm'
+const { Database: WasmDatabase } = sqlite3wasm as any
+
+// WASM SQLite (no native compilation) so the app builds and runs on Node-only
+// hosts (e.g. Poke) that can't run node-gyp — that was the deploy blocker.
+// A thin adapter below re-exposes the synchronous better-sqlite3 API the rest of
+// src/server was written against, so store.ts et al. are unchanged. Bridged gaps:
+//   - variadic binds .run(a,b,c) → node-sqlite3-wasm's single array/undefined arg
+//   - .get() with no row: wasm returns null, better-sqlite3 returns undefined and
+//     callers test `=== undefined`, so we normalize null → undefined
+//   - prepared statements are tracked and finalized on close()
+class StmtWrap {
+  raw: any
+  constructor(raw: any) {
+    this.raw = raw
+  }
+  private p(args: any[]): any {
+    return args.length ? args : undefined
+  }
+  get(...args: any[]): any {
+    const r = this.raw.get(this.p(args))
+    return r === null ? undefined : r
+  }
+  all(...args: any[]): any[] {
+    return this.raw.all(this.p(args))
+  }
+  run(...args: any[]): any {
+    return this.raw.run(this.p(args))
+  }
+  iterate(...args: any[]): any {
+    return this.raw.iterate(this.p(args))
+  }
+}
+
+class DbWrap {
+  raw: any
+  private stmts: StmtWrap[] = []
+  constructor(file: string) {
+    this.raw = new WasmDatabase(file)
+  }
+  prepare(sql: string): StmtWrap {
+    const s = new StmtWrap(this.raw.prepare(sql))
+    this.stmts.push(s)
+    return s
+  }
+  exec(sql: string): void {
+    this.raw.exec(sql)
+  }
+  close(): void {
+    for (const s of this.stmts) {
+      try {
+        s.raw.finalize()
+      } catch {
+        /* already finalized */
+      }
+    }
+    this.stmts = []
+    this.raw.close()
+  }
+}
 
 // cwd-based (not import.meta.url) so the path survives the production bundle:
-// both `vite dev` and `node .output/server/index.mjs` run from the repo root.
+// both `vite dev` and the built server run from the repo root.
 export const ROOT = process.env.HOMEINDEXR_ROOT || process.cwd()
 const DATA_DIR = path.join(ROOT, 'data')
 
@@ -29,12 +92,33 @@ export function db_path(): string {
 // that point HOMEINDEXR_DB_PATH at a fresh temp file still get a fresh schema.
 const initialized_paths = new Set<string>()
 
-export function connect(): Database.Database {
+export function connect(): DbWrap {
   const p = db_path()
   fs.mkdirSync(path.dirname(p), { recursive: true })
-  const conn = new Database(p)
-  conn.pragma('journal_mode = WAL')
-  conn.pragma('foreign_keys = ON')
+  let conn: DbWrap
+  try {
+    conn = new DbWrap(p)
+    // foreign_keys is per-connection and must be set every time (delete cascades
+    // depend on it). WAL is dropped: this app is single-process, and the WASM VFS
+    // can't open WAL databases at all — the default rollback journal works.
+    conn.exec('PRAGMA foreign_keys = ON')
+    // Force the file open now (PRAGMA above doesn't touch the file) so a WAL-mode
+    // database fails HERE, with the clear hint below, rather than deeper in
+    // ensure_schema with a cryptic "unable to open database file".
+    conn.exec('SELECT count(*) FROM sqlite_master')
+  } catch (e: any) {
+    // The WASM driver can't open a WAL-mode file. A fresh DB is DELETE-mode and
+    // fine; but a db created by the old better-sqlite3 build is WAL — surface a
+    // clear one-time migration hint instead of a cryptic "unable to open" 500.
+    if (String(e?.message || '').includes('unable to open database file') && fs.existsSync(p)) {
+      throw new Error(
+        `Could not open SQLite database at ${p}. The WASM driver cannot open a ` +
+          `WAL-mode file (likely created by the old better-sqlite3 build). Convert ` +
+          `it once, then retry:  sqlite3 "${p}" "PRAGMA journal_mode=DELETE;"`,
+      )
+    }
+    throw e
+  }
   if (!initialized_paths.has(p)) {
     ensure_schema(conn)
     initialized_paths.add(p)
@@ -42,7 +126,7 @@ export function connect(): Database.Database {
   return conn
 }
 
-export function with_conn<T>(fn: (conn: Database.Database) => T): T {
+export function with_conn<T>(fn: (conn: DbWrap) => T): T {
   const conn = connect()
   try {
     return fn(conn)
@@ -260,7 +344,7 @@ const PROPERTY_CURRENT_COLUMNS: Record<string, string> = {
   pinned: 'INTEGER NOT NULL DEFAULT 0',
 }
 
-function table_exists(conn: Database.Database, table: string): boolean {
+function table_exists(conn: any, table: string): boolean {
   return (
     conn
       .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
@@ -268,12 +352,12 @@ function table_exists(conn: Database.Database, table: string): boolean {
   )
 }
 
-function property_columns(conn: Database.Database): Set<string> {
+function property_columns(conn: any): Set<string> {
   const rows = conn.prepare('SELECT name FROM pragma_table_info(?)').all('properties') as any[]
   return new Set(rows.map((r) => r.name))
 }
 
-function migrate_properties_current_state(conn: Database.Database): void {
+function migrate_properties_current_state(conn: any): void {
   const existing_cols = property_columns(conn)
   if (!existing_cols.has('pinned') && existing_cols.has('favorited')) {
     conn.exec('ALTER TABLE properties ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
@@ -352,7 +436,7 @@ function migrate_properties_current_state(conn: Database.Database): void {
 }
 
 // Add the pause/active `status` column to pre-existing area_listings caches.
-function migrate_area_listings(conn: Database.Database): void {
+function migrate_area_listings(conn: any): void {
   const rows = conn.prepare('SELECT name FROM pragma_table_info(?)').all('area_listings') as any[]
   const cols = new Set(rows.map((r) => r.name))
   if (!cols.has('status')) {
@@ -360,7 +444,7 @@ function migrate_area_listings(conn: Database.Database): void {
   }
 }
 
-function ensure_schema(conn: Database.Database): void {
+function ensure_schema(conn: any): void {
   conn.exec(SCHEMA)
   conn.exec("DELETE FROM app_settings WHERE key = 'deepseek_api_key'")
   migrate_properties_current_state(conn)
