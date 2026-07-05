@@ -22,3 +22,4 @@ data/addresses.csv
 data/elder-road.csv
 data/app.db
 data/app.db-*
+data/backups/
